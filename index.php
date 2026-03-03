@@ -4,12 +4,11 @@
  * Place in any folder and open in browser (requires PHP).
  */
 
+// Use document root so the index always lists the web server root (works when script is symlinked or in a subdir)
 $baseDir = __DIR__;
-// When used as the site root index (e.g. symlinked at /var/www/html/index.php), list document root
 if (!empty($_SERVER['DOCUMENT_ROOT'])) {
     $docRoot = realpath($_SERVER['DOCUMENT_ROOT']);
-    $scriptDir = realpath($baseDir);
-    if ($docRoot && $scriptDir !== $docRoot && strpos($scriptDir, $docRoot . DIRECTORY_SEPARATOR) !== 0) {
+    if ($docRoot) {
         $baseDir = $docRoot;
     }
 }
