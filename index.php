@@ -86,6 +86,10 @@ if ($handle) {
         if ($entry === '.' || $entry === '..') continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
         $isLink = is_link($full);
+        $linkTarget = $isLink ? @readlink($full) : null;
+        if ($linkTarget === false) {
+            $linkTarget = null;
+        }
         $stat = @stat($full);
         $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
         if ($mtime === null && $isLink && file_exists($full)) {
@@ -93,12 +97,13 @@ if ($handle) {
             $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
         }
         $items[] = [
-            'name'   => $entry,
-            'path'   => $relativePath ? $relativePath . '/' . $entry : $entry,
-            'isDir'  => is_dir($full),
-            'isLink' => $isLink,
-            'size'   => is_file($full) ? filesize($full) : null,
-            'mtime'  => $mtime,
+            'name'       => $entry,
+            'path'       => $relativePath ? $relativePath . '/' . $entry : $entry,
+            'isDir'      => is_dir($full),
+            'isLink'     => $isLink,
+            'linkTarget' => $linkTarget,
+            'size'       => is_file($full) ? filesize($full) : null,
+            'mtime'      => $mtime,
         ];
     }
     closedir($handle);
@@ -434,7 +439,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                     ?>
                     <tr>
                         <td class="name <?= trim($nameClass) ?>">
-                            <a href="<?= h($url) ?>"<?= $linkAttrs ?>>
+                            <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
                                 <?php if ($item['isLink']): ?>
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                                 <?php elseif ($item['isDir']): ?>
