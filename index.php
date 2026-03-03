@@ -63,12 +63,18 @@ if ($handle) {
     while (($entry = readdir($handle)) !== false) {
         if ($entry === '.' || $entry === '..') continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
+        $isLink = is_link($full);
+        $mtime = @filemtime($full);
+        if ($mtime === false) {
+            $mtime = $isLink && file_exists($full) ? @filemtime(realpath($full)) : null;
+        }
         $items[] = [
             'name'   => $entry,
             'path'   => $relativePath ? $relativePath . '/' . $entry : $entry,
             'isDir'  => is_dir($full),
+            'isLink' => $isLink,
             'size'   => is_file($full) ? filesize($full) : null,
-            'mtime'  => filemtime($full),
+            'mtime'  => $mtime,
         ];
     }
     closedir($handle);
@@ -203,6 +209,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .listing .name a:hover { color: var(--accent); }
         .listing .name .dir a { color: var(--dir-color); }
         .listing .name .dir a:hover { color: #22d3ee; }
+        .listing .name.symlink a { color: var(--accent-dim); }
+        .listing .name.symlink a:hover { color: var(--accent); }
 
         .listing .size, .listing .date {
             color: var(--text-muted);
@@ -268,12 +276,14 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                         $url = $item['isDir']
                             ? $indexHref . '?path=' . rawurlencode($item['path'])
                             : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
-                        $nameClass = $item['isDir'] ? 'dir' : '';
+                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink' : '');
                     ?>
                     <tr>
-                        <td class="name <?= $nameClass ?>">
+                        <td class="name <?= trim($nameClass) ?>">
                             <a href="<?= h($url) ?>">
-                                <?php if ($item['isDir']): ?>
+                                <?php if ($item['isLink']): ?>
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                                <?php elseif ($item['isDir']): ?>
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                                 <?php else: ?>
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -282,7 +292,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                             </a>
                         </td>
                         <td class="size"><?= $item['isDir'] ? '—' : h(formatSize($item['size'])) ?></td>
-                        <td class="date"><?= date('Y-m-d H:i', $item['mtime']) ?></td>
+                        <td class="date"><?= ($item['mtime'] !== null && $item['mtime'] > 0) ? date('Y-m-d H:i', $item['mtime']) : '—' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
