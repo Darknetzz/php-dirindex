@@ -154,6 +154,32 @@ usort($items, function ($a, $b) {
     return strcasecmp($a['name'], $b['name']);
 });
 
+// Optional ?open=filename to open file in modal on load (shareable URL)
+$openFileForModal = null;
+if (isset($_GET['open']) && $_GET['open'] !== '') {
+    $openParam = trim((string) $_GET['open'], '/');
+    if ($openParam !== '' && strpos($openParam, '..') === false) {
+        $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
+        $openAbsPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $openFilePath);
+        $openReal = realpath($openAbsPath);
+        if ($openReal !== false && is_file($openReal) && strpos($openReal, $realBase . DIRECTORY_SEPARATOR) === 0) {
+            $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
+            $isText = isset($previewExts[$openExt]) || !looksLikeBinary($openReal);
+            if ($isText) {
+                $openDir = dirname($openFilePath);
+                $openName = basename($openFilePath);
+                $openFileForModal = [
+                    'content_url' => $indexHref . '?path=' . rawurlencode($openFilePath) . '&content=1',
+                    'name'        => $openName,
+                    'open_url'    => ($openExt === 'md' || $openExt === 'markdown')
+                        ? $indexHref . '?path=' . rawurlencode($openFilePath)
+                        : '/' . ($openDir !== '.' ? $openDir . '/' : '') . rawurlencode($openName),
+                ];
+            }
+        }
+    }
+}
+
 function formatSize($bytes) {
     if ($bytes === null || $bytes < 0) return '—';
     $units = ['B', 'KB', 'MB', 'GB'];
@@ -492,7 +518,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         input.settings-check { position: absolute; opacity: 0; width: 0; height: 0; }
     </style>
 </head>
-<body>
+<body<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?>>
     <div class="page">
         <header>
             <div class="header-main">
@@ -657,6 +683,25 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         var modalMd = document.getElementById('modal-md');
         var closeBtn = document.getElementById('modal-close');
 
+        function buildListingUrlWithOpen(contentUrl, fileName) {
+            var pathMatch = contentUrl && contentUrl.match(/[?&]path=([^&]+)/);
+            var fullPath = pathMatch ? decodeURIComponent(pathMatch[1].replace(/\+/g, ' ')) : '';
+            var lastSlash = fullPath.lastIndexOf('/');
+            var dirPath = lastSlash >= 0 ? fullPath.slice(0, lastSlash) : '';
+            var openParam = lastSlash >= 0 ? fullPath.slice(lastSlash + 1) : fullPath;
+            if (openParam === '' && fileName) openParam = fileName;
+            var base = contentUrl ? contentUrl.split('?')[0] : (window.location.pathname || '/index.php');
+            var q = dirPath ? '?path=' + encodeURIComponent(dirPath) + '&open=' + encodeURIComponent(openParam) : '?open=' + encodeURIComponent(openParam);
+            return base + q;
+        }
+        function removeOpenFromUrl() {
+            var u = new URL(window.location.href);
+            if (u.searchParams.has('open')) {
+                u.searchParams.delete('open');
+                history.replaceState(null, '', u.pathname + u.search + (u.hash || ''));
+            }
+        }
+
         function closeModal() {
             overlay.classList.remove('is-open');
             overlay.setAttribute('aria-hidden', 'true');
@@ -666,6 +711,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             modalPre.style.display = '';
             openLinkEl.style.display = 'none';
             openLinkEl.removeAttribute('href');
+            removeOpenFromUrl();
         }
         function openModal(name, content, lang, html, openUrl) {
             titleEl.textContent = name;
@@ -694,19 +740,25 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             overlay.setAttribute('aria-hidden', 'false');
         }
 
+        function openModalFromContentUrl(contentUrl, name, openUrl, pushStateUrl) {
+            fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl);
+                if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
+            }).catch(function() {
+                if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
+            });
+        }
+
         document.addEventListener('click', function(e) {
             var a = e.target.closest('a.file-preview');
             if (!a) return;
             e.preventDefault();
-            var url = a.getAttribute('data-content-url');
+            var contentUrl = a.getAttribute('data-content-url');
             var name = a.getAttribute('data-name') || '';
-            if (!url) return;
+            if (!contentUrl) return;
             var openUrl = a.getAttribute('data-open-url') || '';
-            fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl);
-            }).catch(function() {
-                window.location.href = a.href;
-            });
+            var listingUrl = buildListingUrlWithOpen(contentUrl, name);
+            openModalFromContentUrl(contentUrl, name, openUrl, listingUrl);
         });
 
         closeBtn.addEventListener('click', closeModal);
@@ -716,6 +768,17 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
         });
+        window.addEventListener('popstate', function() {
+            if (overlay.classList.contains('is-open')) closeModal();
+        });
+
+        var body = document.body;
+        var initialContentUrl = body.getAttribute('data-open-content-url');
+        if (initialContentUrl) {
+            var initialName = body.getAttribute('data-open-name') || '';
+            var initialOpenUrl = body.getAttribute('data-open-url') || '';
+            openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl);
+        }
     })();
 
     (function() {
