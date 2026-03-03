@@ -4,12 +4,21 @@
  * Place in any folder and open in browser (requires PHP).
  */
 
-// Use document root so the index always lists the web server root (works when script is symlinked or in a subdir)
+// Use document root so the index always lists the web server root.
+// When the script IS the doc root (e.g. vhost points to php-dirindex/), use its parent so ?path=dokuwiki etc. work.
 $baseDir = __DIR__;
 if (!empty($_SERVER['DOCUMENT_ROOT'])) {
     $docRoot = realpath($_SERVER['DOCUMENT_ROOT']);
+    $scriptDir = realpath($baseDir);
     if ($docRoot) {
-        $baseDir = $docRoot;
+        if ($scriptDir === $docRoot) {
+            $parent = dirname($docRoot);
+            if ($parent && $parent !== $docRoot) {
+                $baseDir = $parent;
+            }
+        } else {
+            $baseDir = $docRoot;
+        }
     }
 }
 $realBase = realpath($baseDir);
