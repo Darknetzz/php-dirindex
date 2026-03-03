@@ -346,6 +346,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             text-decoration: none;
         }
         .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb-sep { color: var(--text-muted); margin: 0 0.35em; font-weight: 400; user-select: none; }
 
         .listing {
             background: var(--bg-card);
@@ -454,7 +455,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                 foreach ($segments as $seg):
                     $acc .= ($acc ? '/' : '') . $seg;
                 ?>
-                    &nbsp;/&nbsp;<a href="<?= h($indexHref) ?>?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
+                    <span class="breadcrumb-sep" aria-hidden="true">›</span><a href="<?= h($indexHref) ?>?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
                 <?php endforeach; ?>
             </nav>
         </header>
