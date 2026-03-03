@@ -41,9 +41,17 @@ if ($relativePath !== '' && strpos($relativePath, '..') !== false) {
     $relativePath = '';
 }
 if ($relativePath !== '') {
-    $currentPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
-    $realCurrent = realpath($currentPath);
-    if ($realCurrent === false || !is_dir($currentPath)) {
+    $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+    if (is_file($requestedPath) && strtolower(substr($relativePath, -3)) === '.md') {
+        $md = @file_get_contents($requestedPath);
+        if ($md !== false) {
+            header('Content-Type: text/html; charset=UTF-8');
+            echo renderMarkdownPage($md, $relativePath, $indexHref);
+            exit;
+        }
+    }
+    $realCurrent = realpath($requestedPath);
+    if ($realCurrent === false || !is_dir($requestedPath)) {
         $currentPath = $baseDir;
         $relativePath = '';
     } else {
@@ -97,6 +105,104 @@ function formatSize($bytes) {
 }
 
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+
+/**
+ * Simple markdown to HTML (headers, bold, italic, code, links, code blocks, lists).
+ */
+function markdownToHtml($text) {
+    $h = function ($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); };
+    $lines = explode("\n", $text);
+    $out = '';
+    $inBlock = false;
+    $inList = false;
+    foreach ($lines as $i => $line) {
+        $raw = $line;
+        if (preg_match('/^```(\w*)\s*$/', $line, $m)) {
+            if ($inBlock) {
+                $out .= "</code></pre>\n";
+                $inBlock = false;
+            } else {
+                $out .= '<pre><code class="' . $h($m[1]) . '">';
+                $inBlock = true;
+            }
+            continue;
+        }
+        if ($inBlock) {
+            $out .= $h($line) . "\n";
+            continue;
+        }
+        if (preg_match('/^#{1,6}\s+(.+)$/', $line, $m)) {
+            $l = strlen(strtok($line, ' '));
+            $out .= "<h{$l}>" . markdownInline($m[1], $h) . "</h{$l}>\n";
+            $inList = false;
+            continue;
+        }
+        if (preg_match('/^[\-\*]\s+(.+)$/', $line, $m)) {
+            if (!$inList) {
+                $out .= "<ul>\n";
+                $inList = true;
+            }
+            $out .= '<li>' . markdownInline($m[1], $h) . "</li>\n";
+            continue;
+        }
+        if (preg_match('/^\d+\.\s+(.+)$/', $line, $m)) {
+            if (!$inList) {
+                $out .= "<ol>\n";
+                $inList = true;
+            }
+            $out .= '<li>' . markdownInline($m[1], $h) . "</li>\n";
+            continue;
+        }
+        if ($inList) {
+            $out .= "</ul>\n";
+            $inList = false;
+        }
+        if (trim($line) === '') {
+            $out .= "\n";
+            continue;
+        }
+        $out .= '<p>' . markdownInline($line, $h) . "</p>\n";
+    }
+    if ($inList) {
+        $out .= "</ul>\n";
+    }
+    if ($inBlock) {
+        $out .= "</code></pre>\n";
+    }
+    return $out;
+}
+
+function markdownInline($s, $h) {
+    $s = $h($s);
+    $s = preg_replace('/\*\*(.+?)\*\*/s', '<strong>$1</strong>', $s);
+    $s = preg_replace('/\*(.+?)\*/s', '<em>$1</em>', $s);
+    $s = preg_replace('/`([^`]+)`/', '<code>$1</code>', $s);
+    $s = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>', $s);
+    return $s;
+}
+
+function renderMarkdownPage($md, $relativePath, $indexHref) {
+    $title = basename($relativePath);
+    $parentPath = dirname($relativePath);
+    $parentPath = ($parentPath === '.' || $parentPath === '') ? '' : $parentPath;
+    $backUrl = $indexHref . ($parentPath !== '' ? '?path=' . rawurlencode($parentPath) : '');
+    $body = markdownToHtml($md);
+    $css = '
+    :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: 2rem; }
+    .page { max-width: 800px; margin: 0 auto; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .back { margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted); }
+    h1,h2,h3,h4,h5,h6 { margin-top: 1.5em; margin-bottom: 0.5em; }
+    pre { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, monospace; font-size: 0.9em; }
+    p code { background: var(--bg-card); padding: 0.2em 0.4em; border-radius: 4px; }
+    ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
+    ';
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($title) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="back"><a href="' . h($backUrl) . '">← Back to listing</a></div><div class="md">' . $body . '</div></div></body></html>';
+}
 
 $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
 ?>
@@ -273,14 +379,19 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                     <?php endif; ?>
 
                     <?php foreach ($items as $item):
-                        $url = $item['isDir']
-                            ? $indexHref . '?path=' . rawurlencode($item['path'])
-                            : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                        if ($item['isDir']) {
+                            $url = $indexHref . '?path=' . rawurlencode($item['path']);
+                            $linkAttrs = '';
+                        } else {
+                            $isMd = (strtolower(substr($item['name'], -3)) === '.md');
+                            $url = $isMd ? $indexHref . '?path=' . rawurlencode($item['path']) : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                            $linkAttrs = ' target="_blank" rel="noopener noreferrer"';
+                        }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink' : '');
                     ?>
                     <tr>
                         <td class="name <?= trim($nameClass) ?>">
-                            <a href="<?= h($url) ?>">
+                            <a href="<?= h($url) ?>"<?= $linkAttrs ?>>
                                 <?php if ($item['isLink']): ?>
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                                 <?php elseif ($item['isDir']): ?>
