@@ -383,9 +383,12 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
 
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .modal-overlay.is-open { display: flex; }
-        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; max-width: 90vw; max-height: 85vh; width: 900px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; max-width: 95vw; max-height: 85vh; width: 1200px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .modal-title-wrap { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
         .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
+        .modal-open-link { font-size: 0.8rem; color: var(--accent); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+        .modal-open-link:hover { text-decoration: underline; }
         .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; line-height: 1; border-radius: 4px; }
         .modal-close:hover { color: var(--text); background: var(--hover); }
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
@@ -475,7 +478,10 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                         } else {
                             if (!empty($item['isText'])) {
                                 $url = $indexHref . '?path=' . rawurlencode($item['path']);
-                                $linkAttrs = ' class="file-preview" data-content-url="' . h($indexHref . '?path=' . rawurlencode($item['path']) . '&content=1') . '" data-name="' . h($item['name']) . '"';
+                                $openUrl = ($item['ext'] === 'md' || $item['ext'] === 'markdown')
+                                    ? $indexHref . '?path=' . rawurlencode($item['path'])
+                                    : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                                $linkAttrs = ' class="file-preview" data-content-url="' . h($indexHref . '?path=' . rawurlencode($item['path']) . '&content=1') . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '"';
                             } else {
                                 $url = '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
                                 $linkAttrs = ' class="file-binary" title="Binary file (opens in new tab)" target="_blank" rel="noopener noreferrer"';
@@ -519,7 +525,10 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
     <div id="file-modal" class="modal-overlay" aria-hidden="true">
         <div class="modal" role="dialog" aria-modal="true">
             <div class="modal-header">
-                <span class="modal-title" id="modal-title"></span>
+                <div class="modal-title-wrap">
+                    <span class="modal-title" id="modal-title"></span>
+                    <a id="modal-open-link" class="modal-open-link" href="#" target="_blank" rel="noopener noreferrer" style="display: none;">Open in new tab</a>
+                </div>
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
@@ -544,6 +553,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
     (function() {
         var overlay = document.getElementById('file-modal');
         var titleEl = document.getElementById('modal-title');
+        var openLinkEl = document.getElementById('modal-open-link');
         var codeEl = document.getElementById('modal-code');
         var modalPre = document.getElementById('modal-pre');
         var modalMd = document.getElementById('modal-md');
@@ -556,9 +566,18 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             modalMd.classList.remove('is-visible');
             modalMd.setAttribute('aria-hidden', 'true');
             modalPre.style.display = '';
+            openLinkEl.style.display = 'none';
+            openLinkEl.removeAttribute('href');
         }
-        function openModal(name, content, lang, html) {
+        function openModal(name, content, lang, html, openUrl) {
             titleEl.textContent = name;
+            if (openUrl) {
+                openLinkEl.href = openUrl;
+                openLinkEl.style.display = '';
+            } else {
+                openLinkEl.style.display = 'none';
+                openLinkEl.removeAttribute('href');
+            }
             if (html) {
                 modalMd.innerHTML = html;
                 modalMd.classList.add('is-visible');
@@ -584,8 +603,9 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             var url = a.getAttribute('data-content-url');
             var name = a.getAttribute('data-name') || '';
             if (!url) return;
+            var openUrl = a.getAttribute('data-open-url') || '';
             fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null);
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl);
             }).catch(function() {
                 window.location.href = a.href;
             });
