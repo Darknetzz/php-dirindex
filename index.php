@@ -273,7 +273,8 @@ function renderMarkdownPage($md, $relativePath, $indexHref) {
     p code { background: var(--bg-card); padding: 0.2em 0.4em; border-radius: 4px; }
     ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
     .task-list-item { list-style: none; margin-left: -1.5rem; }
-    .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; }
+    .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
+    .task-list-item-checkbox:checked { background: #2e1065; border-color: var(--accent); }
     ';
     return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($title) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="back"><a href="' . h($backUrl) . '">← Back to listing</a></div><div class="md">' . $body . '</div></div></body></html>';
 }
@@ -414,7 +415,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .modal-body .modal-md p { margin: 0.5em 0; }
         .modal-body .modal-md ul, .modal-body .modal-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
         .modal-body .modal-md .task-list-item { list-style: none; margin-left: -1.5rem; }
-        .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; }
+        .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
+        .modal-body .modal-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
         .listing .name.binary a { color: var(--text-muted); }
         .listing .name.binary a:hover { color: var(--accent); }
 
