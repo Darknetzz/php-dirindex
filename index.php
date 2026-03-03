@@ -290,7 +290,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <style>
         :root {
             --bg: #0d0d0f;
@@ -303,6 +303,19 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             --dir-color: #67e8f9;
             --hover: #27272a;
         }
+        html.theme-light {
+            --bg: #fafafa;
+            --bg-card: #ffffff;
+            --border: #e4e4e7;
+            --text: #18181b;
+            --text-muted: #71717a;
+            --accent: #7c3aed;
+            --accent-dim: #5b21b6;
+            --dir-color: #0891b2;
+            --hover: #f4f4f5;
+        }
+        body.font-large { font-size: 17px; }
+        body.font-large .listing td, body.font-large .listing th { font-size: 0.95rem; }
 
         * { box-sizing: border-box; }
         body {
@@ -325,7 +338,28 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             margin-bottom: 2rem;
             padding-bottom: 1rem;
             border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
         }
+        .header-main { flex: 1; min-width: 0; }
+        .btn-settings {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .btn-settings:hover { color: var(--text); background: var(--hover); border-color: var(--text-muted); }
+        .btn-settings svg { width: 1.15rem; height: 1.15rem; }
 
         h1 {
             font-weight: 600;
@@ -441,23 +475,43 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             font-size: 0.8rem;
             color: var(--text-muted);
         }
+
+        .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
+        .settings-overlay.is-open { display: flex; }
+        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+        .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
+        .settings-modal .modal-body { padding: 1.25rem; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+        .settings-row:last-child { border-bottom: none; }
+        .settings-row label { font-size: 0.9rem; color: var(--text); cursor: pointer; }
+        .settings-toggle { position: relative; width: 2.5rem; height: 1.35rem; flex-shrink: 0; border-radius: 999px; background: var(--border); cursor: pointer; transition: background 0.2s; }
+        .settings-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--bg-card); box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform 0.2s; }
+        .settings-toggle.is-on { background: var(--accent); }
+        .settings-toggle.is-on::after { transform: translateX(1.15rem); }
+        input.settings-check { position: absolute; opacity: 0; width: 0; height: 0; }
     </style>
 </head>
 <body>
     <div class="page">
         <header>
-            <h1>Index of <strong>/<?= h($relativePath ?: '') ?></strong></h1>
-            <nav class="breadcrumb">
-                <a href="<?= h($indexHref) ?>">/</a>
-                <?php
-                $segments = $relativePath ? explode('/', $relativePath) : [];
-                $acc = '';
-                foreach ($segments as $seg):
-                    $acc .= ($acc ? '/' : '') . $seg;
-                ?>
-                    <span class="breadcrumb-sep" aria-hidden="true">›</span><a href="<?= h($indexHref) ?>?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
-                <?php endforeach; ?>
-            </nav>
+            <div class="header-main">
+                <h1>Index of <strong>/<?= h($relativePath ?: '') ?></strong></h1>
+                <nav class="breadcrumb">
+                    <a href="<?= h($indexHref) ?>">/</a>
+                    <?php
+                    $segments = $relativePath ? explode('/', $relativePath) : [];
+                    $acc = '';
+                    foreach ($segments as $seg):
+                        $acc .= ($acc ? '/' : '') . $seg;
+                    ?>
+                        <span class="breadcrumb-sep" aria-hidden="true">›</span><a href="<?= h($indexHref) ?>?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
+                    <?php endforeach; ?>
+                </nav>
+            </div>
+            <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
         </header>
 
         <div class="listing">
@@ -556,6 +610,32 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         </div>
     </div>
 
+    <div id="settings-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <div class="modal-header">
+                <span class="modal-title" id="settings-title">Settings</span>
+                <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-row">
+                    <label for="setting-theme">Light mode</label>
+                    <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
+                    <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
+                </div>
+                <div class="settings-row">
+                    <label for="setting-font">Large text</label>
+                    <input type="checkbox" id="setting-font" class="settings-check">
+                    <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
+                </div>
+                <div class="settings-row">
+                    <label for="setting-breadcrumb">Slash in breadcrumbs</label>
+                    <input type="checkbox" id="setting-breadcrumb" class="settings-check">
+                    <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
@@ -636,6 +716,105 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
         });
+    })();
+
+    (function() {
+        var STORAGE = { theme: 'dirindex_theme', font: 'dirindex_font', breadcrumb: 'dirindex_breadcrumb' };
+        var settingsOverlay = document.getElementById('settings-modal');
+        var btnSettings = document.getElementById('btn-settings');
+        var settingsClose = document.getElementById('settings-close');
+        var hljsTheme = document.getElementById('hljs-theme');
+        var pairs = [
+            { check: document.getElementById('setting-theme'), toggle: document.getElementById('setting-theme-toggle') },
+            { check: document.getElementById('setting-font'), toggle: document.getElementById('setting-font-toggle') },
+            { check: document.getElementById('setting-breadcrumb'), toggle: document.getElementById('setting-breadcrumb-toggle') }
+        ];
+
+        function getSetting(key, def) {
+            try { return localStorage.getItem(key) || def; } catch (e) { return def; }
+        }
+        function setSetting(key, val) {
+            try { localStorage.setItem(key, val); } catch (e) {}
+        }
+
+        function applyTheme(light) {
+            if (light) {
+                document.documentElement.classList.add('theme-light');
+                if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css';
+            } else {
+                document.documentElement.classList.remove('theme-light');
+                if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
+            }
+        }
+        function applyFont(large) {
+            document.body.classList.toggle('font-large', large);
+        }
+        function applyBreadcrumb(slash) {
+            var sep = slash ? '/' : '\u203A';
+            document.querySelectorAll('.breadcrumb-sep').forEach(function(el) { el.textContent = sep; });
+        }
+
+        function loadAndApply() {
+            var theme = getSetting(STORAGE.theme, 'dark');
+            var font = getSetting(STORAGE.font, 'normal');
+            var breadcrumb = getSetting(STORAGE.breadcrumb, 'chevron');
+            var light = (theme === 'light');
+            var large = (font === 'large');
+            var useSlash = (breadcrumb === 'slash');
+            applyTheme(light);
+            applyFont(large);
+            applyBreadcrumb(useSlash);
+            if (pairs[0].check) pairs[0].check.checked = light;
+            if (pairs[0].toggle) { pairs[0].toggle.classList.toggle('is-on', light); pairs[0].toggle.setAttribute('aria-checked', light); }
+            if (pairs[1].check) pairs[1].check.checked = large;
+            if (pairs[1].toggle) { pairs[1].toggle.classList.toggle('is-on', large); pairs[1].toggle.setAttribute('aria-checked', large); }
+            if (pairs[2].check) pairs[2].check.checked = useSlash;
+            if (pairs[2].toggle) { pairs[2].toggle.classList.toggle('is-on', useSlash); pairs[2].toggle.setAttribute('aria-checked', useSlash); }
+        }
+
+        function openSettings() {
+            settingsOverlay.classList.add('is-open');
+            settingsOverlay.setAttribute('aria-hidden', 'false');
+        }
+        function closeSettings() {
+            settingsOverlay.classList.remove('is-open');
+            settingsOverlay.setAttribute('aria-hidden', 'true');
+        }
+
+        pairs.forEach(function(p, i) {
+            if (!p.toggle || !p.check) return;
+            function update() {
+                var on = p.check.checked;
+                p.toggle.classList.toggle('is-on', on);
+                p.toggle.setAttribute('aria-checked', on);
+                if (i === 0) { setSetting(STORAGE.theme, on ? 'light' : 'dark'); applyTheme(on); }
+                if (i === 1) { setSetting(STORAGE.font, on ? 'large' : 'normal'); applyFont(on); }
+                if (i === 2) { setSetting(STORAGE.breadcrumb, on ? 'slash' : 'chevron'); applyBreadcrumb(on); }
+            }
+            function toggle() {
+                p.check.checked = !p.check.checked;
+                update();
+            }
+            p.toggle.addEventListener('click', toggle);
+            p.toggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            });
+            p.check.addEventListener('change', update);
+        });
+
+        btnSettings.addEventListener('click', openSettings);
+        settingsClose.addEventListener('click', closeSettings);
+        settingsOverlay.addEventListener('click', function(e) {
+            if (e.target === settingsOverlay) closeSettings();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && settingsOverlay.classList.contains('is-open')) {
+                closeSettings();
+                e.stopPropagation();
+            }
+        });
+
+        loadAndApply();
     })();
     </script>
 </body>
