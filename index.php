@@ -4,24 +4,35 @@
  * Place in any folder and open in browser (requires PHP).
  */
 
-// Use document root so the index always lists the web server root.
-// When the script IS the doc root (e.g. vhost points to php-dirindex/), use its parent so ?path=dokuwiki etc. work.
+// Listing root: prefer document root, but when the script is the index of a subfolder (or symlinked from it),
+// use that folder's parent so ?path=dokuwiki etc. list siblings.
 $baseDir = __DIR__;
 if (!empty($_SERVER['DOCUMENT_ROOT'])) {
-    $docRoot = realpath($_SERVER['DOCUMENT_ROOT']);
+    $docRootReal = realpath($_SERVER['DOCUMENT_ROOT']);
     $scriptDir = realpath($baseDir);
-    if ($docRoot) {
-        if ($scriptDir === $docRoot) {
-            $parent = dirname($docRoot);
-            if ($parent && $parent !== $docRoot) {
+    if ($docRootReal) {
+        $scriptInDocRoot = ($scriptDir === $docRootReal || strpos($scriptDir, $docRootReal . DIRECTORY_SEPARATOR) === 0);
+        if (!$scriptInDocRoot) {
+            // Script is symlinked from doc root (e.g. /var/www/html/php-dirindex/index.php -> project): list doc root's parent
+            $parent = dirname($docRootReal);
+            if ($parent && $parent !== $docRootReal) {
+                $baseDir = $parent;
+            }
+        } elseif ($scriptDir === $docRootReal) {
+            // Script is inside doc root; doc root is a subfolder (e.g. php-dirindex): list its parent
+            $parent = dirname($docRootReal);
+            if ($parent && $parent !== $docRootReal) {
                 $baseDir = $parent;
             }
         } else {
-            $baseDir = $docRoot;
+            $baseDir = $docRootReal;
         }
     }
 }
 $realBase = realpath($baseDir);
+
+// Base URL for links (absolute path so ?path= links work regardless of rewrites)
+$indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') ? $_SERVER['SCRIPT_NAME'] : '/index.php';
 
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
@@ -213,14 +224,14 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         <header>
             <h1>Index of <strong>/<?= h($relativePath ?: '') ?></strong></h1>
             <nav class="breadcrumb">
-                <a href="?">/</a>
+                <a href="<?= h($indexHref) ?>">/</a>
                 <?php
                 $segments = $relativePath ? explode('/', $relativePath) : [];
                 $acc = '';
                 foreach ($segments as $seg):
                     $acc .= ($acc ? '/' : '') . $seg;
                 ?>
-                    &nbsp;/&nbsp;<a href="?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
+                    &nbsp;/&nbsp;<a href="<?= h($indexHref) ?>?path=<?= h(rawurlencode($acc)) ?>"><?= h($seg) ?></a>
                 <?php endforeach; ?>
             </nav>
         </header>
@@ -238,7 +249,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                     <?php if ($hasParent): $parentRel = dirname($relativePath); $parentRel = ($parentRel === '.' || $parentRel === '') ? '' : $parentRel; ?>
                     <tr>
                         <td class="name dir">
-                            <a href="?<?= $parentRel !== '' ? 'path=' . h(rawurlencode($parentRel)) : '' ?>">
+                            <a href="<?= h($indexHref) ?><?= $parentRel !== '' ? '?path=' . h(rawurlencode($parentRel)) : '' ?>">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                                 ..
                             </a>
@@ -250,8 +261,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
 
                     <?php foreach ($items as $item):
                         $url = $item['isDir']
-                            ? '?path=' . rawurlencode($item['path'])
-                            : ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                            ? $indexHref . '?path=' . rawurlencode($item['path'])
+                            : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
                         $nameClass = $item['isDir'] ? 'dir' : '';
                     ?>
                     <tr>
