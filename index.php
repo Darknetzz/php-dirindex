@@ -4,6 +4,8 @@
  * Place in any folder and open in browser (requires PHP).
  */
 
+header('X-Content-Type-Options: nosniff');
+
 // Listing root: prefer document root, but when the script is the index of a subfolder (or symlinked from it),
 // use that folder's parent so ?path=dokuwiki etc. list siblings.
 $baseDir = __DIR__;
@@ -30,14 +32,29 @@ if (!empty($_SERVER['DOCUMENT_ROOT'])) {
     }
 }
 $realBase = realpath($baseDir);
+if ($realBase === false) {
+    header('Content-Type: text/plain; charset=UTF-8');
+    header('HTTP/1.1 500 Internal Server Error');
+    exit('Base directory is not accessible.');
+}
+
+/**
+ * Ensure a resolved path is under the base directory (prevents symlink escape).
+ */
+function pathUnderBase($resolved, $realBase) {
+    if ($resolved === false || $resolved === '') return false;
+    $sep = DIRECTORY_SEPARATOR;
+    $baseNorm = rtrim($realBase, $sep);
+    return $resolved === $baseNorm || strpos($resolved . $sep, $baseNorm . $sep) === 0;
+}
 
 // Base URL for links (absolute path so ?path= links work regardless of rewrites)
 $indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') ? $_SERVER['SCRIPT_NAME'] : '/index.php';
 
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
-// Reject directory traversal; allow symlinked dirs (realpath may resolve outside realBase)
-if ($relativePath !== '' && strpos($relativePath, '..') !== false) {
+// Reject directory traversal and null bytes
+if ($relativePath !== '' && (strpos($relativePath, '..') !== false || str_contains($relativePath, "\0"))) {
     $relativePath = '';
 }
 // Text file extensions: open in modal. Value = highlight.js language (or 'plaintext').
@@ -70,9 +87,10 @@ function looksLikeBinary($absolutePath, $maxLen = 8192) {
 
 if ($relativePath !== '') {
     $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+    $requestedReal = realpath($requestedPath);
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
     $isMdFullPage = ($ext === 'md' && !isset($_GET['content']));
-    if (is_file($requestedPath) && $isMdFullPage) {
+    if (is_file($requestedPath) && $isMdFullPage && pathUnderBase($requestedReal, $realBase)) {
         $md = @file_get_contents($requestedPath);
         if ($md !== false) {
             header('Content-Type: text/html; charset=UTF-8');
@@ -80,10 +98,10 @@ if ($relativePath !== '') {
             exit;
         }
     }
-    if (is_file($requestedPath) && isset($_GET['content'])) {
+    if (is_file($requestedPath) && isset($_GET['content']) && pathUnderBase($requestedReal, $realBase)) {
         $raw = @file_get_contents($requestedPath);
         if ($raw !== false) {
-            $lang = isset($previewExts[$ext]) ? $previewExts[$ext] : 'plaintext';
+            $lang = $previewExts[$ext] ?? 'plaintext';
             if (!isset($previewExts[$ext]) && (looksLikeBinary($requestedPath) || filesize($requestedPath) > 512 * 1024)) {
                 $raw = false; // refuse to send likely binary or large unknown files
             }
@@ -93,13 +111,13 @@ if ($relativePath !== '') {
                 if ($ext === 'md' || $ext === 'markdown') {
                     $out['html'] = markdownToHtml($raw);
                 }
-                echo json_encode($out);
+                echo json_encode($out, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
                 exit;
             }
         }
     }
     $realCurrent = realpath($requestedPath);
-    if ($realCurrent === false || !is_dir($requestedPath)) {
+    if ($realCurrent === false || !is_dir($requestedPath) || !pathUnderBase($realCurrent, $realBase)) {
         $currentPath = $baseDir;
         $relativePath = '';
     } else {
@@ -158,11 +176,11 @@ usort($items, function ($a, $b) {
 $openFileForModal = null;
 if (isset($_GET['open']) && $_GET['open'] !== '') {
     $openParam = trim((string) $_GET['open'], '/');
-    if ($openParam !== '' && strpos($openParam, '..') === false) {
+    if ($openParam !== '' && strpos($openParam, '..') === false && !str_contains($openParam, "\0")) {
         $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
         $openAbsPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $openFilePath);
         $openReal = realpath($openAbsPath);
-        if ($openReal !== false && is_file($openReal) && strpos($openReal, $realBase . DIRECTORY_SEPARATOR) === 0) {
+        if ($openReal !== false && is_file($openReal) && pathUnderBase($openReal, $realBase)) {
             $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
             $isText = isset($previewExts[$openExt]) || !looksLikeBinary($openReal);
             if ($isText) {
@@ -275,7 +293,13 @@ function markdownInline($s, $h) {
     $s = preg_replace('/\*\*(.+?)\*\*/s', '<strong>$1</strong>', $s);
     $s = preg_replace('/\*(.+?)\*/s', '<em>$1</em>', $s);
     $s = preg_replace('/`([^`]+)`/', '<code>$1</code>', $s);
-    $s = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>', $s);
+    $s = preg_replace_callback('/\[([^\]]+)\]\(([^)]+)\)/', function ($m) use ($h) {
+        $url = $m[2];
+        // Block javascript:, data:, vbscript: and other scheme-based XSS
+        $safe = !preg_match('/^(javascript|data|vbscript|file):/i', trim($url));
+        $href = $safe ? $h($url) : '#';
+        return '<a href="' . $href . '" target="_blank" rel="noopener noreferrer">' . $m[1] . '</a>';
+    }, $s);
     return $s;
 }
 
