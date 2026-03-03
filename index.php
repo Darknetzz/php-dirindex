@@ -40,13 +40,26 @@ $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
 if ($relativePath !== '' && strpos($relativePath, '..') !== false) {
     $relativePath = '';
 }
+// Allowed extensions for preview (modal) and content API
+$previewExts = ['md' => 'markdown', 'html' => 'markup', 'htm' => 'markup', 'js' => 'javascript', 'css' => 'css', 'mjs' => 'javascript'];
+
 if ($relativePath !== '') {
     $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
-    if (is_file($requestedPath) && strtolower(substr($relativePath, -3)) === '.md') {
+    $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
+    $isMdFullPage = ($ext === 'md' && !isset($_GET['content']));
+    if (is_file($requestedPath) && $isMdFullPage) {
         $md = @file_get_contents($requestedPath);
         if ($md !== false) {
             header('Content-Type: text/html; charset=UTF-8');
             echo renderMarkdownPage($md, $relativePath, $indexHref);
+            exit;
+        }
+    }
+    if (is_file($requestedPath) && isset($_GET['content']) && isset($previewExts[$ext])) {
+        $raw = @file_get_contents($requestedPath);
+        if ($raw !== false) {
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode(['content' => $raw, 'lang' => $previewExts[$ext], 'name' => basename($relativePath)]);
             exit;
         }
     }
@@ -215,6 +228,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <style>
         :root {
             --bg: #0d0d0f;
@@ -317,6 +331,18 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .listing .name .dir a:hover { color: #22d3ee; }
         .listing .name.symlink a { color: var(--accent-dim); }
         .listing .name.symlink a:hover { color: var(--accent); }
+        .listing .name a.file-preview { cursor: pointer; }
+
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
+        .modal-overlay.is-open { display: flex; }
+        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; max-width: 90vw; max-height: 85vh; width: 900px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
+        .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; line-height: 1; border-radius: 4px; }
+        .modal-close:hover { color: var(--text); background: var(--hover); }
+        .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
+        .modal-body pre { margin: 0; font-size: 0.85rem; }
+        .modal-body code { font-family: 'JetBrains Mono', monospace; }
 
         .listing .size, .listing .date {
             color: var(--text-muted);
@@ -378,14 +404,21 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                     </tr>
                     <?php endif; ?>
 
-                    <?php foreach ($items as $item):
+                    <?php
+                    foreach ($items as $item):
                         if ($item['isDir']) {
                             $url = $indexHref . '?path=' . rawurlencode($item['path']);
                             $linkAttrs = '';
                         } else {
-                            $isMd = (strtolower(substr($item['name'], -3)) === '.md');
-                            $url = $isMd ? $indexHref . '?path=' . rawurlencode($item['path']) : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
-                            $linkAttrs = ' target="_blank" rel="noopener noreferrer"';
+                            $ext = strtolower(pathinfo($item['name'], PATHINFO_EXTENSION));
+                            $isPreviewable = isset($previewExts[$ext]);
+                            if ($isPreviewable) {
+                                $url = $indexHref . '?path=' . rawurlencode($item['path']);
+                                $linkAttrs = ' class="file-preview" data-content-url="' . h($indexHref . '?path=' . rawurlencode($item['path']) . '&content=1') . '" data-name="' . h($item['name']) . '"';
+                            } else {
+                                $url = '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                                $linkAttrs = ' target="_blank" rel="noopener noreferrer"';
+                            }
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink' : '');
                     ?>
@@ -414,5 +447,64 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             <?= count($items) + ($hasParent ? 1 : 0) ?> item(s) &nbsp;·&nbsp; PHP directory index
         </footer>
     </div>
+
+    <div id="file-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true">
+            <div class="modal-header">
+                <span class="modal-title" id="modal-title"></span>
+                <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre><code id="modal-code"></code></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+    <script>
+    (function() {
+        var overlay = document.getElementById('file-modal');
+        var titleEl = document.getElementById('modal-title');
+        var codeEl = document.getElementById('modal-code');
+        var closeBtn = document.getElementById('modal-close');
+
+        function closeModal() {
+            overlay.classList.remove('is-open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+        function openModal(name, content, lang) {
+            titleEl.textContent = name;
+            codeEl.textContent = content;
+            codeEl.className = 'language-' + (lang === 'markup' ? 'html' : lang);
+            codeEl.parentElement.classList.add('hljs');
+            overlay.classList.add('is-open');
+            overlay.setAttribute('aria-hidden', 'false');
+            hljs.highlightElement(codeEl);
+        }
+
+        document.addEventListener('click', function(e) {
+            var a = e.target.closest('a.file-preview');
+            if (!a) return;
+            e.preventDefault();
+            var url = a.getAttribute('data-content-url');
+            var name = a.getAttribute('data-name') || '';
+            if (!url) return;
+            fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext');
+            }).catch(function() {
+                window.location.href = a.href;
+            });
+        });
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
+        });
+    })();
+    </script>
 </body>
 </html>
