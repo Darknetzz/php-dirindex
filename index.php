@@ -85,6 +85,7 @@ function looksLikeBinary($absolutePath, $maxLen = 8192) {
     return $chunk === false || str_contains($chunk, "\0");
 }
 
+$blockedMessage = null;
 if ($relativePath !== '') {
     $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
     $requestedReal = realpath($requestedPath);
@@ -116,15 +117,23 @@ if ($relativePath !== '') {
             }
         }
     }
+    if (is_file($requestedPath) && ($isMdFullPage || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
+        $blockedMessage = 'That link points outside the index and cannot be opened.';
+    }
     $realCurrent = realpath($requestedPath);
     if ($realCurrent === false || !is_dir($requestedPath) || !pathUnderBase($realCurrent, $realBase)) {
+        if (!$blockedMessage && is_dir($requestedPath) && $realCurrent !== false && !pathUnderBase($realCurrent, $realBase)) {
+            $blockedMessage = 'That link points outside the index and cannot be opened.';
+        }
         $currentPath = $baseDir;
         $relativePath = '';
     } else {
         $currentPath = $realCurrent;
+        $blockedMessage = null;
     }
 } else {
     $currentPath = $baseDir;
+    $blockedMessage = null;
 }
 
 $parentPath = dirname($currentPath);
@@ -194,6 +203,8 @@ if (isset($_GET['open']) && $_GET['open'] !== '') {
                         : '/' . ($openDir !== '.' ? $openDir . '/' : '') . rawurlencode($openName),
                 ];
             }
+        } elseif (!$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
+            $blockedMessage = 'That link points outside the index and cannot be opened.';
         }
     }
 }
@@ -540,6 +551,16 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .settings-toggle.is-on { background: var(--accent); }
         .settings-toggle.is-on::after { transform: translateX(1.15rem); }
         input.settings-check { position: absolute; opacity: 0; width: 0; height: 0; }
+
+        .blocked-msg {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(185, 28, 28, 0.15);
+            border: 1px solid rgba(185, 28, 28, 0.4);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?>>
@@ -563,6 +584,12 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>
         </header>
+
+        <?php if ($blockedMessage): ?>
+        <div class="blocked-msg" role="alert">
+            <?= h($blockedMessage) ?>
+        </div>
+        <?php endif; ?>
 
         <div class="listing">
             <table>
