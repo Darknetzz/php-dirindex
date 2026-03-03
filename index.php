@@ -349,6 +349,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             font-size: 0.85rem;
         }
         .listing .size { text-align: right; }
+        .listing .col-date { min-width: 10rem; }
+        .listing td.date, .listing th.date { white-space: nowrap; }
 
         .icon {
             width: 1.1em;
@@ -383,11 +385,16 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
 
         <div class="listing">
             <table>
+                <colgroup>
+                    <col class="col-name">
+                    <col class="col-size">
+                    <col class="col-date">
+                </colgroup>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th class="size">Size</th>
-                        <th>Modified</th>
+                        <th scope="col">Name</th>
+                        <th scope="col" class="size">Size</th>
+                        <th scope="col" class="date">Modified</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -436,7 +443,14 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                             </a>
                         </td>
                         <td class="size"><?= $item['isDir'] ? '—' : h(formatSize($item['size'])) ?></td>
-                        <td class="date"><?= ($item['mtime'] !== null && $item['mtime'] > 0) ? date('Y-m-d H:i', $item['mtime']) : '—' ?></td>
+                        <td class="date"><?php
+                            $ts = $item['mtime'];
+                            if ($ts !== null && $ts > 0 && $ts < 2147483647) {
+                                echo htmlspecialchars(date('Y-m-d H:i', $ts), ENT_QUOTES, 'UTF-8');
+                            } else {
+                                echo '—';
+                            }
+                        ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
