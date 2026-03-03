@@ -153,10 +153,15 @@ if ($handle) {
             $linkTarget = null;
         }
         $stat = @stat($full);
-        $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
+        $mtime = null;
+        if ($stat !== false) {
+            $mtime = isset($stat['mtime']) ? (int) $stat['mtime'] : (isset($stat[9]) ? (int) $stat[9] : null);
+        }
         if ($mtime === null && $isLink && file_exists($full)) {
             $stat = @stat(realpath($full));
-            $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
+            if ($stat !== false) {
+                $mtime = isset($stat['mtime']) ? (int) $stat['mtime'] : (isset($stat[9]) ? (int) $stat[9] : null);
+            }
         }
         $isFile = is_file($full);
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
@@ -654,8 +659,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                         <td class="size"><?= $item['isDir'] ? '&#8212;' : h(formatSize($item['size'])) ?></td>
                         <td class="modified"><?php
                             $ts = isset($item['mtime']) ? $item['mtime'] : null;
-                            if ($ts !== null && $ts > 0 && $ts <= 2147483647) {
-                                echo h(date('Y-m-d H:i', $ts));
+                            if ($ts !== null && $ts >= 0 && $ts <= 2147483647) {
+                                echo h(date('Y-m-d H:i', (int) $ts));
                             } else {
                                 echo '&#8212;';
                             }
