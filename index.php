@@ -147,21 +147,18 @@ if ($handle) {
     while (($entry = readdir($handle)) !== false) {
         if ($entry === '.' || $entry === '..') continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
+        clearstatcache(false, $full);
         $isLink = is_link($full);
         $linkTarget = $isLink ? @readlink($full) : null;
         if ($linkTarget === false) {
             $linkTarget = null;
         }
-        $stat = @stat($full);
-        $mtime = null;
-        if ($stat !== false) {
-            $mtime = isset($stat['mtime']) ? (int) $stat['mtime'] : (isset($stat[9]) ? (int) $stat[9] : null);
-        }
-        if ($mtime === null && $isLink && file_exists($full)) {
-            $stat = @stat(realpath($full));
-            if ($stat !== false) {
-                $mtime = isset($stat['mtime']) ? (int) $stat['mtime'] : (isset($stat[9]) ? (int) $stat[9] : null);
-            }
+        $mtime = @filemtime($full);
+        if ($mtime === false) {
+            $stat = @stat($full);
+            $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : (($stat !== false && isset($stat[9])) ? (int) $stat[9] : null);
+        } else {
+            $mtime = (int) $mtime;
         }
         $isFile = is_file($full);
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
@@ -660,7 +657,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                         <td class="modified"><?php
                             $ts = isset($item['mtime']) ? $item['mtime'] : null;
                             if ($ts !== null && $ts >= 0 && $ts <= 2147483647) {
-                                echo h(date('Y-m-d H:i', (int) $ts));
+                                $formatted = @date('Y-m-d H:i', (int) $ts);
+                                echo $formatted !== false ? h($formatted) : '&#8212;';
                             } else {
                                 echo '&#8212;';
                             }
