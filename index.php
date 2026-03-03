@@ -5,6 +5,14 @@
  */
 
 $baseDir = __DIR__;
+// When used as the site root index (e.g. symlinked at /var/www/html/index.php), list document root
+if (!empty($_SERVER['DOCUMENT_ROOT'])) {
+    $docRoot = realpath($_SERVER['DOCUMENT_ROOT']);
+    $scriptDir = realpath($baseDir);
+    if ($docRoot && $scriptDir !== $docRoot && strpos($scriptDir, $docRoot . DIRECTORY_SEPARATOR) !== 0) {
+        $baseDir = $docRoot;
+    }
+}
 $realBase = realpath($baseDir);
 
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
