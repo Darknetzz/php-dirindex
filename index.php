@@ -198,6 +198,17 @@ function markdownToHtml($text) {
             $inList = false;
             continue;
         }
+        if (preg_match('/^[\-\*]\s+\[([ xX])\]\s+(.+)$/', $line, $m)) {
+            if (!$inList) {
+                $out .= "<ul>\n";
+                $inList = true;
+            }
+            $checked = (strtolower($m[1]) === 'x');
+            $out .= '<li class="task-list-item">'
+                . '<input type="checkbox" class="task-list-item-checkbox" disabled' . ($checked ? ' checked' : '') . '> '
+                . markdownInline($m[2], $h) . "</li>\n";
+            continue;
+        }
         if (preg_match('/^[\-\*]\s+(.+)$/', $line, $m)) {
             if (!$inList) {
                 $out .= "<ul>\n";
@@ -261,6 +272,8 @@ function renderMarkdownPage($md, $relativePath, $indexHref) {
     code { font-family: ui-monospace, monospace; font-size: 0.9em; }
     p code { background: var(--bg-card); padding: 0.2em 0.4em; border-radius: 4px; }
     ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
+    .task-list-item { list-style: none; margin-left: -1.5rem; }
+    .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; }
     ';
     return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($title) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="back"><a href="' . h($backUrl) . '">← Back to listing</a></div><div class="md">' . $body . '</div></div></body></html>';
 }
@@ -400,6 +413,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .modal-body .modal-md pre { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.75rem; margin: 0.5em 0; }
         .modal-body .modal-md p { margin: 0.5em 0; }
         .modal-body .modal-md ul, .modal-body .modal-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
+        .modal-body .modal-md .task-list-item { list-style: none; margin-left: -1.5rem; }
+        .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; }
         .listing .name.binary a { color: var(--text-muted); }
         .listing .name.binary a:hover { color: var(--accent); }
 
