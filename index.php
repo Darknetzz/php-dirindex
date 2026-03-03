@@ -36,10 +36,14 @@ $indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') 
 
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
+// Reject directory traversal; allow symlinked dirs (realpath may resolve outside realBase)
+if ($relativePath !== '' && strpos($relativePath, '..') !== false) {
+    $relativePath = '';
+}
 if ($relativePath !== '') {
     $currentPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
     $realCurrent = realpath($currentPath);
-    if ($realCurrent === false || !is_dir($realCurrent) || strpos($realCurrent, $realBase) !== 0) {
+    if ($realCurrent === false || !is_dir($currentPath)) {
         $currentPath = $baseDir;
         $relativePath = '';
     } else {
@@ -50,7 +54,8 @@ if ($relativePath !== '') {
 }
 
 $parentPath = dirname($currentPath);
-$hasParent = $relativePath !== '' && (strpos(realpath($parentPath), $realBase) === 0);
+// Has parent if we have a logical parent in the path (so ".." works even inside symlinked dirs)
+$hasParent = $relativePath !== '';
 
 $items = [];
 $handle = @opendir($currentPath);
