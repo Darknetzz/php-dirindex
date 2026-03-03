@@ -79,15 +79,18 @@ $parentPath = dirname($currentPath);
 $hasParent = $relativePath !== '';
 
 $items = [];
+clearstatcache(true);
 $handle = @opendir($currentPath);
 if ($handle) {
     while (($entry = readdir($handle)) !== false) {
         if ($entry === '.' || $entry === '..') continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
         $isLink = is_link($full);
-        $mtime = @filemtime($full);
-        if ($mtime === false) {
-            $mtime = $isLink && file_exists($full) ? @filemtime(realpath($full)) : null;
+        $stat = @stat($full);
+        $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
+        if ($mtime === null && $isLink && file_exists($full)) {
+            $stat = @stat(realpath($full));
+            $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
         }
         $items[] = [
             'name'   => $entry,
@@ -344,13 +347,13 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .modal-body pre { margin: 0; font-size: 0.85rem; }
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
 
-        .listing .size, .listing .date {
+        .listing .size, .listing .modified {
             color: var(--text-muted);
             font-size: 0.85rem;
         }
         .listing .size { text-align: right; }
-        .listing .col-date { min-width: 10rem; }
-        .listing td.date, .listing th.date { white-space: nowrap; }
+        .listing .col-modified { min-width: 10rem; }
+        .listing td.modified, .listing th.modified { white-space: nowrap; }
 
         .icon {
             width: 1.1em;
@@ -388,13 +391,13 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                 <colgroup>
                     <col class="col-name">
                     <col class="col-size">
-                    <col class="col-date">
+                    <col class="col-modified">
                 </colgroup>
                 <thead>
                     <tr>
                         <th scope="col">Name</th>
                         <th scope="col" class="size">Size</th>
-                        <th scope="col" class="date">Modified</th>
+                        <th scope="col" class="modified">Modified</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -406,8 +409,8 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                                 ..
                             </a>
                         </td>
-                        <td class="size">—</td>
-                        <td class="date">—</td>
+                        <td class="size">&#8212;</td>
+                        <td class="modified">&#8212;</td>
                     </tr>
                     <?php endif; ?>
 
@@ -442,13 +445,13 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                                 <?= h($item['name']) ?>
                             </a>
                         </td>
-                        <td class="size"><?= $item['isDir'] ? '—' : h(formatSize($item['size'])) ?></td>
-                        <td class="date"><?php
-                            $ts = $item['mtime'];
-                            if ($ts !== null && $ts > 0 && $ts < 2147483647) {
-                                echo htmlspecialchars(date('Y-m-d H:i', $ts), ENT_QUOTES, 'UTF-8');
+                        <td class="size"><?= $item['isDir'] ? '&#8212;' : h(formatSize($item['size'])) ?></td>
+                        <td class="modified"><?php
+                            $ts = isset($item['mtime']) ? $item['mtime'] : null;
+                            if ($ts !== null && $ts > 0 && $ts <= 2147483647) {
+                                echo h(date('Y-m-d H:i', $ts));
                             } else {
-                                echo '—';
+                                echo '&#8212;';
                             }
                         ?></td>
                     </tr>
