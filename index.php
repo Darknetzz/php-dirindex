@@ -40,8 +40,33 @@ $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
 if ($relativePath !== '' && strpos($relativePath, '..') !== false) {
     $relativePath = '';
 }
-// Allowed extensions for preview (modal) and content API
-$previewExts = ['md' => 'markdown', 'html' => 'markup', 'htm' => 'markup', 'js' => 'javascript', 'css' => 'css', 'mjs' => 'javascript'];
+// Text file extensions: open in modal. Value = highlight.js language (or 'plaintext').
+$textExts = [
+    'md' => 'markdown', 'markdown' => 'markdown',
+    'html' => 'markup', 'htm' => 'markup',
+    'js' => 'javascript', 'mjs' => 'javascript', 'cjs' => 'javascript',
+    'css' => 'css', 'scss' => 'scss', 'sass' => 'sass', 'less' => 'less',
+    'json' => 'json', 'xml' => 'xml', 'yaml' => 'yaml', 'yml' => 'yaml',
+    'php' => 'php', 'py' => 'python', 'rb' => 'ruby', 'sh' => 'bash', 'bash' => 'bash', 'zsh' => 'bash',
+    'sql' => 'sql', 'csv' => 'plaintext', 'txt' => 'plaintext', 'log' => 'plaintext',
+    'env' => 'plaintext', 'ini' => 'ini', 'cfg' => 'plaintext', 'conf' => 'plaintext',
+    'ts' => 'typescript', 'tsx' => 'typescript', 'jsx' => 'javascript',
+    'vue' => 'xml', 'rst' => 'rest',
+];
+$previewExts = $textExts; // used for content API and listing "previewable" check
+
+/**
+ * Heuristic: file is likely binary if it contains null bytes in the first chunk.
+ * Used for unknown/no extension so we can still offer modal for plain text files.
+ */
+function looksLikeBinary($absolutePath, $maxLen = 8192) {
+    if (!is_file($absolutePath) || filesize($absolutePath) === 0) return false;
+    $f = @fopen($absolutePath, 'rb');
+    if (!$f) return true; // assume binary if unreadable
+    $chunk = @fread($f, $maxLen);
+    fclose($f);
+    return $chunk === false || str_contains($chunk, "\0");
+}
 
 if ($relativePath !== '') {
     $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
@@ -55,12 +80,22 @@ if ($relativePath !== '') {
             exit;
         }
     }
-    if (is_file($requestedPath) && isset($_GET['content']) && isset($previewExts[$ext])) {
+    if (is_file($requestedPath) && isset($_GET['content'])) {
         $raw = @file_get_contents($requestedPath);
         if ($raw !== false) {
-            header('Content-Type: application/json; charset=UTF-8');
-            echo json_encode(['content' => $raw, 'lang' => $previewExts[$ext], 'name' => basename($relativePath)]);
-            exit;
+            $lang = isset($previewExts[$ext]) ? $previewExts[$ext] : 'plaintext';
+            if (!isset($previewExts[$ext]) && (looksLikeBinary($requestedPath) || filesize($requestedPath) > 512 * 1024)) {
+                $raw = false; // refuse to send likely binary or large unknown files
+            }
+            if ($raw !== false) {
+                header('Content-Type: application/json; charset=UTF-8');
+                $out = ['content' => $raw, 'lang' => $lang, 'name' => basename($relativePath)];
+                if ($ext === 'md' || $ext === 'markdown') {
+                    $out['html'] = markdownToHtml($raw);
+                }
+                echo json_encode($out);
+                exit;
+            }
         }
     }
     $realCurrent = realpath($requestedPath);
@@ -96,14 +131,19 @@ if ($handle) {
             $stat = @stat(realpath($full));
             $mtime = ($stat !== false && isset($stat['mtime'])) ? (int) $stat['mtime'] : null;
         }
+        $isFile = is_file($full);
+        $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
+        $isText = $isFile && (isset($previewExts[$ext]) || !looksLikeBinary($full));
         $items[] = [
             'name'       => $entry,
             'path'       => $relativePath ? $relativePath . '/' . $entry : $entry,
             'isDir'      => is_dir($full),
             'isLink'     => $isLink,
             'linkTarget' => $linkTarget,
-            'size'       => is_file($full) ? filesize($full) : null,
+            'size'       => $isFile ? filesize($full) : null,
             'mtime'      => $mtime,
+            'isText'     => $isText,
+            'ext'        => $ext,
         ];
     }
     closedir($handle);
@@ -351,6 +391,14 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
         .modal-body pre { margin: 0; font-size: 0.85rem; }
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
+        .modal-body .modal-md { display: none; }
+        .modal-body .modal-md.is-visible { display: block; }
+        .modal-body .modal-md h1,.modal-body .modal-md h2,.modal-body .modal-md h3 { margin-top: 1em; margin-bottom: 0.5em; }
+        .modal-body .modal-md pre { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.75rem; margin: 0.5em 0; }
+        .modal-body .modal-md p { margin: 0.5em 0; }
+        .modal-body .modal-md ul, .modal-body .modal-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
+        .listing .name.binary a { color: var(--text-muted); }
+        .listing .name.binary a:hover { color: var(--accent); }
 
         .listing .size, .listing .modified {
             color: var(--text-muted);
@@ -425,17 +473,15 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                             $url = $indexHref . '?path=' . rawurlencode($item['path']);
                             $linkAttrs = '';
                         } else {
-                            $ext = strtolower(pathinfo($item['name'], PATHINFO_EXTENSION));
-                            $isPreviewable = isset($previewExts[$ext]);
-                            if ($isPreviewable) {
+                            if (!empty($item['isText'])) {
                                 $url = $indexHref . '?path=' . rawurlencode($item['path']);
                                 $linkAttrs = ' class="file-preview" data-content-url="' . h($indexHref . '?path=' . rawurlencode($item['path']) . '&content=1') . '" data-name="' . h($item['name']) . '"';
                             } else {
                                 $url = '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
-                                $linkAttrs = ' target="_blank" rel="noopener noreferrer"';
+                                $linkAttrs = ' class="file-binary" title="Binary file (opens in new tab)" target="_blank" rel="noopener noreferrer"';
                             }
                         }
-                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink' : '');
+                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
                     ?>
                     <tr>
                         <td class="name <?= trim($nameClass) ?>">
@@ -477,32 +523,58 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <pre><code id="modal-code"></code></pre>
+                <div id="modal-md" class="modal-md" aria-hidden="true"></div>
+                <pre id="modal-pre"><code id="modal-code"></code></pre>
             </div>
         </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
     <script>
     (function() {
         var overlay = document.getElementById('file-modal');
         var titleEl = document.getElementById('modal-title');
         var codeEl = document.getElementById('modal-code');
+        var modalPre = document.getElementById('modal-pre');
+        var modalMd = document.getElementById('modal-md');
         var closeBtn = document.getElementById('modal-close');
 
         function closeModal() {
             overlay.classList.remove('is-open');
             overlay.setAttribute('aria-hidden', 'true');
+            modalMd.innerHTML = '';
+            modalMd.classList.remove('is-visible');
+            modalMd.setAttribute('aria-hidden', 'true');
+            modalPre.style.display = '';
         }
-        function openModal(name, content, lang) {
+        function openModal(name, content, lang, html) {
             titleEl.textContent = name;
-            codeEl.textContent = content;
-            codeEl.className = 'language-' + (lang === 'markup' ? 'html' : lang);
-            codeEl.parentElement.classList.add('hljs');
+            if (html) {
+                modalMd.innerHTML = html;
+                modalMd.classList.add('is-visible');
+                modalMd.setAttribute('aria-hidden', 'false');
+                modalPre.style.display = 'none';
+            } else {
+                modalMd.classList.remove('is-visible');
+                modalMd.setAttribute('aria-hidden', 'true');
+                modalPre.style.display = '';
+                codeEl.textContent = content;
+                codeEl.className = 'language-' + (lang === 'markup' ? 'html' : lang);
+                codeEl.parentElement.classList.add('hljs');
+                hljs.highlightElement(codeEl);
+            }
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
-            hljs.highlightElement(codeEl);
         }
 
         document.addEventListener('click', function(e) {
@@ -513,7 +585,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             var name = a.getAttribute('data-name') || '';
             if (!url) return;
             fetch(url).then(function(r) { return r.json(); }).then(function(data) {
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext');
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null);
             }).catch(function() {
                 window.location.href = a.href;
             });
