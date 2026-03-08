@@ -21,7 +21,7 @@ return [
      * If blacklist is non-empty and client IP matches any entry → 403.
      * If whitelist is non-empty and client IP does not match any entry → 403.
      */
-    'ip_whitelist' => ["127.0.0.1", "::1", "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"],
+    'ip_whitelist' => [],
     # 'ip_whitelist' => ['127.0.0.1', '::1', '192.168.0.0/16'],
 
     'ip_blacklist' => [],
