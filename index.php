@@ -39,6 +39,46 @@ if ($realBase === false) {
 }
 
 /**
+ * Check if an IP matches a single entry (exact address or CIDR, e.g. 192.168.1.0/24).
+ */
+function ipMatchesEntry($ip, $entry) {
+    $entry = trim((string) $entry);
+    if ($entry === '') return false;
+    $ipBin = @inet_pton($ip);
+    if ($ipBin === false) return false;
+    $ipLen = strlen($ipBin);
+    if (strpos($entry, '/') !== false) {
+        $parts = explode('/', $entry, 2);
+        $network = trim($parts[0]);
+        $prefix = (int) $parts[1];
+        $netBin = @inet_pton($network);
+        if ($netBin === false || strlen($netBin) !== $ipLen || $prefix < 0 || $prefix > ($ipLen * 8)) return false;
+        $fullBytes = (int) ($prefix / 8);
+        $bits = $prefix % 8;
+        for ($i = 0; $i < $fullBytes; $i++) {
+            if ($ipBin[$i] !== $netBin[$i]) return false;
+        }
+        if ($bits > 0 && $fullBytes < $ipLen) {
+            $mask = chr(0xFF << (8 - $bits));
+            if ((ord($ipBin[$fullBytes]) & ord($mask)) !== (ord($netBin[$fullBytes]) & ord($mask))) return false;
+        }
+        return true;
+    }
+    $entryBin = @inet_pton($entry);
+    return $entryBin !== false && $ipBin === $entryBin;
+}
+
+/**
+ * Check if IP matches any entry in a list (each entry: exact IP or CIDR).
+ */
+function ipMatchesList($ip, array $list) {
+    foreach ($list as $entry) {
+        if (ipMatchesEntry($ip, $entry)) return true;
+    }
+    return false;
+}
+
+/**
  * Ensure a resolved path is under the base directory (prevents symlink escape).
  */
 function pathUnderBase($resolved, $realBase) {
@@ -55,6 +95,8 @@ $indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') 
 $dirindexConfig = [
     'show_symlinks'             => true,
     'allow_open_symlinks_outside' => false,
+    'ip_whitelist'              => [],
+    'ip_blacklist'              => [],
 ];
 $configFile = __DIR__ . DIRECTORY_SEPARATOR . 'config.php';
 if (is_file($configFile) && is_readable($configFile)) {
@@ -64,6 +106,20 @@ if (is_file($configFile) && is_readable($configFile)) {
     $dirindexConfig = array_merge($dirindexConfig, $userConfig);
 }
 $allowOutside = !empty($dirindexConfig['allow_open_symlinks_outside']);
+
+// IP access check (whitelist / blacklist with CIDR support)
+$clientIp = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+if (isset($dirindexConfig['ip_header']) && $dirindexConfig['ip_header'] !== '' && !empty($_SERVER[$dirindexConfig['ip_header']])) {
+    $forwarded = $_SERVER[$dirindexConfig['ip_header']];
+    $clientIp = trim(strpos($forwarded, ',') !== false ? strstr($forwarded, ',', true) : $forwarded);
+}
+$ipBlacklist = isset($dirindexConfig['ip_blacklist']) && is_array($dirindexConfig['ip_blacklist']) ? $dirindexConfig['ip_blacklist'] : [];
+$ipWhitelist = isset($dirindexConfig['ip_whitelist']) && is_array($dirindexConfig['ip_whitelist']) ? $dirindexConfig['ip_whitelist'] : [];
+if ($clientIp !== '' && (ipMatchesList($clientIp, $ipBlacklist) || ($ipWhitelist !== [] && !ipMatchesList($clientIp, $ipWhitelist)))) {
+    header('HTTP/1.1 403 Forbidden');
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Access denied.');
+}
 
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
