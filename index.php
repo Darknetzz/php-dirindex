@@ -51,6 +51,20 @@ function pathUnderBase($resolved, $realBase) {
 // Base URL for links (absolute path so ?path= links work regardless of rewrites)
 $indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') ? $_SERVER['SCRIPT_NAME'] : '/index.php';
 
+// Optional config: create config.php in the same folder as this script, return an array (see README).
+$dirindexConfig = [
+    'show_symlinks'             => true,
+    'allow_open_symlinks_outside' => false,
+];
+$configFile = __DIR__ . DIRECTORY_SEPARATOR . 'config.php';
+if (is_file($configFile) && is_readable($configFile)) {
+    $userConfig = (function () use ($configFile) {
+        return (array) include $configFile;
+    })();
+    $dirindexConfig = array_merge($dirindexConfig, $userConfig);
+}
+$allowOutside = !empty($dirindexConfig['allow_open_symlinks_outside']);
+
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
 // Reject directory traversal and null bytes
@@ -91,7 +105,7 @@ if ($relativePath !== '') {
     $requestedReal = realpath($requestedPath);
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
     $isMdFullPage = ($ext === 'md' && !isset($_GET['content']));
-    if (is_file($requestedPath) && $isMdFullPage && pathUnderBase($requestedReal, $realBase)) {
+    if (is_file($requestedPath) && $isMdFullPage && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $md = @file_get_contents($requestedPath);
         if ($md !== false) {
             header('Content-Type: text/html; charset=UTF-8');
@@ -99,7 +113,7 @@ if ($relativePath !== '') {
             exit;
         }
     }
-    if (is_file($requestedPath) && isset($_GET['content']) && pathUnderBase($requestedReal, $realBase)) {
+    if (is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $raw = @file_get_contents($requestedPath);
         if ($raw !== false) {
             $lang = $previewExts[$ext] ?? 'plaintext';
@@ -117,12 +131,13 @@ if ($relativePath !== '') {
             }
         }
     }
-    if (is_file($requestedPath) && ($isMdFullPage || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
+    if (!$allowOutside && is_file($requestedPath) && ($isMdFullPage || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
         $blockedMessage = 'That link points outside the index and cannot be opened.';
     }
     $realCurrent = realpath($requestedPath);
-    if ($realCurrent === false || !is_dir($requestedPath) || !pathUnderBase($realCurrent, $realBase)) {
-        if (!$blockedMessage && is_dir($requestedPath) && $realCurrent !== false && !pathUnderBase($realCurrent, $realBase)) {
+    $dirAllowed = $realCurrent !== false && is_dir($requestedPath) && (pathUnderBase($realCurrent, $realBase) || $allowOutside);
+    if (!$dirAllowed) {
+        if (!$allowOutside && !$blockedMessage && is_dir($requestedPath) && $realCurrent !== false && !pathUnderBase($realCurrent, $realBase)) {
             $blockedMessage = 'That link points outside the index and cannot be opened.';
         }
         $currentPath = $baseDir;
@@ -160,6 +175,9 @@ if ($handle) {
         } else {
             $mtime = (int) $mtime;
         }
+        if (empty($dirindexConfig['show_symlinks']) && $isLink) {
+            continue;
+        }
         $isFile = is_file($full);
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
         $isText = $isFile && (isset($previewExts[$ext]) || !looksLikeBinary($full));
@@ -191,7 +209,7 @@ if (isset($_GET['open']) && $_GET['open'] !== '') {
         $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
         $openAbsPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $openFilePath);
         $openReal = realpath($openAbsPath);
-        if ($openReal !== false && is_file($openReal) && pathUnderBase($openReal, $realBase)) {
+        if ($openReal !== false && is_file($openReal) && (pathUnderBase($openReal, $realBase) || $allowOutside)) {
             $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
             $isText = isset($previewExts[$openExt]) || !looksLikeBinary($openReal);
             if ($isText) {
@@ -205,7 +223,7 @@ if (isset($_GET['open']) && $_GET['open'] !== '') {
                         : '/' . ($openDir !== '.' ? $openDir . '/' : '') . rawurlencode($openName),
                 ];
             }
-        } elseif (!$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
+        } elseif (!$allowOutside && !$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
             $blockedMessage = 'That link points outside the index and cannot be opened.';
         }
     }

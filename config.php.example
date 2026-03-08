@@ -1,0 +1,14 @@
+<?php
+/**
+ * Optional config for PHP Directory Index.
+ * Copy to config.php (in the same folder as index.php) and adjust as needed.
+ * Only keys you override need to be present.
+ */
+return [
+    // Show symlinks in the listing (default: true)
+    'show_symlinks' => true,
+
+    // Allow opening/navigating into symlinks that point outside the index base (default: false).
+    // When false, such links are blocked and a message is shown.
+    'allow_open_symlinks_outside' => false,
+];
