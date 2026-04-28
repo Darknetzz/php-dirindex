@@ -263,6 +263,7 @@ if (is_file($configFile) && is_readable($configFile)) {
     })();
     $dirindexConfig = array_merge($dirindexConfig, $userConfig);
 }
+$configFileReal = realpath($configFile);
 $dirindexStorage = [];
 $storedConfig = loadDirindexStoredConfig(__DIR__, $dirindexStorage);
 if ($storedConfig) {
@@ -496,6 +497,7 @@ if ($handle) {
         if ($entry === '.' || $entry === '..') continue;
         if ($entry === '.dirindex.sqlite' || str_starts_with($entry, '.dirindex.sqlite-')) continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
+        if ($configFileReal !== false && realpath($full) === $configFileReal) continue;
         clearstatcache(false, $full);
         $isLink = is_link($full);
         $linkTarget = $isLink ? @readlink($full) : null;
