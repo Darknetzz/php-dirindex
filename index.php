@@ -880,6 +880,37 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         .listing .name.symlink a { color: var(--accent-dim); }
         .listing .name.symlink a:hover { color: var(--accent); }
         .listing .name a.file-preview { cursor: pointer; }
+        .name-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+        .entry-open-new {
+            width: 1.75rem;
+            height: 1.75rem;
+            flex: 0 0 auto;
+            justify-content: center;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text-muted) !important;
+            background: transparent;
+            opacity: 0;
+            transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .listing tr:hover .entry-open-new,
+        .entry-open-new:focus-visible {
+            opacity: 1;
+        }
+        .entry-open-new:hover {
+            color: var(--accent) !important;
+            border-color: var(--accent-dim);
+            background: var(--bg);
+        }
+        .entry-open-new .icon {
+            width: 0.95rem;
+            height: 0.95rem;
+        }
 
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .modal-overlay.is-open { display: flex; }
@@ -1345,10 +1376,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                     <?php if ($hasParent): $parentRel = dirname($relativePath); $parentRel = ($parentRel === '.' || $parentRel === '') ? '' : $parentRel; ?>
                     <tr>
                         <td class="name dir">
-                            <a href="<?= h($indexHref) ?><?= $parentRel !== '' ? '?path=' . h(rawurlencode($parentRel)) : '' ?>">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                                ..
-                            </a>
+                            <?php $parentUrl = $indexHref . ($parentRel !== '' ? '?path=' . rawurlencode($parentRel) : ''); ?>
+                            <div class="name-content">
+                                <a href="<?= h($parentUrl) ?>">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                    ..
+                                </a>
+                                <a class="entry-open-new" href="<?= h($parentUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open parent directory in new tab" title="Open in new tab">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                                </a>
+                            </div>
                         </td>
                         <td class="size">&#8212;</td>
                         <td class="modified">&#8212;</td>
@@ -1376,16 +1413,23 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                     ?>
                     <tr>
                         <td class="name <?= trim($nameClass) ?>">
-                            <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
-                                <?php if ($item['isLink']): ?>
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                                <?php elseif ($item['isDir']): ?>
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                                <?php else: ?>
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            <div class="name-content">
+                                <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
+                                    <?php if ($item['isLink']): ?>
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                                    <?php elseif ($item['isDir']): ?>
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                    <?php else: ?>
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    <?php endif; ?>
+                                    <?= h($item['name']) ?>
+                                </a>
+                                <?php if ($item['isDir']): ?>
+                                <a class="entry-open-new" href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                                </a>
                                 <?php endif; ?>
-                                <?= h($item['name']) ?>
-                            </a>
+                            </div>
                         </td>
                         <td class="size"><?= $item['isDir'] ? '&#8212;' : h(formatSize($item['size'])) ?></td>
                         <td class="modified"><?php
