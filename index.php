@@ -440,6 +440,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirectToCurrentListing($indexHref, $relativePath, 'logout_ok');
     }
 
+    if ($action === 'settings') {
+        if (!$hasUploadCredentials || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        }
+        $maxBytes = trim((string) ($_POST['upload_max_bytes'] ?? ''));
+        $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
+        $saveError = null;
+        $saved = saveDirindexStoredConfig(__DIR__, $configFile, [
+            'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
+            'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
+            'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
+            'upload_max_bytes' => (string) $maxBytesInt,
+        ], $saveError);
+        redirectToCurrentListing($indexHref, $relativePath, $saved ? 'settings_saved' : 'settings_write_failed');
+    }
+
+    if ($action === 'account') {
+        if (!$hasUploadCredentials || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        }
+        $username = trim((string) ($_POST['username'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $confirm = (string) ($_POST['password_confirm'] ?? '');
+        if ($username === '') {
+            redirectToCurrentListing($indexHref, $relativePath, 'account_missing');
+        }
+        if ($password !== '' || $confirm !== '') {
+            if (!hash_equals($password, $confirm)) {
+                redirectToCurrentListing($indexHref, $relativePath, 'account_mismatch');
+            }
+            if (strlen($password) < 8) {
+                redirectToCurrentListing($indexHref, $relativePath, 'account_short_password');
+            }
+        }
+        $settings = ['auth_username' => $username];
+        if ($password !== '') {
+            $settings['auth_password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+        }
+        $saveError = null;
+        $saved = saveDirindexStoredConfig(__DIR__, $configFile, $settings, $saveError);
+        redirectToCurrentListing($indexHref, $relativePath, $saved ? 'account_saved' : 'settings_write_failed');
+    }
+
     if ($action === 'upload') {
         if (!$uploadEnabled || !$authenticated) {
             redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
@@ -538,7 +581,11 @@ usort($items, function ($a, $b) {
 });
 
 $messageMap = [
-    'auth_required' => ['error', 'Please sign in before uploading.'],
+    'account_mismatch' => ['error', 'The account passwords did not match.'],
+    'account_missing' => ['error', 'Enter an admin username.'],
+    'account_saved' => ['success', 'Admin account updated.'],
+    'account_short_password' => ['error', 'Use a password with at least 8 characters.'],
+    'auth_required' => ['error', 'Please sign in first.'],
     'bad_action' => ['error', 'Unknown action.'],
     'csrf_failed' => ['error', 'Security check failed. Please try again.'],
     'login_failed' => ['error', 'Invalid username or password.'],
@@ -551,6 +598,8 @@ $messageMap = [
     'setup_saved' => ['success', 'Upload authentication is set up and you are signed in.'],
     'setup_short_password' => ['error', 'Use a password with at least 8 characters.'],
     'setup_write_failed' => ['error', 'Could not save upload settings. Check file permissions.'],
+    'settings_saved' => ['success', 'Settings saved.'],
+    'settings_write_failed' => ['error', 'Could not save settings. Check file permissions.'],
     'upload_bad_name' => ['error', 'Upload filename is not allowed.'],
     'upload_exists' => ['error', 'A file with that name already exists. Confirm overwrite and try again.'],
     'upload_failed' => ['error', 'Upload failed.'],
@@ -960,7 +1009,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
-        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 380px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; }
@@ -1064,6 +1113,91 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         .btn-auth-secondary:hover {
             color: var(--text);
             background: var(--hover);
+        }
+        .admin-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .admin-bar h2 {
+            margin-bottom: 0.25rem;
+        }
+        .admin-bar-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .upload-panel {
+            display: none;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .upload-panel.is-open {
+            display: block;
+        }
+        .settings-section {
+            padding: 1rem 0;
+            border-top: 1px solid var(--border);
+        }
+        .settings-section:first-child {
+            padding-top: 0;
+            border-top: none;
+        }
+        .settings-section h3 {
+            margin: 0 0 0.75rem;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+        .settings-form {
+            display: grid;
+            gap: 0.8rem;
+        }
+        .settings-field {
+            display: grid;
+            gap: 0.3rem;
+        }
+        .settings-field label,
+        .settings-check-row span {
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+        .settings-field input {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--text);
+            padding: 0.55rem 0.65rem;
+            font: inherit;
+        }
+        .settings-help {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+        .settings-check-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.55rem;
+        }
+        .settings-check-row input {
+            margin-top: 0.2rem;
+            accent-color: var(--accent-dim);
+        }
+        .settings-form .btn-auth {
+            justify-self: start;
+        }
+        @media (max-width: 640px) {
+            .admin-bar {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .admin-bar-actions {
+                justify-content: flex-start;
+            }
         }
         body.setup-mode {
             background:
@@ -1316,9 +1450,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         </div>
         <?php endif; ?>
 
-        <?php if ($uploadEnabled && !$authenticated): ?>
+        <?php if ($hasUploadCredentials && !$authenticated): ?>
         <section class="auth-panel" aria-labelledby="login-title">
-            <h2 id="login-title">Upload login</h2>
+            <h2 id="login-title">Admin login</h2>
             <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
                 <input type="hidden" name="action" value="login">
                 <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
@@ -1335,26 +1469,40 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                 </div>
             </form>
         </section>
-        <?php elseif ($uploadEnabled && $authenticated): ?>
+        <?php elseif ($hasUploadCredentials && $authenticated): ?>
         <section class="auth-panel" aria-labelledby="upload-title">
-            <h2 id="upload-title">Upload to /<?= h($relativePath ?: '') ?></h2>
-            <form class="auth-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>">
-                <input type="hidden" name="action" value="upload">
-                <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                <input type="hidden" name="overwrite" id="upload-overwrite" value="">
-                <div class="auth-field">
-                    <label for="upload-file">File</label>
-                    <input type="file" id="upload-file" name="upload_file" required>
+            <div class="admin-bar">
+                <div>
+                    <h2 id="upload-title">Admin tools</h2>
+                    <p>Signed in as <?= h($dirindexConfig['auth_username']) ?>. Uploads are <?= $uploadEnabled ? 'enabled' : 'disabled' ?>.</p>
                 </div>
-                <div class="auth-actions">
-                    <button type="submit" class="btn-auth">Upload</button>
+                <div class="admin-bar-actions">
+                    <?php if ($uploadEnabled): ?>
+                    <button type="button" class="btn-auth" id="btn-upload-toggle" aria-expanded="false" aria-controls="upload-panel">Upload file</button>
+                    <?php endif; ?>
+                    <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                        <input type="hidden" name="action" value="logout">
+                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                        <button type="submit" class="btn-auth btn-auth-secondary">Sign out</button>
+                    </form>
                 </div>
-            </form>
-            <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" style="margin-top: 0.65rem;">
-                <input type="hidden" name="action" value="logout">
-                <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                <button type="submit" class="btn-auth btn-auth-secondary">Sign out</button>
-            </form>
+            </div>
+            <?php if ($uploadEnabled): ?>
+            <div class="upload-panel" id="upload-panel">
+                <form class="auth-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>">
+                    <input type="hidden" name="action" value="upload">
+                    <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                    <input type="hidden" name="overwrite" id="upload-overwrite" value="">
+                    <div class="auth-field">
+                        <label for="upload-file">File</label>
+                        <input type="file" id="upload-file" name="upload_file" required>
+                    </div>
+                    <div class="auth-actions">
+                        <button type="submit" class="btn-auth">Upload to /<?= h($relativePath ?: '') ?></button>
+                    </div>
+                </form>
+            </div>
+            <?php endif; ?>
         </section>
         <?php endif; ?>
 
@@ -1475,21 +1623,74 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                 <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="settings-row">
-                    <label for="setting-theme">Light mode</label>
-                    <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
-                    <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
-                </div>
-                <div class="settings-row">
-                    <label for="setting-font">Large text</label>
-                    <input type="checkbox" id="setting-font" class="settings-check">
-                    <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
-                </div>
-                <div class="settings-row">
-                    <label for="setting-breadcrumb">Slash in breadcrumbs</label>
-                    <input type="checkbox" id="setting-breadcrumb" class="settings-check">
-                    <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
-                </div>
+                <section class="settings-section" aria-labelledby="display-settings-title">
+                    <h3 id="display-settings-title">Display</h3>
+                    <div class="settings-row">
+                        <label for="setting-theme">Light mode</label>
+                        <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
+                        <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
+                    </div>
+                    <div class="settings-row">
+                        <label for="setting-font">Large text</label>
+                        <input type="checkbox" id="setting-font" class="settings-check">
+                        <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
+                    </div>
+                    <div class="settings-row">
+                        <label for="setting-breadcrumb">Slash in breadcrumbs</label>
+                        <input type="checkbox" id="setting-breadcrumb" class="settings-check">
+                        <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
+                    </div>
+                </section>
+
+                <?php if ($authenticated): ?>
+                <section class="settings-section" aria-labelledby="server-settings-title">
+                    <h3 id="server-settings-title">Server settings</h3>
+                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                        <input type="hidden" name="action" value="settings">
+                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                        <label class="settings-check-row">
+                            <input type="checkbox" name="upload_enabled" value="1" <?= $uploadEnabled ? 'checked' : '' ?>>
+                            <span>Enable uploads</span>
+                        </label>
+                        <label class="settings-check-row">
+                            <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
+                            <span>Show symlinks in listings</span>
+                        </label>
+                        <label class="settings-check-row">
+                            <input type="checkbox" name="allow_open_symlinks_outside" value="1" <?= !empty($dirindexConfig['allow_open_symlinks_outside']) ? 'checked' : '' ?>>
+                            <span>Allow opening symlinks outside the listing root</span>
+                        </label>
+                        <div class="settings-field">
+                            <label for="admin-upload-max">Upload limit in bytes</label>
+                            <input type="number" id="admin-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" value="<?= h((string) ((int) ($dirindexConfig['upload_max_bytes'] ?? 0))) ?>">
+                            <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
+                        </div>
+                        <button type="submit" class="btn-auth">Save server settings</button>
+                    </form>
+                </section>
+
+                <section class="settings-section" aria-labelledby="account-settings-title">
+                    <h3 id="account-settings-title">Admin account</h3>
+                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                        <input type="hidden" name="action" value="account">
+                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                        <div class="settings-field">
+                            <label for="admin-username">Username</label>
+                            <input type="text" id="admin-username" name="username" autocomplete="username" value="<?= h((string) $dirindexConfig['auth_username']) ?>" required>
+                        </div>
+                        <div class="settings-field">
+                            <label for="admin-password">New password</label>
+                            <input type="password" id="admin-password" name="password" autocomplete="new-password" minlength="8">
+                            <span class="settings-help">Leave blank to keep the current password.</span>
+                        </div>
+                        <div class="settings-field">
+                            <label for="admin-password-confirm">Confirm new password</label>
+                            <input type="password" id="admin-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8">
+                        </div>
+                        <button type="submit" class="btn-auth">Save account</button>
+                    </form>
+                </section>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -1506,6 +1707,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
     <script>
+    (function() {
+        var toggle = document.getElementById('btn-upload-toggle');
+        var panel = document.getElementById('upload-panel');
+        if (!toggle || !panel) return;
+        toggle.addEventListener('click', function() {
+            var isOpen = panel.classList.toggle('is-open');
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            toggle.textContent = isOpen ? 'Hide upload' : 'Upload file';
+        });
+    })();
+
     (function() {
         var uploadForm = document.getElementById('upload-form');
         if (!uploadForm) return;
