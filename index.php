@@ -270,6 +270,14 @@ if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
 }
 $allowOutside = !empty($dirindexConfig['allow_open_symlinks_outside']);
+$hasUploadCredentials = hasUploadCredentials($dirindexConfig);
+$setupNeeded = !$hasUploadCredentials;
+$uploadEnabled = isUploadEnabled($dirindexConfig);
+$sessionNeeded = $setupNeeded || $hasUploadCredentials || $_SERVER['REQUEST_METHOD'] === 'POST';
+if ($sessionNeeded) {
+    startDirindexSession((string) $dirindexConfig['session_name']);
+}
+$authenticated = $sessionNeeded ? isAuthenticated() : false;
 
 // IP access check (whitelist / blacklist with CIDR support)
 $clientIp = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
@@ -325,7 +333,7 @@ if ($relativePath !== '') {
     $requestedReal = realpath($requestedPath);
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
     $isMdFullPage = ($ext === 'md' && !isset($_GET['content']));
-    if (is_file($requestedPath) && $isMdFullPage && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+    if (!$setupNeeded && is_file($requestedPath) && $isMdFullPage && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $md = @file_get_contents($requestedPath);
         if ($md !== false) {
             header('Content-Type: text/html; charset=UTF-8');
@@ -333,7 +341,7 @@ if ($relativePath !== '') {
             exit;
         }
     }
-    if (is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+    if (!$setupNeeded && is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $raw = @file_get_contents($requestedPath);
         if ($raw !== false) {
             $lang = $previewExts[$ext] ?? 'plaintext';
@@ -370,15 +378,6 @@ if ($relativePath !== '') {
     $currentPath = $baseDir;
     $blockedMessage = null;
 }
-
-$hasUploadCredentials = hasUploadCredentials($dirindexConfig);
-$setupNeeded = !$hasUploadCredentials;
-$uploadEnabled = isUploadEnabled($dirindexConfig);
-$sessionNeeded = $setupNeeded || $hasUploadCredentials || $_SERVER['REQUEST_METHOD'] === 'POST';
-if ($sessionNeeded) {
-    startDirindexSession((string) $dirindexConfig['session_name']);
-}
-$authenticated = $sessionNeeded ? isAuthenticated() : false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
@@ -487,11 +486,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $parentPath = dirname($currentPath);
 // Has parent if we have a logical parent in the path (so ".." works even inside symlinked dirs)
-$hasParent = $relativePath !== '';
+$showListing = !$setupNeeded;
+$hasParent = $showListing && $relativePath !== '';
 
 $items = [];
 clearstatcache(true);
-$handle = @opendir($currentPath);
+$handle = $showListing ? @opendir($currentPath) : false;
 if ($handle) {
     while (($entry = readdir($handle)) !== false) {
         if ($entry === '.' || $entry === '..') continue;
@@ -573,7 +573,7 @@ foreach ($items as $item) {
 
 // Optional ?open=filename to open file in modal on load (shareable URL)
 $openFileForModal = null;
-if (isset($_GET['open']) && $_GET['open'] !== '') {
+if (!$setupNeeded && isset($_GET['open']) && $_GET['open'] !== '') {
     $openParam = trim((string) $_GET['open'], '/');
     if ($openParam !== '' && strpos($openParam, '..') === false && !str_contains($openParam, "\0")) {
         $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
@@ -730,7 +730,7 @@ function renderMarkdownPage($md, $relativePath, $indexHref) {
     return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($title) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="back"><a href="' . h($backUrl) . '">← Back to listing</a></div><div class="md">' . $body . '</div></div></body></html>';
 }
 
-$title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
+$title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index of /' . h($relativePath) : 'Index of /');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1034,9 +1034,224 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
             color: var(--text);
             background: var(--hover);
         }
+        body.setup-mode {
+            background:
+                radial-gradient(circle at top left, rgba(124, 58, 237, 0.22), transparent 28rem),
+                radial-gradient(circle at bottom right, rgba(103, 232, 249, 0.12), transparent 26rem),
+                var(--bg);
+        }
+        .setup-page {
+            width: min(1120px, 100%);
+            min-height: 100vh;
+            margin: 0 auto;
+            padding: clamp(1.5rem, 4vw, 4rem);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+            gap: clamp(1.5rem, 5vw, 4rem);
+            align-items: center;
+        }
+        .setup-hero {
+            max-width: 600px;
+        }
+        .setup-kicker {
+            margin: 0 0 0.85rem;
+            color: var(--accent);
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+        }
+        .setup-hero h1 {
+            margin: 0;
+            color: var(--text);
+            font-family: 'Outfit', system-ui, sans-serif;
+            font-size: clamp(2.15rem, 5vw, 4.25rem);
+            line-height: 1;
+            letter-spacing: -0.045em;
+            word-break: normal;
+        }
+        .setup-lede {
+            margin: 1.25rem 0 0;
+            max-width: 38rem;
+            color: var(--text-muted);
+            font-size: clamp(1rem, 2vw, 1.2rem);
+        }
+        .setup-benefits {
+            display: grid;
+            gap: 0.9rem;
+            margin-top: 2rem;
+        }
+        .setup-benefit {
+            display: flex;
+            gap: 0.85rem;
+            align-items: flex-start;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+        }
+        .setup-benefit-icon {
+            width: 2rem;
+            height: 2rem;
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: rgba(124, 58, 237, 0.18);
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+        .setup-benefit strong {
+            display: block;
+            margin-bottom: 0.15rem;
+            color: var(--text);
+        }
+        .setup-benefit span {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .setup-card {
+            padding: clamp(1.25rem, 3vw, 2rem);
+            background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+        }
+        .setup-card h2 {
+            margin: 0;
+            color: var(--text);
+            font-size: 1.35rem;
+        }
+        .setup-card p {
+            margin: 0.5rem 0 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+        .setup-card .blocked-msg {
+            margin: 1rem 0 0;
+        }
+        .setup-form {
+            display: grid;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        .setup-form .auth-field {
+            min-width: 0;
+            flex: none;
+        }
+        .setup-form .auth-field input {
+            padding: 0.72rem 0.8rem;
+        }
+        .field-help {
+            margin-top: 0.1rem;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+        .setup-actions {
+            display: grid;
+            gap: 0.75rem;
+            margin-top: 0.35rem;
+        }
+        .setup-actions .btn-auth {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+        }
+        .setup-storage-note {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-align: center;
+        }
+        @supports not (background: color-mix(in srgb, black, white)) {
+            .setup-benefit,
+            .setup-card {
+                background: var(--bg-card);
+            }
+        }
+        @media (max-width: 820px) {
+            .setup-page {
+                grid-template-columns: 1fr;
+                align-items: start;
+            }
+            .setup-hero {
+                max-width: none;
+            }
+        }
     </style>
 </head>
-<body<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?>>
+    <?php if ($setupNeeded): ?>
+    <main class="setup-page">
+        <section class="setup-hero" aria-labelledby="setup-title">
+            <p class="setup-kicker">First run setup</p>
+            <h1 id="setup-title">Finish securing this directory index.</h1>
+            <p class="setup-lede">Create the admin account used for uploads before the file browser is exposed. Until setup is complete, directory contents stay hidden.</p>
+            <div class="setup-benefits" aria-label="Setup details">
+                <div class="setup-benefit">
+                    <span class="setup-benefit-icon">1</span>
+                    <div>
+                        <strong>Create upload credentials</strong>
+                        <span>Use a dedicated username and a password with at least 8 characters.</span>
+                    </div>
+                </div>
+                <div class="setup-benefit">
+                    <span class="setup-benefit-icon">2</span>
+                    <div>
+                        <strong>Choose an upload limit</strong>
+                        <span>Leave the limit at 0 to use your PHP server defaults, or set a byte limit for this app.</span>
+                    </div>
+                </div>
+                <div class="setup-benefit">
+                    <span class="setup-benefit-icon">3</span>
+                    <div>
+                        <strong>Start browsing</strong>
+                        <span>After saving, you will be signed in and returned to the directory listing.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="setup-card" aria-label="Setup form">
+            <h2>Set up uploads</h2>
+            <p>These settings will be saved locally in <?= h($dirindexStorage['type'] === 'sqlite' ? basename($dirindexStorage['path']) : 'config.php') ?>.</p>
+            <?php if ($statusMessage): ?>
+            <div class="blocked-msg message-<?= h($statusMessage[0]) ?>" role="status">
+                <?= h($statusMessage[1]) ?>
+            </div>
+            <?php endif; ?>
+            <form class="setup-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                <input type="hidden" name="action" value="setup">
+                <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                <div class="auth-field">
+                    <label for="setup-username">Admin username</label>
+                    <input type="text" id="setup-username" name="username" autocomplete="username" placeholder="admin" required>
+                    <span class="field-help">This account is only for upload access in this directory index.</span>
+                </div>
+                <div class="auth-field">
+                    <label for="setup-password">Password</label>
+                    <input type="password" id="setup-password" name="password" autocomplete="new-password" minlength="8" required>
+                    <span class="field-help">Use at least 8 characters. Longer passphrases are better.</span>
+                </div>
+                <div class="auth-field">
+                    <label for="setup-password-confirm">Confirm password</label>
+                    <input type="password" id="setup-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8" required>
+                    <span class="field-help">Re-enter the password to catch typos before saving.</span>
+                </div>
+                <div class="auth-field">
+                    <label for="setup-upload-max">Upload limit in bytes</label>
+                    <input type="number" id="setup-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" placeholder="0">
+                    <span class="field-help">Optional. Use 0 for your PHP configuration default.</span>
+                </div>
+                <div class="setup-actions">
+                    <button type="submit" class="btn-auth">Save setup and continue</button>
+                    <span class="setup-storage-note">Passwords are stored as hashes, not plain text.</span>
+                </div>
+            </form>
+        </section>
+    </main>
+    <?php else: ?>
     <div class="page">
         <header>
             <div class="header-main">
@@ -1070,35 +1285,7 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         </div>
         <?php endif; ?>
 
-        <?php if ($setupNeeded): ?>
-        <section class="auth-panel" aria-labelledby="setup-title">
-            <h2 id="setup-title">Set up uploads</h2>
-            <p>Create the upload admin account. Settings will be stored in <?= h($dirindexStorage['type'] === 'sqlite' ? basename($dirindexStorage['path']) : 'config.php') ?>.</p>
-            <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
-                <input type="hidden" name="action" value="setup">
-                <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                <div class="auth-field">
-                    <label for="setup-username">Username</label>
-                    <input type="text" id="setup-username" name="username" autocomplete="username" required>
-                </div>
-                <div class="auth-field">
-                    <label for="setup-password">Password</label>
-                    <input type="password" id="setup-password" name="password" autocomplete="new-password" minlength="8" required>
-                </div>
-                <div class="auth-field">
-                    <label for="setup-password-confirm">Confirm</label>
-                    <input type="password" id="setup-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8" required>
-                </div>
-                <div class="auth-field">
-                    <label for="setup-upload-max">Max bytes</label>
-                    <input type="number" id="setup-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" placeholder="0 = PHP default">
-                </div>
-                <div class="auth-actions">
-                    <button type="submit" class="btn-auth">Save setup</button>
-                </div>
-            </form>
-        </section>
-        <?php elseif ($uploadEnabled && !$authenticated): ?>
+        <?php if ($uploadEnabled && !$authenticated): ?>
         <section class="auth-panel" aria-labelledby="login-title">
             <h2 id="login-title">Upload login</h2>
             <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
@@ -1505,5 +1692,6 @@ $title = $relativePath ? 'Index of /' . h($relativePath) : 'Index of /';
         loadAndApply();
     })();
     </script>
+    <?php endif; ?>
 </body>
 </html>
