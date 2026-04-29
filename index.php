@@ -211,6 +211,18 @@ function currentListingUrl($indexHref, $relativePath, array $params = []) {
     return $indexHref . ($params ? '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986) : '');
 }
 
+function directEntryUrl($relativePath, $trailingSlash = false) {
+    $relativePath = trim((string) $relativePath, '/');
+    if ($relativePath === '') {
+        return '/';
+    }
+    $segments = array_values(array_filter(explode('/', $relativePath), function ($segment) {
+        return $segment !== '';
+    }));
+    $url = '/' . implode('/', array_map('rawurlencode', $segments));
+    return $trailingSlash ? rtrim($url, '/') . '/' : $url;
+}
+
 function redirectToCurrentListing($indexHref, $relativePath, $messageKey = null) {
     $params = [];
     if ($messageKey !== null && $messageKey !== '') {
@@ -615,6 +627,7 @@ $statusMessage = null;
 if (isset($_GET['msg'], $messageMap[$_GET['msg']])) {
     $statusMessage = $messageMap[$_GET['msg']];
 }
+$openLoginModal = $hasUploadCredentials && !$authenticated && isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true);
 $existingNames = [];
 foreach ($items as $item) {
     $existingNames[] = $item['name'];
@@ -632,14 +645,11 @@ if (!$setupNeeded && isset($_GET['open']) && $_GET['open'] !== '') {
             $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
             $isText = isset($previewExts[$openExt]) || !looksLikeBinary($openReal);
             if ($isText) {
-                $openDir = dirname($openFilePath);
                 $openName = basename($openFilePath);
                 $openFileForModal = [
                     'content_url' => $indexHref . '?path=' . rawurlencode($openFilePath) . '&content=1',
                     'name'        => $openName,
-                    'open_url'    => ($openExt === 'md' || $openExt === 'markdown')
-                        ? $indexHref . '?path=' . rawurlencode($openFilePath)
-                        : '/' . ($openDir !== '.' ? $openDir . '/' : '') . rawurlencode($openName),
+                    'open_url'    => directEntryUrl($openFilePath),
                 ];
             }
         } elseif (!$allowOutside && !$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
@@ -844,6 +854,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
             gap: 1rem;
         }
         .header-main { flex: 1; min-width: 0; }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-shrink: 0;
+        }
         .btn-settings {
             flex-shrink: 0;
             display: flex;
@@ -1013,6 +1029,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; }
+        .login-modal-panel { max-width: 440px; }
+        .login-modal-panel .auth-form {
+            display: grid;
+            gap: 0.8rem;
+        }
+        .login-modal-panel .auth-actions {
+            margin-top: 0.2rem;
+        }
         .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
         .settings-row:last-child { border-bottom: none; }
         .settings-row label { font-size: 0.9rem; color: var(--text); cursor: pointer; }
@@ -1346,7 +1370,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         }
     </style>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -1433,9 +1457,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                     <?php endforeach; ?>
                 </nav>
             </div>
-            <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
+            <div class="header-actions">
+                <?php if ($hasUploadCredentials && !$authenticated): ?>
+                <button type="button" class="btn-auth" id="btn-login" aria-haspopup="dialog" aria-controls="login-modal">Admin login</button>
+                <?php endif; ?>
+                <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+            </div>
         </header>
 
         <?php if ($blockedMessage): ?>
@@ -1450,26 +1479,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
         </div>
         <?php endif; ?>
 
-        <?php if ($hasUploadCredentials && !$authenticated): ?>
-        <section class="auth-panel" aria-labelledby="login-title">
-            <h2 id="login-title">Admin login</h2>
-            <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
-                <input type="hidden" name="action" value="login">
-                <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                <div class="auth-field">
-                    <label for="login-username">Username</label>
-                    <input type="text" id="login-username" name="username" autocomplete="username" required>
-                </div>
-                <div class="auth-field">
-                    <label for="login-password">Password</label>
-                    <input type="password" id="login-password" name="password" autocomplete="current-password" required>
-                </div>
-                <div class="auth-actions">
-                    <button type="submit" class="btn-auth">Sign in</button>
-                </div>
-            </form>
-        </section>
-        <?php elseif ($hasUploadCredentials && $authenticated): ?>
+        <?php if ($hasUploadCredentials && $authenticated): ?>
         <section class="auth-panel" aria-labelledby="upload-title">
             <div class="admin-bar">
                 <div>
@@ -1524,13 +1534,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                     <?php if ($hasParent): $parentRel = dirname($relativePath); $parentRel = ($parentRel === '.' || $parentRel === '') ? '' : $parentRel; ?>
                     <tr>
                         <td class="name dir">
-                            <?php $parentUrl = $indexHref . ($parentRel !== '' ? '?path=' . rawurlencode($parentRel) : ''); ?>
+                            <?php
+                            $parentUrl = currentListingUrl($indexHref, $parentRel);
+                            $parentDirectUrl = directEntryUrl($parentRel, true);
+                            ?>
                             <div class="name-content">
                                 <a href="<?= h($parentUrl) ?>">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                                     ..
                                 </a>
-                                <a class="entry-open-new" href="<?= h($parentUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open parent directory in new tab" title="Open in new tab">
+                                <a class="entry-open-new" href="<?= h($parentDirectUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open parent directory in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
                             </div>
@@ -1543,17 +1556,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                     <?php
                     foreach ($items as $item):
                         if ($item['isDir']) {
-                            $url = $indexHref . '?path=' . rawurlencode($item['path']);
+                            $url = currentListingUrl($indexHref, $item['path']);
+                            $directUrl = directEntryUrl($item['path'], true);
                             $linkAttrs = '';
                         } else {
+                            $directUrl = directEntryUrl($item['path']);
                             if (!empty($item['isText'])) {
-                                $url = $indexHref . '?path=' . rawurlencode($item['path']);
-                                $openUrl = ($item['ext'] === 'md' || $item['ext'] === 'markdown')
-                                    ? $indexHref . '?path=' . rawurlencode($item['path'])
-                                    : '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                                $url = currentListingUrl($indexHref, $item['path']);
+                                $openUrl = $directUrl;
                                 $linkAttrs = ' class="file-preview" data-content-url="' . h($indexHref . '?path=' . rawurlencode($item['path']) . '&content=1') . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '"';
                             } else {
-                                $url = '/' . ($relativePath ? $relativePath . '/' : '') . rawurlencode($item['name']);
+                                $url = $directUrl;
                                 $linkAttrs = ' class="file-binary" title="Binary file (opens in new tab)" target="_blank" rel="noopener noreferrer"';
                             }
                         }
@@ -1572,11 +1585,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
                                     <?php endif; ?>
                                     <?= h($item['name']) ?>
                                 </a>
-                                <?php if ($item['isDir']): ?>
-                                <a class="entry-open-new" href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
+                                <a class="entry-open-new" href="<?= h($directUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
-                                <?php endif; ?>
                             </div>
                         </td>
                         <td class="size"><?= $item['isDir'] ? '&#8212;' : h(formatSize($item['size'])) ?></td>
@@ -1615,6 +1626,34 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
             </div>
         </div>
     </div>
+
+    <?php if ($hasUploadCredentials && !$authenticated): ?>
+    <div id="login-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal login-modal-panel" role="dialog" aria-modal="true" aria-labelledby="login-title">
+            <div class="modal-header">
+                <span class="modal-title" id="login-title">Admin login</span>
+                <button type="button" class="modal-close" id="login-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form class="auth-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                    <input type="hidden" name="action" value="login">
+                    <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                    <div class="auth-field">
+                        <label for="login-username">Username</label>
+                        <input type="text" id="login-username" name="username" autocomplete="username" required>
+                    </div>
+                    <div class="auth-field">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+                    </div>
+                    <div class="auth-actions">
+                        <button type="submit" class="btn-auth">Sign in</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div id="settings-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -1740,6 +1779,42 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($relativePath ? 'Index o
             overwriteInput.value = '';
             e.preventDefault();
         });
+    })();
+
+    (function() {
+        var loginOverlay = document.getElementById('login-modal');
+        var btnLogin = document.getElementById('btn-login');
+        var loginClose = document.getElementById('login-close');
+        var usernameInput = document.getElementById('login-username');
+        if (!loginOverlay || !btnLogin || !loginClose) return;
+
+        function openLogin() {
+            loginOverlay.classList.add('is-open');
+            loginOverlay.setAttribute('aria-hidden', 'false');
+            window.setTimeout(function() {
+                if (usernameInput) usernameInput.focus();
+            }, 0);
+        }
+        function closeLogin() {
+            loginOverlay.classList.remove('is-open');
+            loginOverlay.setAttribute('aria-hidden', 'true');
+            btnLogin.focus();
+        }
+
+        btnLogin.addEventListener('click', openLogin);
+        loginClose.addEventListener('click', closeLogin);
+        loginOverlay.addEventListener('click', function(e) {
+            if (e.target === loginOverlay) closeLogin();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && loginOverlay.classList.contains('is-open')) {
+                closeLogin();
+                e.stopPropagation();
+            }
+        });
+        if (document.body.getAttribute('data-open-login') === '1') {
+            openLogin();
+        }
     })();
 
     (function() {
