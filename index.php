@@ -88,6 +88,46 @@ function pathUnderBase($resolved, $realBase) {
     return $resolved === $baseNorm || strpos($resolved . $sep, $baseNorm . $sep) === 0;
 }
 
+function pathLogicalUnderBase($absolutePath, $realBase) {
+    $sep = DIRECTORY_SEPARATOR;
+    $baseNorm = rtrim($realBase, $sep);
+    $pathNorm = rtrim($absolutePath, $sep);
+    return $pathNorm === $baseNorm || str_starts_with($pathNorm . $sep, $baseNorm . $sep);
+}
+
+/**
+ * Validate a listing path can be shared and determine its type.
+ */
+function resolveShareableEntry($absolutePath, $realBase, $allowOutside) {
+    if (!file_exists($absolutePath) && !is_link($absolutePath)) {
+        return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
+    }
+    if (!pathLogicalUnderBase($absolutePath, $realBase)) {
+        return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
+    }
+    if (is_link($absolutePath)) {
+        $resolved = realpath($absolutePath);
+        if ($resolved === false) {
+            return ['ok' => false, 'type' => null, 'error' => 'share_broken_link'];
+        }
+        if (!$allowOutside && !pathUnderBase($resolved, $realBase)) {
+            return ['ok' => false, 'type' => null, 'error' => 'share_link_outside'];
+        }
+    } elseif (!$allowOutside) {
+        $resolved = realpath($absolutePath);
+        if ($resolved !== false && !pathUnderBase($resolved, $realBase)) {
+            return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
+        }
+    }
+    if (is_dir($absolutePath)) {
+        return ['ok' => true, 'type' => 'dir', 'error' => null];
+    }
+    if (is_file($absolutePath)) {
+        return ['ok' => true, 'type' => 'file', 'error' => null];
+    }
+    return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
+}
+
 function dirindexSqliteAvailable() {
     return extension_loaded('pdo_sqlite') && class_exists('PDO');
 }
@@ -1016,14 +1056,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
         }
         $shareAbs = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $sharePath);
-        $shareReal = realpath($shareAbs);
-        if ($shareReal === false || (!$allowOutside && !pathUnderBase($shareReal, $realBase))) {
-            redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
+        $shareResolved = resolveShareableEntry($shareAbs, $realBase, $allowOutside);
+        if (!$shareResolved['ok']) {
+            redirectToCurrentListing($indexHref, $relativePath, $shareResolved['error']);
         }
-        $shareType = is_dir($shareReal) ? 'dir' : (is_file($shareReal) ? 'file' : null);
-        if ($shareType === null) {
-            redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
-        }
+        $shareType = $shareResolved['type'];
         $shareError = null;
         $pdo = dirindexGetSharesPdo(__DIR__, $shareError);
         if (!$pdo) {
@@ -1098,6 +1135,7 @@ if ($handle) {
             continue;
         }
         $isFile = is_file($full);
+        $isBrokenLink = $isLink && realpath($full) === false;
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
         $isText = $isFile && (isset($previewExts[$ext]) || !looksLikeBinary($full));
         $entryPerms = @fileperms($full);
@@ -1106,6 +1144,7 @@ if ($handle) {
             'path'       => $relativePath ? $relativePath . '/' . $entry : $entry,
             'isDir'      => is_dir($full),
             'isLink'     => $isLink,
+            'isBrokenLink' => $isBrokenLink,
             'linkTarget' => $linkTarget,
             'size'       => $isFile ? filesize($full) : null,
             'mtime'      => $mtime,
@@ -1156,6 +1195,8 @@ $messageMap = [
     'share_created' => ['success', 'Share link created. Copy the link below.'],
     'share_revoked' => ['success', 'Share link revoked.'],
     'share_failed' => ['error', 'Could not create or revoke the share link.'],
+    'share_broken_link' => ['error', 'Cannot share a broken symbolic link.'],
+    'share_link_outside' => ['error', 'That symlink points outside the listing root. Enable "Allow opening symlinks outside the listing root" in Settings to share it.'],
     'share_unavailable' => ['error', 'Share links require PDO SQLite.'],
 ];
 $statusMessage = null;
@@ -2519,7 +2560,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     <?= h($item['name']) ?>
                                 </a>
                                 <div class="name-actions">
-                                <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
+                                <?php if ($authenticated && !$inShareMode && $sharesAvailable && empty($item['isBrokenLink'])): ?>
                                 <button type="button" class="entry-share" data-share-path="<?= h($item['path']) ?>" data-share-type="<?= h($item['isDir'] ? 'dir' : 'file') ?>" aria-label="Share <?= h($item['name']) ?>" title="Create share link">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                 </button>
