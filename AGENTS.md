@@ -24,6 +24,7 @@ Runtime files (not in git): `config.php` (optional static config), `.dirindex.sq
 - **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in SQLite or `config.php`. CSRF tokens protect all POST actions.
 - **Access control** — Optional IP whitelist/blacklist with CIDR support; optional `ip_header` for reverse proxies.
+- **Share links** — Token-based public links stored in `.dirindex.sqlite` (`shares` table). Valid `?share=TOKEN` requests bypass IP checks. File shares render a download landing page; directory shares scope listing navigation to the shared folder. Create/revoke requires admin session + CSRF; viewing is read-only (POST blocked in share mode).
 
 ## Development and testing
 
@@ -37,7 +38,7 @@ php -S localhost:8080
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), and symlink/IP restrictions when relevant.
+No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
 
 ## Code conventions
 
@@ -61,7 +62,8 @@ Treat these as non-negotiable when making changes:
 
 - **New config option** — Add default in `$dirindexConfig`, wire through settings save/load, update `config.php.example` and `README.md`.
 - **New previewable file type** — Add extension → highlight.js language mapping in `$textExts` / `$previewExts`.
-- **New POST action** — Add handler after existing actions, include CSRF check, redirect with a new `$messageMap` entry.
+- **New POST action** — Add handler after existing actions, include CSRF check, redirect with a new `$messageMap` entry. Block POST in share mode (`$inShareMode`).
+- **Share links** — Use `dirindexGetSharesPdo()`, `shareUrl()`, `pathWithinShareScope()`. Preserve `share` in URLs via `currentListingUrl()` / `$shareTokenActive`. Binary files in share mode use `?download=1` through `index.php`, not `directEntryUrl()`.
 - **UI tweak** — CSS is in the same file; match existing dark/light theme variables and modal patterns.
 
 ## What not to do

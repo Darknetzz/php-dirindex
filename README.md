@@ -16,6 +16,13 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - `ip_blacklist` — array of IPs or CIDR ranges. If the client IP matches any entry, access is denied with 403.
 - `ip_header` — when behind a reverse proxy, set to the header that holds the client IP (e.g. `'HTTP_X_FORWARDED_FOR'`). Otherwise `REMOTE_ADDR` is used.
 
+**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from **Settings → Shared links**.
+
+Example URLs:
+
+- File: `index.php?share=TOKEN` (landing page), `index.php?share=TOKEN&download=1` (download)
+- Directory: `index.php?share=TOKEN`, `index.php?share=TOKEN&path=shared/subfolder`
+
 **Uploads:** On first run, the page can create an upload admin account. When PDO SQLite is available, upload settings are stored in `.dirindex.sqlite` next to `index.php`; otherwise the page writes the same settings to `config.php`.
 
 Upload settings include:
