@@ -28,7 +28,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 
 - **IP whitelist** — one IP or CIDR per line (e.g. `192.168.0.0/16`). If non-empty, only these addresses may browse the index; others get 403.
 - **IP blacklist** — one IP or CIDR per line. Matching addresses are denied unless they open a valid share link.
-- **Client IP header** — when behind a reverse proxy, choose the header that carries the real client IP (e.g. X-Forwarded-For). Otherwise `REMOTE_ADDR` is used.
+- **Client IP header** — when behind a reverse proxy, choose the header that carries the real client IP (e.g. X-Forwarded-For). If unset and the connection comes from a private/local address (typical reverse-proxy setup), the app automatically uses `X-Real-IP` or `X-Forwarded-For` instead of the proxy's `REMOTE_ADDR`.
 
 These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if needed.
 

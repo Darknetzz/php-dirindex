@@ -140,6 +140,82 @@ function normalizeIpHeaderInput($value) {
     return preg_match('/^HTTP_[A-Z0-9_]+$/', $value) ? $value : null;
 }
 
+function parseForwardedClientIp($headerValue) {
+    foreach (explode(',', (string) $headerValue) as $part) {
+        $ip = trim($part);
+        if ($ip !== '' && @inet_pton($ip) !== false) {
+            return $ip;
+        }
+    }
+    return '';
+}
+
+function isPrivateOrLocalIp($ip) {
+    static $privateRanges = [
+        '127.0.0.0/8',
+        '::1/128',
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+        'fc00::/7',
+        'fe80::/10',
+    ];
+    return $ip !== '' && ipMatchesList($ip, $privateRanges);
+}
+
+function resolveClientIp(array $config) {
+    $remoteAddr = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+    $ipHeader = isset($config['ip_header']) ? trim((string) $config['ip_header']) : '';
+
+    if ($ipHeader !== '' && !empty($_SERVER[$ipHeader])) {
+        $forwardedIp = parseForwardedClientIp($_SERVER[$ipHeader]);
+        if ($forwardedIp !== '') {
+            return [
+                'ip' => $forwardedIp,
+                'source' => $ipHeader,
+                'proxy' => ($remoteAddr !== '' && $forwardedIp !== $remoteAddr) ? $remoteAddr : '',
+            ];
+        }
+    }
+
+    if ($remoteAddr !== '' && isPrivateOrLocalIp($remoteAddr)) {
+        foreach (['HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_FOR'] as $autoHeader) {
+            if (empty($_SERVER[$autoHeader])) {
+                continue;
+            }
+            $forwardedIp = parseForwardedClientIp($_SERVER[$autoHeader]);
+            if ($forwardedIp !== '' && $forwardedIp !== $remoteAddr) {
+                return [
+                    'ip' => $forwardedIp,
+                    'source' => $autoHeader,
+                    'proxy' => $remoteAddr,
+                ];
+            }
+        }
+    }
+
+    return [
+        'ip' => $remoteAddr,
+        'source' => 'REMOTE_ADDR',
+        'proxy' => '',
+    ];
+}
+
+function clientIpSourceLabel($source) {
+    switch ($source) {
+        case 'HTTP_X_FORWARDED_FOR':
+            return 'X-Forwarded-For';
+        case 'HTTP_X_REAL_IP':
+            return 'X-Real-IP';
+        case 'HTTP_CF_CONNECTING_IP':
+            return 'CF-Connecting-IP';
+        case 'REMOTE_ADDR':
+            return 'REMOTE_ADDR';
+        default:
+            return $source;
+    }
+}
+
 /**
  * Ensure a resolved path is under the base directory (prevents symlink escape).
  */
@@ -702,11 +778,10 @@ if ($shareRequestToken !== '') {
 }
 
 // IP access check (whitelist / blacklist with CIDR support)
-$clientIp = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
-if (isset($dirindexConfig['ip_header']) && $dirindexConfig['ip_header'] !== '' && !empty($_SERVER[$dirindexConfig['ip_header']])) {
-    $forwarded = $_SERVER[$dirindexConfig['ip_header']];
-    $clientIp = trim(strpos($forwarded, ',') !== false ? strstr($forwarded, ',', true) : $forwarded);
-}
+$clientIpContext = resolveClientIp($dirindexConfig);
+$clientIp = $clientIpContext['ip'];
+$clientIpSource = $clientIpContext['source'];
+$clientIpProxy = $clientIpContext['proxy'];
 $ipBlacklist = isset($dirindexConfig['ip_blacklist']) && is_array($dirindexConfig['ip_blacklist']) ? $dirindexConfig['ip_blacklist'] : [];
 $ipWhitelist = isset($dirindexConfig['ip_whitelist']) && is_array($dirindexConfig['ip_whitelist']) ? $dirindexConfig['ip_whitelist'] : [];
 if (!$inShareMode && $clientIp !== '' && (ipMatchesList($clientIp, $ipBlacklist) || ($ipWhitelist !== [] && !ipMatchesList($clientIp, $ipWhitelist)))) {
@@ -2932,10 +3007,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 <option value="<?= h($ipHeaderCurrent) ?>" selected><?= h($ipHeaderCurrent) ?> (custom)</option>
                                 <?php endif; ?>
                             </select>
-                            <span class="settings-help">Use when behind a reverse proxy so whitelist/blacklist see the real client IP.</span>
+                            <span class="settings-help">Use when behind a reverse proxy so whitelist/blacklist see the real client IP. If left on REMOTE_ADDR but requests come from a private proxy address, X-Real-IP / X-Forwarded-For are used automatically.</span>
                         </div>
                         <?php if ($clientIp !== ''): ?>
-                        <p class="settings-detected-ip settings-help">Your detected IP: <code id="detected-client-ip"><?= h($clientIp) ?></code></p>
+                        <p class="settings-detected-ip settings-help">Your detected IP: <code id="detected-client-ip"><?= h($clientIp) ?></code> (from <?= h(clientIpSourceLabel($clientIpSource)) ?><?php if ($clientIpProxy !== ''): ?>, via proxy <?= h($clientIpProxy) ?><?php endif; ?>)</p>
+                        <?php if ($clientIpProxy !== '' && trim((string) ($dirindexConfig['ip_header'] ?? '')) === ''): ?>
+                        <p class="settings-help">Requests reach PHP through a reverse proxy. Consider setting Client IP header to X-Forwarded-For so detection stays explicit.</p>
+                        <?php endif; ?>
                         <div class="settings-inline-actions">
                             <button type="button" class="btn-auth btn-auth-secondary" id="btn-add-current-ip">Add my IP to whitelist</button>
                         </div>
