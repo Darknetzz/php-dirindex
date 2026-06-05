@@ -96,6 +96,88 @@ function dirindexSqlitePath($scriptDir) {
     return $scriptDir . DIRECTORY_SEPARATOR . '.dirindex.sqlite';
 }
 
+function dirindexJsonPath($scriptDir) {
+    return $scriptDir . DIRECTORY_SEPARATOR . '.dirindex.json';
+}
+
+function dirindexStoragePath($scriptDir) {
+    return dirindexSqliteAvailable() ? dirindexSqlitePath($scriptDir) : dirindexJsonPath($scriptDir);
+}
+
+function dirindexStoredConfigKeys() {
+    return [
+        'show_symlinks',
+        'allow_open_symlinks_outside',
+        'ip_whitelist',
+        'ip_blacklist',
+        'ip_header',
+        'upload_enabled',
+        'auth_username',
+        'auth_password_hash',
+        'upload_max_bytes',
+    ];
+}
+
+function dirindexArraySettingKeys() {
+    return ['ip_whitelist', 'ip_blacklist'];
+}
+
+function dirindexEncodeStoredValue($key, $value) {
+    if (in_array($key, dirindexArraySettingKeys(), true)) {
+        return json_encode(array_values((array) $value), JSON_UNESCAPED_SLASHES);
+    }
+    if (is_bool($value)) {
+        return $value ? '1' : '0';
+    }
+    return (string) $value;
+}
+
+function dirindexDecodeStoredValue($key, $value) {
+    if (in_array($key, dirindexArraySettingKeys(), true)) {
+        if (is_array($value)) {
+            return $value;
+        }
+        $decoded = json_decode((string) $value, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+    return $value;
+}
+
+function dirindexNormalizeStoredConfig(array $settings) {
+    $normalized = [];
+    foreach ($settings as $key => $value) {
+        $normalized[$key] = dirindexDecodeStoredValue($key, $value);
+    }
+    return $normalized;
+}
+
+function dirindexPrepareSettingsForJson(array $settings) {
+    $prepared = [];
+    foreach ($settings as $key => $value) {
+        if (in_array($key, dirindexArraySettingKeys(), true)) {
+            $prepared[$key] = array_values((array) $value);
+            continue;
+        }
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled'], true)) {
+            $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
+            continue;
+        }
+        if ($key === 'upload_max_bytes') {
+            $prepared[$key] = (int) $value;
+            continue;
+        }
+        $prepared[$key] = $value;
+    }
+    return $prepared;
+}
+
+function dirindexIsHiddenListingEntry($entry) {
+    return $entry === '.dirindex.sqlite'
+        || str_starts_with($entry, '.dirindex.sqlite-')
+        || $entry === '.dirindex.json'
+        || $entry === 'config.php';
+}
+
 function dirindexOpenSqliteStore($path, &$error = null) {
     try {
         $pdo = new PDO('sqlite:' . $path);
@@ -110,37 +192,69 @@ function dirindexOpenSqliteStore($path, &$error = null) {
 
 function loadDirindexStoredConfig($scriptDir, &$storageInfo) {
     $storageInfo = [
-        'type' => dirindexSqliteAvailable() ? 'sqlite' : 'config',
-        'path' => dirindexSqliteAvailable() ? dirindexSqlitePath($scriptDir) : $scriptDir . DIRECTORY_SEPARATOR . 'config.php',
+        'type' => dirindexSqliteAvailable() ? 'sqlite' : 'json',
+        'path' => dirindexStoragePath($scriptDir),
         'error' => null,
     ];
-    if (!dirindexSqliteAvailable()) {
-        return [];
-    }
 
-    $sqlitePath = dirindexSqlitePath($scriptDir);
-    if (!is_file($sqlitePath)) {
-        return [];
-    }
-
-    $pdo = dirindexOpenSqliteStore($sqlitePath, $storageInfo['error']);
-    if (!$pdo) {
-        return [];
-    }
-
-    $settings = [];
-    try {
-        $stmt = $pdo->query('SELECT key, value FROM settings');
-        foreach ($stmt as $row) {
-            $settings[$row['key']] = $row['value'];
+    if (dirindexSqliteAvailable()) {
+        $sqlitePath = dirindexSqlitePath($scriptDir);
+        if (!is_file($sqlitePath)) {
+            return [];
         }
-    } catch (Throwable $e) {
-        $storageInfo['error'] = $e->getMessage();
+
+        $pdo = dirindexOpenSqliteStore($sqlitePath, $storageInfo['error']);
+        if (!$pdo) {
+            return [];
+        }
+
+        $settings = [];
+        try {
+            $stmt = $pdo->query('SELECT key, value FROM settings');
+            foreach ($stmt as $row) {
+                $settings[$row['key']] = $row['value'];
+            }
+        } catch (Throwable $e) {
+            $storageInfo['error'] = $e->getMessage();
+        }
+        return dirindexNormalizeStoredConfig($settings);
     }
-    return $settings;
+
+    $jsonPath = dirindexJsonPath($scriptDir);
+    if (!is_file($jsonPath)) {
+        return [];
+    }
+    $decoded = json_decode((string) @file_get_contents($jsonPath), true);
+    if (!is_array($decoded)) {
+        $storageInfo['error'] = 'Invalid ' . basename($jsonPath) . '.';
+        return [];
+    }
+    return dirindexNormalizeStoredConfig($decoded);
 }
 
-function saveDirindexStoredConfig($scriptDir, $configFile, array $settings, &$error = null) {
+function dirindexImportLegacyConfigIfNeeded($scriptDir, array $storedConfig) {
+    $legacyFile = $scriptDir . DIRECTORY_SEPARATOR . 'config.php';
+    if (!is_file($legacyFile) || !is_readable($legacyFile)) {
+        return $storedConfig;
+    }
+    $legacy = (array) include $legacyFile;
+    $toImport = [];
+    foreach (dirindexStoredConfigKeys() as $key) {
+        if (array_key_exists($key, $legacy) && !array_key_exists($key, $storedConfig)) {
+            $toImport[$key] = $legacy[$key];
+        }
+    }
+    if (!$toImport) {
+        return $storedConfig;
+    }
+    $importError = null;
+    if (!saveDirindexStoredConfig($scriptDir, $toImport, $importError)) {
+        return $storedConfig;
+    }
+    return array_merge($storedConfig, dirindexNormalizeStoredConfig($toImport));
+}
+
+function saveDirindexStoredConfig($scriptDir, array $settings, &$error = null) {
     if (dirindexSqliteAvailable()) {
         $pdo = dirindexOpenSqliteStore(dirindexSqlitePath($scriptDir), $error);
         if (!$pdo) {
@@ -149,7 +263,10 @@ function saveDirindexStoredConfig($scriptDir, $configFile, array $settings, &$er
         try {
             $stmt = $pdo->prepare('INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
             foreach ($settings as $key => $value) {
-                $stmt->execute([':key' => (string) $key, ':value' => (string) $value]);
+                $stmt->execute([
+                    ':key' => (string) $key,
+                    ':value' => dirindexEncodeStoredValue($key, $value),
+                ]);
             }
             return true;
         } catch (Throwable $e) {
@@ -158,14 +275,22 @@ function saveDirindexStoredConfig($scriptDir, $configFile, array $settings, &$er
         }
     }
 
+    $jsonPath = dirindexJsonPath($scriptDir);
     $existing = [];
-    if (is_file($configFile) && is_readable($configFile)) {
-        $existing = (array) include $configFile;
+    if (is_file($jsonPath) && is_readable($jsonPath)) {
+        $decoded = json_decode((string) @file_get_contents($jsonPath), true);
+        if (is_array($decoded)) {
+            $existing = $decoded;
+        }
     }
-    $data = array_merge($existing, $settings);
-    $php = "<?php\n/**\n * Generated by PHP Directory Index.\n * You can edit this file manually, but changes made in the UI may overwrite matching keys.\n */\nreturn " . var_export($data, true) . ";\n";
-    if (@file_put_contents($configFile, $php, LOCK_EX) === false) {
-        $error = 'Unable to write ' . basename($configFile) . '.';
+    $data = array_merge($existing, dirindexPrepareSettingsForJson($settings));
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        $error = 'Unable to encode settings.';
+        return false;
+    }
+    if (@file_put_contents($jsonPath, $json . "\n", LOCK_EX) === false) {
+        $error = 'Unable to write ' . basename($jsonPath) . '.';
         return false;
     }
     return true;
@@ -385,7 +510,7 @@ function uploadErrorMessage($errorCode) {
 // Base URL for links (absolute path so ?path= links work regardless of rewrites)
 $indexHref = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME'] !== '') ? $_SERVER['SCRIPT_NAME'] : '/index.php';
 
-// Optional config: create config.php in the same folder as this script, return an array (see README).
+// Defaults; UI-managed settings are stored in .dirindex.sqlite (or .dirindex.json without SQLite).
 $dirindexConfig = [
     'show_symlinks'             => true,
     'allow_open_symlinks_outside' => false,
@@ -397,16 +522,9 @@ $dirindexConfig = [
     'upload_max_bytes'          => 0,
     'session_name'              => 'dirindex_upload',
 ];
-$configFile = __DIR__ . DIRECTORY_SEPARATOR . 'config.php';
-if (is_file($configFile) && is_readable($configFile)) {
-    $userConfig = (function () use ($configFile) {
-        return (array) include $configFile;
-    })();
-    $dirindexConfig = array_merge($dirindexConfig, $userConfig);
-}
-$configFileReal = realpath($configFile);
 $dirindexStorage = [];
 $storedConfig = loadDirindexStoredConfig(__DIR__, $dirindexStorage);
+$storedConfig = dirindexImportLegacyConfigIfNeeded(__DIR__, $storedConfig);
 if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
 }
@@ -686,7 +804,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
         $saveError = null;
-        $saved = saveDirindexStoredConfig(__DIR__, $configFile, [
+        $saved = saveDirindexStoredConfig(__DIR__, [
             'upload_enabled' => '1',
             'auth_username' => $username,
             'auth_password_hash' => password_hash($password, PASSWORD_DEFAULT),
@@ -728,7 +846,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $maxBytes = trim((string) ($_POST['upload_max_bytes'] ?? ''));
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
         $saveError = null;
-        $saved = saveDirindexStoredConfig(__DIR__, $configFile, [
+        $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
@@ -760,7 +878,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $settings['auth_password_hash'] = password_hash($password, PASSWORD_DEFAULT);
         }
         $saveError = null;
-        $saved = saveDirindexStoredConfig(__DIR__, $configFile, $settings, $saveError);
+        $saved = saveDirindexStoredConfig(__DIR__, $settings, $saveError);
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'account_saved' : 'settings_write_failed');
     }
 
@@ -880,9 +998,8 @@ $handle = $showListing ? @opendir($currentPath) : false;
 if ($handle) {
     while (($entry = readdir($handle)) !== false) {
         if ($entry === '.' || $entry === '..') continue;
-        if ($entry === '.dirindex.sqlite' || str_starts_with($entry, '.dirindex.sqlite-')) continue;
+        if (dirindexIsHiddenListingEntry($entry)) continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
-        if ($configFileReal !== false && realpath($full) === $configFileReal) continue;
         clearstatcache(false, $full);
         $isLink = is_link($full);
         $linkTarget = $isLink ? @readlink($full) : null;
@@ -1305,9 +1422,39 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-collapse: collapse;
         }
 
+        .listing-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            padding: 0.45rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.12);
+            min-height: 2.25rem;
+        }
+        .listing-toolbar:empty,
+        .listing-toolbar:not(:has(.btn-listing-tool:not([hidden]))) {
+            display: none;
+        }
+        .btn-listing-tool {
+            padding: 0.3rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .btn-listing-tool:hover {
+            color: var(--text);
+            border-color: var(--text-muted);
+            background: var(--hover);
+        }
+
         .listing th {
             text-align: left;
-            padding: 0.75rem 1rem;
+            padding: 0;
             font-size: 0.75rem;
             font-weight: 500;
             text-transform: uppercase;
@@ -1316,7 +1463,46 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: rgba(0,0,0,0.2);
             border-bottom: 1px solid var(--border);
         }
-        .listing th:last-child { text-align: right; }
+        .listing th.size { text-align: right; }
+        .listing th.modified { text-align: right; }
+        .listing-sort-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: none;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            text-transform: inherit;
+            letter-spacing: inherit;
+            cursor: pointer;
+            transition: color 0.15s, background 0.15s;
+        }
+        .listing th.size .listing-sort-btn,
+        .listing th.modified .listing-sort-btn {
+            justify-content: flex-end;
+        }
+        .listing-sort-btn:hover,
+        .listing-sort-btn:focus-visible {
+            color: var(--text);
+            background: var(--hover);
+            outline: none;
+        }
+        .listing-sort-indicator {
+            font-size: 0.65rem;
+            opacity: 0.9;
+            min-width: 0.65rem;
+        }
+        .listing table.listing-hide-size .col-size,
+        .listing table.listing-hide-size th.size,
+        .listing table.listing-hide-size td.size,
+        .listing table.listing-hide-modified .col-modified,
+        .listing table.listing-hide-modified th.modified,
+        .listing table.listing-hide-modified td.modified {
+            display: none;
+        }
 
         .listing td {
             padding: 0.65rem 1rem;
@@ -1835,7 +2021,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         <section class="setup-card" aria-label="Setup form">
             <h2>Set up uploads</h2>
-            <p>These settings will be saved locally in <?= h($dirindexStorage['type'] === 'sqlite' ? basename($dirindexStorage['path']) : 'config.php') ?>.</p>
+            <p>These settings will be saved locally in <?= h(basename($dirindexStorage['path'])) ?>.</p>
             <?php if ($statusMessage): ?>
             <div class="blocked-msg message-<?= h($statusMessage[0]) ?>" role="status">
                 <?= h($statusMessage[1]) ?>
@@ -1976,7 +2162,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <?php endif; ?>
 
         <div class="listing">
-            <table>
+            <div class="listing-toolbar">
+                <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
+            </div>
+            <table id="listing-table">
                 <colgroup>
                     <col class="col-name">
                     <col class="col-size">
@@ -1984,14 +2173,26 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </colgroup>
                 <thead>
                     <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col" class="size">Size</th>
-                        <th scope="col" class="modified">Modified</th>
+                        <th scope="col" class="name" data-sort-col="name">
+                            <button type="button" class="listing-sort-btn" data-sort-col="name">
+                                Name <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col" class="size" data-sort-col="size">
+                            <button type="button" class="listing-sort-btn" data-sort-col="size">
+                                Size <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col" class="modified" data-sort-col="modified">
+                            <button type="button" class="listing-sort-btn" data-sort-col="modified">
+                                Modified <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($hasParent): $parentRel = dirname($relativePath); $parentRel = ($parentRel === '.' || $parentRel === '') ? '' : $parentRel; ?>
-                    <tr>
+                    <tr data-sort-parent="1">
                         <td class="name dir">
                             <?php
                             $parentUrl = currentListingUrl($indexHref, $parentRel);
@@ -2042,7 +2243,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
                     ?>
-                    <tr>
+                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>">
                         <td class="name <?= trim($nameClass) ?>">
                             <div class="name-content">
                                 <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
@@ -2157,6 +2358,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <label for="setting-breadcrumb">Slash in breadcrumbs</label>
                         <input type="checkbox" id="setting-breadcrumb" class="settings-check">
                         <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
+                    </div>
+                    <div class="settings-row">
+                        <label for="setting-col-size">Size column</label>
+                        <input type="checkbox" id="setting-col-size" class="settings-check" checked>
+                        <span class="settings-toggle" id="setting-col-size-toggle" role="switch" aria-checked="true" tabindex="0" title="Show size column in file listing"></span>
+                    </div>
+                    <div class="settings-row">
+                        <label for="setting-col-modified">Modified column</label>
+                        <input type="checkbox" id="setting-col-modified" class="settings-check" checked>
+                        <span class="settings-toggle" id="setting-col-modified-toggle" role="switch" aria-checked="true" tabindex="0" title="Show modified column in file listing"></span>
                     </div>
                 </section>
 
@@ -2487,6 +2698,172 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var initialOpenUrl = body.getAttribute('data-open-url') || '';
             openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl);
         }
+    })();
+
+    (function() {
+        var table = document.getElementById('listing-table');
+        if (!table) return;
+        var tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        var sortResetBtn = document.getElementById('listing-sort-reset');
+        var STORAGE_SORT = 'dirindex_list_sort';
+        var STORAGE_COL_SIZE = 'dirindex_col_size';
+        var STORAGE_COL_MODIFIED = 'dirindex_col_modified';
+
+        function getSetting(key, def) {
+            try { return localStorage.getItem(key) || def; } catch (e) { return def; }
+        }
+        function setSetting(key, val) {
+            try { localStorage.setItem(key, val); } catch (e) {}
+        }
+        function isDefaultSort(sort) {
+            return !sort || (sort.col === 'name' && sort.dir === 'asc');
+        }
+        function parseSort() {
+            try {
+                var raw = localStorage.getItem(STORAGE_SORT);
+                if (!raw) return null;
+                var parsed = JSON.parse(raw);
+                if (!parsed || !parsed.col) return null;
+                if (['name', 'size', 'modified'].indexOf(parsed.col) === -1) return null;
+                return { col: parsed.col, dir: parsed.dir === 'desc' ? 'desc' : 'asc' };
+            } catch (e) {
+                return null;
+            }
+        }
+        function saveSort(sort) {
+            if (isDefaultSort(sort)) {
+                try { localStorage.removeItem(STORAGE_SORT); } catch (e) {}
+                return;
+            }
+            setSetting(STORAGE_SORT, JSON.stringify(sort));
+        }
+        function getSortRows() {
+            return Array.prototype.slice.call(tbody.querySelectorAll('tr:not([data-sort-parent])'));
+        }
+        function getParentRow() {
+            return tbody.querySelector('tr[data-sort-parent]');
+        }
+        function compareRows(a, b, col, dir) {
+            var mul = dir === 'desc' ? -1 : 1;
+            var aDir = a.getAttribute('data-is-dir') === '1';
+            var bDir = b.getAttribute('data-is-dir') === '1';
+            if (aDir !== bDir) return aDir ? -1 : 1;
+            var va;
+            var vb;
+            if (col === 'name') {
+                va = (a.getAttribute('data-sort-name') || '').toLowerCase();
+                vb = (b.getAttribute('data-sort-name') || '').toLowerCase();
+            } else if (col === 'size') {
+                va = parseInt(a.getAttribute('data-sort-size') || '-1', 10);
+                vb = parseInt(b.getAttribute('data-sort-size') || '-1', 10);
+            } else {
+                va = parseInt(a.getAttribute('data-sort-mtime') || '0', 10);
+                vb = parseInt(b.getAttribute('data-sort-mtime') || '0', 10);
+            }
+            if (va < vb) return -1 * mul;
+            if (va > vb) return 1 * mul;
+            var na = (a.getAttribute('data-sort-name') || '').toLowerCase();
+            var nb = (b.getAttribute('data-sort-name') || '').toLowerCase();
+            if (na < nb) return -1;
+            if (na > nb) return 1;
+            return 0;
+        }
+        function updateSortUi(sort) {
+            var showReset = !isDefaultSort(sort);
+            if (sortResetBtn) sortResetBtn.hidden = !showReset;
+            table.querySelectorAll('th[data-sort-col]').forEach(function(th) {
+                var col = th.getAttribute('data-sort-col');
+                var active = sort && sort.col === col;
+                th.setAttribute('aria-sort', active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+                var ind = th.querySelector('.listing-sort-indicator');
+                if (ind) ind.textContent = active ? (sort.dir === 'asc' ? '\u25B2' : '\u25BC') : '';
+            });
+        }
+        function applySort(sort) {
+            var col = sort ? sort.col : 'name';
+            var dir = sort ? sort.dir : 'asc';
+            var rows = getSortRows();
+            var parent = getParentRow();
+            rows.sort(function(a, b) { return compareRows(a, b, col, dir); });
+            rows.forEach(function(row) { tbody.appendChild(row); });
+            if (parent) tbody.insertBefore(parent, tbody.firstChild);
+            updateSortUi(isDefaultSort(sort) ? null : sort);
+        }
+        function applyColumns() {
+            var showSize = getSetting(STORAGE_COL_SIZE, '1') !== '0';
+            var showModified = getSetting(STORAGE_COL_MODIFIED, '1') !== '0';
+            table.classList.toggle('listing-hide-size', !showSize);
+            table.classList.toggle('listing-hide-modified', !showModified);
+            var sizeCheck = document.getElementById('setting-col-size');
+            var sizeToggle = document.getElementById('setting-col-size-toggle');
+            var modCheck = document.getElementById('setting-col-modified');
+            var modToggle = document.getElementById('setting-col-modified-toggle');
+            if (sizeCheck) sizeCheck.checked = showSize;
+            if (sizeToggle) {
+                sizeToggle.classList.toggle('is-on', showSize);
+                sizeToggle.setAttribute('aria-checked', showSize ? 'true' : 'false');
+            }
+            if (modCheck) modCheck.checked = showModified;
+            if (modToggle) {
+                modToggle.classList.toggle('is-on', showModified);
+                modToggle.setAttribute('aria-checked', showModified ? 'true' : 'false');
+            }
+        }
+        function wireColumnToggle(check, toggle, storageKey) {
+            if (!check || !toggle) return;
+            function update() {
+                var on = check.checked;
+                toggle.classList.toggle('is-on', on);
+                toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+                setSetting(storageKey, on ? '1' : '0');
+                applyColumns();
+            }
+            function flip() {
+                check.checked = !check.checked;
+                update();
+            }
+            toggle.addEventListener('click', flip);
+            toggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+            });
+            check.addEventListener('change', update);
+        }
+
+        table.querySelectorAll('.listing-sort-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var col = btn.getAttribute('data-sort-col');
+                var current = parseSort();
+                var dir = 'asc';
+                if (current && current.col === col) {
+                    dir = current.dir === 'asc' ? 'desc' : 'asc';
+                }
+                var next = { col: col, dir: dir };
+                saveSort(next);
+                applySort(next);
+            });
+        });
+        if (sortResetBtn) {
+            sortResetBtn.addEventListener('click', function() {
+                saveSort(null);
+                applySort(null);
+            });
+        }
+        wireColumnToggle(
+            document.getElementById('setting-col-size'),
+            document.getElementById('setting-col-size-toggle'),
+            STORAGE_COL_SIZE
+        );
+        wireColumnToggle(
+            document.getElementById('setting-col-modified'),
+            document.getElementById('setting-col-modified-toggle'),
+            STORAGE_COL_MODIFIED
+        );
+
+        applyColumns();
+        var initialSort = parseSort();
+        if (initialSort) applySort(initialSort);
+        else updateSortUi(null);
     })();
 
     (function() {

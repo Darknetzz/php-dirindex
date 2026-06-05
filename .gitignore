@@ -1,2 +1,3 @@
-config.php
 .dirindex.sqlite*
+.dirindex.json
+config.php
