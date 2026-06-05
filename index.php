@@ -1720,7 +1720,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .shares-table .shares-col-path { width: auto; }
         .shares-table .shares-col-type { width: 3.5rem; }
         .shares-table .shares-col-expires { width: 7.5rem; }
-        .shares-table .shares-col-actions { width: 12rem; }
+        .shares-table .shares-col-actions { width: 15rem; }
         .shares-table .shares-cell-clip {
             display: block;
             overflow: hidden;
@@ -2116,7 +2116,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
         .login-modal-panel,
         .share-modal-panel { max-width: 440px; }
-        .shares-list-panel { max-width: 920px; }
+        .shares-list-panel { max-width: 1100px; }
         .share-item-display {
             padding: 0.55rem 0.65rem;
             border: 1px solid var(--border);
