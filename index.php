@@ -1537,11 +1537,24 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 0.8rem;
         }
-        .shares-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.75rem; }
-        .shares-table th, .shares-table td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .shares-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.75rem; }
+        .shares-table th, .shares-table td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
         .shares-table th { color: var(--text-muted); font-weight: 500; }
-        .shares-table code { font-size: 0.75rem; word-break: break-all; }
-        .share-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+        .shares-table .shares-col-path { width: auto; }
+        .shares-table .shares-col-type { width: 3.5rem; }
+        .shares-table .shares-col-expires { width: 7.5rem; }
+        .shares-table .shares-col-actions { width: 10.5rem; }
+        .shares-table .shares-cell-clip {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+        .shares-table code { font-size: 0.75rem; }
+        .share-actions { display: flex; gap: 0.35rem; flex-wrap: nowrap; align-items: center; }
+        .share-actions .share-revoke-form { display: inline-flex; margin: 0; flex-shrink: 0; }
+        .share-actions .btn-share-sm { flex-shrink: 0; white-space: nowrap; }
         .btn-share-sm {
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
@@ -1920,6 +1933,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-body { padding: 1.25rem; }
         .login-modal-panel,
         .share-modal-panel { max-width: 440px; }
+        .shares-list-panel { max-width: 920px; }
         .share-item-display {
             padding: 0.55rem 0.65rem;
             border: 1px solid var(--border);
@@ -2791,7 +2805,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
     <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
     <div id="shares-list-modal" class="settings-overlay" aria-hidden="true">
-        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="shares-list-title">
+        <div class="settings-modal shares-list-panel" role="dialog" aria-modal="true" aria-labelledby="shares-list-title">
             <div class="modal-header">
                 <span class="modal-title" id="shares-list-title">Shared links</span>
                 <button type="button" class="modal-close" id="shares-list-close" aria-label="Close">&times;</button>
@@ -2802,10 +2816,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <table class="shares-table">
                     <thead>
                         <tr>
-                            <th>Path</th>
-                            <th>Type</th>
-                            <th>Expires</th>
-                            <th>Actions</th>
+                            <th class="shares-col-path">Path</th>
+                            <th class="shares-col-type">Type</th>
+                            <th class="shares-col-expires">Expires</th>
+                            <th class="shares-col-actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2813,16 +2827,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <?php
                                 $shareRowUrl = shareUrl($indexHref, $shareRow['token'], [], true);
                             $shareExpires = $shareRow['expires_at'] === null ? 'Never' : (@date('Y-m-d H:i', $shareRow['expires_at']) ?: '—');
+                            $sharePathDisplay = '/' . $shareRow['path'];
                         ?>
                         <tr>
-                            <td><code>/<?= h($shareRow['path']) ?></code></td>
-                            <td><?= h($shareRow['type']) ?></td>
-                            <td><?= h($shareExpires) ?></td>
-                            <td>
+                            <td class="shares-col-path" title="<?= h($sharePathDisplay) ?>"><span class="shares-cell-clip"><code><?= h($sharePathDisplay) ?></code></span></td>
+                            <td class="shares-col-type"><span class="shares-cell-clip"><?= h($shareRow['type']) ?></span></td>
+                            <td class="shares-col-expires"><span class="shares-cell-clip"><?= h($shareExpires) ?></span></td>
+                            <td class="shares-col-actions">
                                 <div class="share-actions">
                                     <a href="<?= h($shareRowUrl) ?>" class="btn-share-sm" target="_blank" rel="noopener noreferrer">Open</a>
                                     <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">Copy</button>
-                                    <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" style="display:inline">
+                                    <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" class="share-revoke-form">
                                         <input type="hidden" name="action" value="share_revoke">
                                         <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                                         <input type="hidden" name="share_token" value="<?= h($shareRow['token']) ?>">
