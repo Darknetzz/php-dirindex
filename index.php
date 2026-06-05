@@ -150,17 +150,23 @@ function parseForwardedClientIp($headerValue) {
     return '';
 }
 
+function dirindexLoopbackRanges() {
+    return ['127.0.0.0/8', '::1/128'];
+}
+
+function isLoopbackIp($ip) {
+    return $ip !== '' && ipMatchesList($ip, dirindexLoopbackRanges());
+}
+
 function isPrivateOrLocalIp($ip) {
     static $privateRanges = [
-        '127.0.0.0/8',
-        '::1/128',
         '10.0.0.0/8',
         '172.16.0.0/12',
         '192.168.0.0/16',
         'fc00::/7',
         'fe80::/10',
     ];
-    return $ip !== '' && ipMatchesList($ip, $privateRanges);
+    return $ip !== '' && ipMatchesList($ip, array_merge(dirindexLoopbackRanges(), $privateRanges));
 }
 
 function resolveClientIp(array $config) {
@@ -814,7 +820,7 @@ $clientIpSource = $clientIpContext['source'];
 $clientIpProxy = $clientIpContext['proxy'];
 $ipBlacklist = isset($dirindexConfig['ip_blacklist']) && is_array($dirindexConfig['ip_blacklist']) ? $dirindexConfig['ip_blacklist'] : [];
 $ipWhitelist = isset($dirindexConfig['ip_whitelist']) && is_array($dirindexConfig['ip_whitelist']) ? $dirindexConfig['ip_whitelist'] : [];
-if (!$inShareMode && $clientIp !== '' && (ipMatchesList($clientIp, $ipBlacklist) || ($ipWhitelist !== [] && !ipMatchesList($clientIp, $ipWhitelist)))) {
+if (!$inShareMode && $clientIp !== '' && !isLoopbackIp($clientIp) && (ipMatchesList($clientIp, $ipBlacklist) || ($ipWhitelist !== [] && !ipMatchesList($clientIp, $ipWhitelist)))) {
     header('HTTP/1.1 403 Forbidden');
     header('Content-Type: text/plain; charset=UTF-8');
     exit('Access denied.');
@@ -3023,7 +3029,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <div class="settings-field">
                             <label for="admin-ip-whitelist">IP whitelist</label>
                             <textarea id="admin-ip-whitelist" name="ip_whitelist" rows="4" spellcheck="false" placeholder="192.168.1.0/24&#10;10.0.0.0/8"><?= h(formatIpAccessListForInput($ipWhitelist)) ?></textarea>
-                            <span class="settings-help">One IP or CIDR per line. When non-empty, only these addresses can browse the index (share links still work for anyone).</span>
+                            <span class="settings-help">One IP or CIDR per line. When non-empty, only these addresses can browse the index (loopback and share links are always allowed).</span>
                         </div>
                         <div class="settings-field">
                             <label for="admin-ip-blacklist">IP blacklist</label>

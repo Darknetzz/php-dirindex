@@ -26,8 +26,8 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 
 **Access control** (Settings → Server settings when signed in as admin):
 
-- **IP whitelist** — one IP or CIDR per line (e.g. `192.168.0.0/16`). If non-empty, only these addresses may browse the index; others get 403.
-- **IP blacklist** — one IP or CIDR per line. Matching addresses are denied unless they open a valid share link.
+- **IP whitelist** — one IP or CIDR per line (e.g. `192.168.0.0/16`). If non-empty, only these addresses may browse the index; others get 403. Loopback (`127.0.0.0/8`, `::1`) is always allowed so local access and `php -S` still work.
+- **IP blacklist** — one IP or CIDR per line. Matching addresses are denied unless they open a valid share link. Loopback is never blocked.
 - **Client IP header** — when behind a reverse proxy, choose the header that carries the real client IP (e.g. X-Forwarded-For). If unset and the connection comes from a private/local address (typical reverse-proxy setup), the app automatically uses `X-Real-IP` or `X-Forwarded-For` instead of the proxy's `REMOTE_ADDR`.
 
 These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if needed.
