@@ -476,6 +476,16 @@ function validCsrfToken($token) {
     return isset($_SESSION['csrf_token']) && is_string($token) && hash_equals($_SESSION['csrf_token'], $token);
 }
 
+function isShareAjaxRequest() {
+    return isset($_POST['ajax']) && (string) $_POST['ajax'] === '1';
+}
+
+function shareAjaxResponse($ok, $message) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['ok' => (bool) $ok, 'message' => (string) $message], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 function isAuthenticated() {
     return !empty($_SESSION['dirindex_authenticated']);
 }
@@ -903,6 +913,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
     $csrf = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
     if (!validCsrfToken($csrf)) {
+        if (isShareAjaxRequest() && $action === 'share_revoke') {
+            shareAjaxResponse(false, 'Security check failed. Please try again.');
+        }
         redirectToCurrentListing($indexHref, $relativePath, 'csrf_failed');
     }
 
@@ -1074,16 +1087,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'share_revoke') {
         if (!$hasUploadCredentials || !$authenticated) {
+            if (isShareAjaxRequest()) {
+                shareAjaxResponse(false, 'Please sign in first.');
+            }
             redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
         }
         if (!$sharesAvailable) {
+            if (isShareAjaxRequest()) {
+                shareAjaxResponse(false, 'Share links require PDO SQLite.');
+            }
             redirectToCurrentListing($indexHref, $relativePath, 'share_unavailable');
         }
         $revokeToken = trim((string) ($_POST['share_token'] ?? ''));
         $shareError = null;
         $pdo = dirindexGetSharesPdo(__DIR__, $shareError);
         if (!$pdo || $revokeToken === '' || !revokeShare($pdo, $revokeToken)) {
+            if (isShareAjaxRequest()) {
+                shareAjaxResponse(false, 'Could not create or revoke the share link.');
+            }
             redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
+        }
+        if (isShareAjaxRequest()) {
+            shareAjaxResponse(true, 'Share link revoked.');
         }
         redirectToCurrentListing($indexHref, $relativePath, 'share_revoked');
     }
@@ -1543,7 +1568,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .shares-table .shares-col-path { width: auto; }
         .shares-table .shares-col-type { width: 3.5rem; }
         .shares-table .shares-col-expires { width: 7.5rem; }
-        .shares-table .shares-col-actions { width: 10.5rem; }
+        .shares-table .shares-col-actions { width: 12rem; }
         .shares-table .shares-cell-clip {
             display: block;
             overflow: hidden;
@@ -1552,10 +1577,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             min-width: 0;
         }
         .shares-table code { font-size: 0.75rem; }
+        .shares-list-message[hidden] { display: none !important; }
+        .shares-list-message { margin-top: 0; margin-bottom: 0.75rem; }
         .share-actions { display: flex; gap: 0.35rem; flex-wrap: nowrap; align-items: center; }
         .share-actions .share-revoke-form { display: inline-flex; margin: 0; flex-shrink: 0; }
         .share-actions .btn-share-sm { flex-shrink: 0; white-space: nowrap; }
         .btn-share-sm {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
             padding: 0.25rem 0.5rem;
             font-size: 0.75rem;
             border: 1px solid var(--border);
@@ -1564,6 +1594,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             cursor: pointer;
         }
+        .btn-share-sm svg { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
         .btn-share-sm:hover { background: var(--hover); }
         .share-badge {
             display: inline-block;
@@ -2812,8 +2843,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             </div>
             <div class="modal-body">
                 <p class="settings-help">Public share links bypass IP access restrictions. Revoke links you no longer need.</p>
-                <?php if ($activeShares): ?>
-                <table class="shares-table">
+                <div id="shares-list-message" class="blocked-msg shares-list-message" hidden role="status"></div>
+                <table id="shares-table" class="shares-table"<?php if (!$activeShares): ?> hidden<?php endif; ?>>
                     <thead>
                         <tr>
                             <th class="shares-col-path">Path</th>
@@ -2822,7 +2853,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <th class="shares-col-actions">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="shares-table-body">
                         <?php foreach ($activeShares as $shareRow): ?>
                         <?php
                                 $shareRowUrl = shareUrl($indexHref, $shareRow['token'], [], true);
@@ -2835,13 +2866,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <td class="shares-col-expires"><span class="shares-cell-clip"><?= h($shareExpires) ?></span></td>
                             <td class="shares-col-actions">
                                 <div class="share-actions">
-                                    <a href="<?= h($shareRowUrl) ?>" class="btn-share-sm" target="_blank" rel="noopener noreferrer">Open</a>
-                                    <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">Copy</button>
+                                    <a href="<?= h($shareRowUrl) ?>" class="btn-share-sm" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                                        <span>Open</span>
+                                    </a>
+                                    <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                        <span class="btn-share-sm-label">Copy</span>
+                                    </button>
                                     <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" class="share-revoke-form">
                                         <input type="hidden" name="action" value="share_revoke">
                                         <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                                         <input type="hidden" name="share_token" value="<?= h($shareRow['token']) ?>">
-                                        <button type="submit" class="btn-share-sm">Revoke</button>
+                                        <button type="submit" class="btn-share-sm">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                            <span>Revoke</span>
+                                        </button>
                                     </form>
                                 </div>
                             </td>
@@ -2849,9 +2889,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <?php endforeach; ?>
                     </tbody>
                 </table>
-                <?php else: ?>
-                <p class="settings-help">No active share links. Use the share button on a file or folder in the listing.</p>
-                <?php endif; ?>
+                <p id="shares-list-empty" class="settings-help"<?php if ($activeShares): ?> hidden<?php endif; ?>>No active share links. Use the share button on a file or folder in the listing.</p>
             </div>
         </div>
     </div>
@@ -3526,10 +3564,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             btn.addEventListener('click', function() {
                 var url = btn.getAttribute('data-share-url');
                 if (!url) return;
+                var label = btn.querySelector('.btn-share-sm-label');
                 copyText(url).then(function() {
-                    var prev = btn.textContent;
-                    btn.textContent = 'Copied';
-                    setTimeout(function() { btn.textContent = prev; }, 2000);
+                    if (!label) return;
+                    var prev = label.textContent;
+                    label.textContent = 'Copied';
+                    setTimeout(function() { label.textContent = prev; }, 2000);
                 });
             });
         });
@@ -3537,9 +3577,32 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var sharesListOverlay = document.getElementById('shares-list-modal');
         var btnShares = document.getElementById('btn-shares');
         var sharesListClose = document.getElementById('shares-list-close');
+        var sharesListMessage = document.getElementById('shares-list-message');
+        var sharesTable = document.getElementById('shares-table');
+        var sharesTableBody = document.getElementById('shares-table-body');
+        var sharesListEmpty = document.getElementById('shares-list-empty');
+
+        function showSharesListMessage(text, type) {
+            if (!sharesListMessage) return;
+            sharesListMessage.textContent = text;
+            sharesListMessage.className = 'blocked-msg shares-list-message' + (type === 'success' ? ' message-success' : '');
+            sharesListMessage.hidden = false;
+        }
+        function clearSharesListMessage() {
+            if (!sharesListMessage) return;
+            sharesListMessage.hidden = true;
+            sharesListMessage.textContent = '';
+        }
+        function updateSharesListEmptyState() {
+            if (!sharesTableBody) return;
+            var hasRows = sharesTableBody.querySelector('tr');
+            if (sharesTable) sharesTable.hidden = !hasRows;
+            if (sharesListEmpty) sharesListEmpty.hidden = !!hasRows;
+        }
 
         function openSharesList() {
             if (!sharesListOverlay) return;
+            clearSharesListMessage();
             sharesListOverlay.classList.add('is-open');
             sharesListOverlay.setAttribute('aria-hidden', 'false');
         }
@@ -3554,6 +3617,33 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (sharesListOverlay) {
             sharesListOverlay.addEventListener('click', function(e) {
                 if (e.target === sharesListOverlay) closeSharesList();
+            });
+            sharesListOverlay.addEventListener('submit', function(e) {
+                var form = e.target.closest('.share-revoke-form');
+                if (!form) return;
+                e.preventDefault();
+                var submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) submitBtn.disabled = true;
+                var body = new FormData(form);
+                body.append('ajax', '1');
+                fetch(form.action, { method: 'POST', body: body, credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.ok) {
+                            var row = form.closest('tr');
+                            if (row) row.remove();
+                            updateSharesListEmptyState();
+                            showSharesListMessage(data.message || 'Share link revoked.', 'success');
+                        } else {
+                            showSharesListMessage(data.message || 'Could not revoke the share link.');
+                        }
+                    })
+                    .catch(function() {
+                        showSharesListMessage('Could not revoke the share link.');
+                    })
+                    .finally(function() {
+                        if (submitBtn) submitBtn.disabled = false;
+                    });
             });
         }
         document.addEventListener('keydown', function(e) {
