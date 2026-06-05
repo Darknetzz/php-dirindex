@@ -460,9 +460,30 @@ function currentListingUrl($indexHref, $relativePath, array $params = [], $share
     return $indexHref . ($params ? '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986) : '');
 }
 
-function shareUrl($indexHref, $token, array $params = []) {
+function requestOrigin() {
+    $host = '';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_HOST'])) {
+        $host = trim(explode(',', (string) $_SERVER['HTTP_X_FORWARDED_HOST'])[0]);
+    } elseif (!empty($_SERVER['HTTP_HOST'])) {
+        $host = (string) $_SERVER['HTTP_HOST'];
+    }
+    if ($host === '') {
+        return '';
+    }
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443)
+        || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+    return ($https ? 'https' : 'http') . '://' . $host;
+}
+
+function shareUrl($indexHref, $token, array $params = [], $absolute = false) {
     $params = array_merge(['share' => $token], $params);
-    return $indexHref . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    $url = $indexHref . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    if (!$absolute) {
+        return $url;
+    }
+    $origin = requestOrigin();
+    return $origin !== '' ? $origin . $url : $url;
 }
 
 function directEntryUrl($relativePath, $trailingSlash = false) {
@@ -988,7 +1009,7 @@ if ($authenticated && $sharesAvailable && !$inShareMode) {
 }
 $shareCreatedUrl = null;
 if (isset($_SESSION['share_created_token'])) {
-    $shareCreatedUrl = shareUrl($indexHref, (string) $_SESSION['share_created_token']);
+    $shareCreatedUrl = shareUrl($indexHref, (string) $_SESSION['share_created_token'], [], true);
     unset($_SESSION['share_created_token']);
 }
 
@@ -2604,7 +2625,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <tbody>
                         <?php foreach ($activeShares as $shareRow): ?>
                         <?php
-                            $shareRowUrl = shareUrl($indexHref, $shareRow['token']);
+                                $shareRowUrl = shareUrl($indexHref, $shareRow['token'], [], true);
                             $shareExpires = $shareRow['expires_at'] === null ? 'Never' : (@date('Y-m-d H:i', $shareRow['expires_at']) ?: '—');
                         ?>
                         <tr>
