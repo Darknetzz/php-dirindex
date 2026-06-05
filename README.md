@@ -8,7 +8,7 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite.
 - **Requires** PHP and a web server. Works when the script is symlinked or in a subdirectory; it uses `DOCUMENT_ROOT` when available so the index can show the server root.
 
-**Settings storage:** Drop in only `index.php`. On first run, the setup wizard saves upload credentials and other settings locally:
+**Settings storage:** Drop in only `index.php`. On first run, the setup wizard saves upload credentials and other settings locally. You can optionally enable **private-network browsing** during setup (RFC1918, link-local, and IPv6 private ranges). If you complete setup from a public IP, your current address is added to the whitelist automatically so you are not locked out.
 
 - **PDO SQLite available (recommended):** `.dirindex.sqlite` next to `index.php` (upload settings, share links, and UI-managed options).
 - **No SQLite:** `.dirindex.json` in the same folder (upload and UI-managed options; share links require SQLite).

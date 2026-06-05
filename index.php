@@ -154,19 +154,36 @@ function dirindexLoopbackRanges() {
     return ['127.0.0.0/8', '::1/128'];
 }
 
+function dirindexPrivateNetworkRanges() {
+    return [
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+        '169.254.0.0/16',
+        'fc00::/7',
+        'fe80::/10',
+    ];
+}
+
+function dirindexPrivateNetworkWhitelistRanges() {
+    return array_merge(dirindexLoopbackRanges(), dirindexPrivateNetworkRanges());
+}
+
+function dirindexBuildPrivateNetworkWhitelist($clientIp = '') {
+    $whitelist = dirindexPrivateNetworkWhitelistRanges();
+    $clientIp = trim((string) $clientIp);
+    if ($clientIp !== '' && !ipMatchesList($clientIp, $whitelist)) {
+        $whitelist[] = $clientIp;
+    }
+    return $whitelist;
+}
+
 function isLoopbackIp($ip) {
     return $ip !== '' && ipMatchesList($ip, dirindexLoopbackRanges());
 }
 
 function isPrivateOrLocalIp($ip) {
-    static $privateRanges = [
-        '10.0.0.0/8',
-        '172.16.0.0/12',
-        '192.168.0.0/16',
-        'fc00::/7',
-        'fe80::/10',
-    ];
-    return $ip !== '' && ipMatchesList($ip, array_merge(dirindexLoopbackRanges(), $privateRanges));
+    return $ip !== '' && ipMatchesList($ip, dirindexPrivateNetworkWhitelistRanges());
 }
 
 function resolveClientIp(array $config) {
@@ -1110,19 +1127,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, 'setup_short_password');
         }
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
-        $saveError = null;
-        $saved = saveDirindexStoredConfig(__DIR__, [
+        $restrictPrivateNetworks = !empty($_POST['restrict_private_networks']);
+        $setupSettings = [
             'upload_enabled' => '1',
             'auth_username' => $username,
             'auth_password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'upload_max_bytes' => (string) $maxBytesInt,
-        ], $saveError);
+        ];
+        if ($restrictPrivateNetworks) {
+            $setupSettings['ip_whitelist'] = dirindexBuildPrivateNetworkWhitelist($clientIp);
+        }
+        $saveError = null;
+        $saved = saveDirindexStoredConfig(__DIR__, $setupSettings, $saveError);
         if (!$saved) {
             dirindexFlashSet($saveError ?: ('Could not write ' . basename(dirindexStoragePath(__DIR__)) . ' in ' . __DIR__ . '.'));
             redirectToCurrentListing($indexHref, $relativePath, 'setup_write_failed');
         }
         session_regenerate_id(true);
         $_SESSION['dirindex_authenticated'] = true;
+        if ($restrictPrivateNetworks && $clientIp !== '' && !isPrivateOrLocalIp($clientIp)) {
+            dirindexFlashSet('Private-network access is enabled. Your current IP (' . $clientIp . ') was added to the whitelist so you stay signed in.');
+        }
         redirectToCurrentListing($indexHref, $relativePath, 'setup_saved');
     }
 
@@ -2524,6 +2549,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .setup-form .auth-field input {
             padding: 0.72rem 0.8rem;
         }
+        .setup-form .settings-check-row span code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
         .field-help {
             margin-top: 0.1rem;
             color: var(--text-muted);
@@ -2579,12 +2608,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <div class="setup-benefit">
                     <span class="setup-benefit-icon">2</span>
                     <div>
+                        <strong>Optionally restrict access</strong>
+                        <span>Enable private-network browsing to keep the listing off the public internet. Share links still work for anyone.</span>
+                    </div>
+                </div>
+                <div class="setup-benefit">
+                    <span class="setup-benefit-icon">3</span>
+                    <div>
                         <strong>Choose an upload limit</strong>
                         <span>Leave the limit at 0 to use your PHP server defaults, or set a byte limit for this app.</span>
                     </div>
                 </div>
                 <div class="setup-benefit">
-                    <span class="setup-benefit-icon">3</span>
+                    <span class="setup-benefit-icon">4</span>
                     <div>
                         <strong>Start browsing</strong>
                         <span>After saving, you will be signed in and returned to the directory listing.</span>
@@ -2625,6 +2661,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <input type="password" id="setup-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8" required>
                     <span class="field-help">Re-enter the password to catch typos before saving.</span>
                 </div>
+                <label class="settings-check-row">
+                    <input type="checkbox" name="restrict_private_networks" value="1">
+                    <span>
+                        Restrict browsing to private networks
+                        <span class="field-help">Allows RFC1918, link-local, and IPv6 private ranges. Loopback always works. Share links bypass IP rules.<?php if ($clientIp !== '' && !isPrivateOrLocalIp($clientIp)): ?> Your current IP (<code><?= h($clientIp) ?></code>) is public and will be added to the whitelist automatically.<?php endif; ?></span>
+                    </span>
+                </label>
                 <div class="auth-field">
                     <label for="setup-upload-max">Upload limit in bytes</label>
                     <input type="number" id="setup-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" placeholder="0">
