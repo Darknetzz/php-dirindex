@@ -3,7 +3,7 @@
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
 - **Place** `index.php` in any folder (or document root) and open it in a browser.
-- **Lists** the current directory with name, size, and modified date. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. In **Settings → Display**, show or hide the size and modified columns (saved in the browser).
+- **Lists** the current directory with name, size, modified date, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
 - **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite.
 - **Requires** PHP and a web server. Works when the script is symlinked or in a subdirectory; it uses `DOCUMENT_ROOT` when available so the index can show the server root.
@@ -30,7 +30,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 - `ip_blacklist` — array of IPs or CIDR ranges. If the client IP matches any entry, access is denied with 403.
 - `ip_header` — when behind a reverse proxy, set to the header that holds the client IP (e.g. `"HTTP_X_FORWARDED_FOR"`). Otherwise `REMOTE_ADDR` is used.
 
-**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from **Settings → Shared links**.
+**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 
 Example URLs:
 

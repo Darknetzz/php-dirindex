@@ -1019,6 +1019,7 @@ if ($handle) {
         $isFile = is_file($full);
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
         $isText = $isFile && (isset($previewExts[$ext]) || !looksLikeBinary($full));
+        $entryPerms = @fileperms($full);
         $items[] = [
             'name'       => $entry,
             'path'       => $relativePath ? $relativePath . '/' . $entry : $entry,
@@ -1027,6 +1028,8 @@ if ($handle) {
             'linkTarget' => $linkTarget,
             'size'       => $isFile ? filesize($full) : null,
             'mtime'      => $mtime,
+            'perms'      => $entryPerms !== false ? (int) $entryPerms : null,
+            'permsLabel' => formatEntryPermissions($full),
             'isText'     => $isText,
             'ext'        => $ext,
         ];
@@ -1101,6 +1104,7 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                     'content_url' => currentListingUrl($indexHref, $openFilePath, ['content' => '1']),
                     'name'        => $openName,
                     'open_url'    => $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath),
+                    'share_path'  => $openFilePath,
                 ];
             }
         } elseif (!$allowOutside && !$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
@@ -1118,6 +1122,41 @@ function formatSize($bytes) {
         $i++;
     }
     return round($bytes, $i ? 2 : 0) . ' ' . $units[$i];
+}
+
+function formatEntryPermissions($path) {
+    $perms = @fileperms($path);
+    if ($perms === false) {
+        return null;
+    }
+    if (($perms & 0xC000) === 0xC000) {
+        $type = 's';
+    } elseif (($perms & 0xA000) === 0xA000) {
+        $type = 'l';
+    } elseif (($perms & 0x8000) === 0x8000) {
+        $type = '-';
+    } elseif (($perms & 0x6000) === 0x6000) {
+        $type = 'b';
+    } elseif (($perms & 0x4000) === 0x4000) {
+        $type = 'd';
+    } elseif (($perms & 0x2000) === 0x2000) {
+        $type = 'c';
+    } elseif (($perms & 0x1000) === 0x1000) {
+        $type = 'p';
+    } else {
+        $type = '?';
+    }
+    $info = $type;
+    $info .= ($perms & 0x0100) ? 'r' : '-';
+    $info .= ($perms & 0x0080) ? 'w' : '-';
+    $info .= ($perms & 0x0040) ? (($perms & 0x0800) ? 's' : 'x') : (($perms & 0x0800) ? 'S' : '-');
+    $info .= ($perms & 0x0020) ? 'r' : '-';
+    $info .= ($perms & 0x0010) ? 'w' : '-';
+    $info .= ($perms & 0x0008) ? (($perms & 0x0400) ? 's' : 'x') : (($perms & 0x0400) ? 'S' : '-');
+    $info .= ($perms & 0x0004) ? 'r' : '-';
+    $info .= ($perms & 0x0002) ? 'w' : '-';
+    $info .= ($perms & 0x0001) ? (($perms & 0x0200) ? 't' : 'x') : (($perms & 0x0200) ? 'T' : '-');
+    return $info;
 }
 
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
@@ -1521,6 +1560,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .listing th.size { text-align: right; }
         .listing th.modified { text-align: right; }
+        .listing th.perms { text-align: right; }
         .listing-sort-btn {
             display: flex;
             align-items: center;
@@ -1537,7 +1577,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             transition: color 0.15s, background 0.15s;
         }
         .listing th.size .listing-sort-btn,
-        .listing th.modified .listing-sort-btn {
+        .listing th.modified .listing-sort-btn,
+        .listing th.perms .listing-sort-btn {
             justify-content: flex-end;
         }
         .listing-sort-btn:hover,
@@ -1554,7 +1595,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing table.listing-hide-size th.size,
         .listing table.listing-hide-size td.size,
         .listing table.listing-hide-modified th.modified,
-        .listing table.listing-hide-modified td.modified {
+        .listing table.listing-hide-modified td.modified,
+        .listing table.listing-hide-perms th.perms,
+        .listing table.listing-hide-perms td.perms {
             display: none;
         }
 
@@ -1618,8 +1661,36 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .modal-title-wrap { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
         .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
-        .modal-open-link { font-size: 0.8rem; color: var(--accent); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+        .modal-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+        .modal-open-link { font-size: 0.8rem; color: var(--accent); text-decoration: none; white-space: nowrap; }
         .modal-open-link:hover { text-decoration: underline; }
+        .modal-share-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.25rem 0.55rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .modal-share-btn:hover,
+        .modal-share-btn:focus-visible {
+            color: var(--accent);
+            border-color: var(--accent-dim);
+            background: var(--hover);
+            outline: none;
+        }
+        .modal-share-btn svg { width: 0.9rem; height: 0.9rem; }
         .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; line-height: 1; border-radius: 4px; }
         .modal-close:hover { color: var(--text); background: var(--hover); }
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
@@ -1637,13 +1708,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing .name.binary a { color: var(--text-muted); }
         .listing .name.binary a:hover { color: var(--accent); }
 
-        .listing .size, .listing .modified {
+        .listing .size, .listing .modified, .listing .perms {
             color: var(--text-muted);
             font-size: 0.85rem;
         }
         .listing .size { text-align: right; }
         .listing .col-modified { min-width: 10rem; }
         .listing td.modified, .listing th.modified { white-space: nowrap; }
+        .listing .col-perms { min-width: 6.5rem; }
+        .listing td.perms, .listing th.perms { white-space: nowrap; }
 
         .icon {
             width: 1.1em;
@@ -2041,7 +2114,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
     </style>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -2150,7 +2223,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </button>
                 <?php endif; ?>
-                <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings">
+                <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
+                <button type="button" class="btn-settings" id="btn-shares" aria-label="Shared links" title="Shared links" aria-haspopup="dialog" aria-controls="shares-list-modal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </button>
+                <?php endif; ?>
+                <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings" aria-haspopup="dialog" aria-controls="settings-modal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                 </button>
             </div>
@@ -2231,6 +2309,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <input type="checkbox" id="setting-col-modified" checked>
                             Modified
                         </label>
+                        <label class="listing-col-picker-option" role="menuitemcheckbox">
+                            <input type="checkbox" id="setting-col-perms" checked>
+                            Permissions
+                        </label>
                     </div>
                 </div>
                 <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
@@ -2240,6 +2322,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <col class="col-name">
                     <col class="col-size">
                     <col class="col-modified">
+                    <col class="col-perms">
                 </colgroup>
                 <thead>
                     <tr>
@@ -2256,6 +2339,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <th scope="col" class="modified" data-sort-col="modified">
                             <button type="button" class="listing-sort-btn" data-sort-col="modified">
                                 Modified <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col" class="perms" data-sort-col="perms">
+                            <button type="button" class="listing-sort-btn" data-sort-col="perms">
+                                Permissions <span class="listing-sort-indicator" aria-hidden="true"></span>
                             </button>
                         </th>
                     </tr>
@@ -2284,6 +2372,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </td>
                         <td class="size">&#8212;</td>
                         <td class="modified">&#8212;</td>
+                        <td class="perms">&#8212;</td>
                     </tr>
                     <?php endif; ?>
 
@@ -2303,7 +2392,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 $url = currentListingUrl($indexHref, $item['path']);
                                 $contentUrl = currentListingUrl($indexHref, $item['path'], ['content' => '1']);
                                 $openUrl = $directUrl;
-                                $linkAttrs = ' class="file-preview" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '"';
+                                $linkAttrs = ' class="file-preview" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"';
                             } else {
                                 $url = $directUrl;
                                 $linkAttrs = $inShareMode
@@ -2313,7 +2402,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
                     ?>
-                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>">
+                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
                         <td class="name <?= trim($nameClass) ?>">
                             <div class="name-content">
                                 <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
@@ -2350,6 +2439,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 echo '&#8212;';
                             }
                         ?></td>
+                        <td class="perms"><?= !empty($item['permsLabel']) ? h($item['permsLabel']) : '&#8212;' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -2366,7 +2456,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             <div class="modal-header">
                 <div class="modal-title-wrap">
                     <span class="modal-title" id="modal-title"></span>
+                </div>
+                <div class="modal-header-actions">
                     <a id="modal-open-link" class="modal-open-link" href="#" target="_blank" rel="noopener noreferrer" style="display: none;">Open in new tab</a>
+                    <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
+                    <button type="button" class="modal-share-btn" id="modal-share-btn" hidden aria-label="Share file" title="Create share link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                        Share
+                    </button>
+                    <?php endif; ?>
                 </div>
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
@@ -2479,57 +2577,62 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <button type="submit" class="btn-auth">Save account</button>
                     </form>
                 </section>
-
-                <?php if ($sharesAvailable): ?>
-                <section class="settings-section" aria-labelledby="shares-settings-title">
-                    <h3 id="shares-settings-title">Shared links</h3>
-                    <p class="settings-help">Public share links bypass IP access restrictions. Revoke links you no longer need.</p>
-                    <?php if ($activeShares): ?>
-                    <table class="shares-table">
-                        <thead>
-                            <tr>
-                                <th>Path</th>
-                                <th>Type</th>
-                                <th>Expires</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($activeShares as $shareRow): ?>
-                            <?php
-                                $shareRowUrl = shareUrl($indexHref, $shareRow['token']);
-                                $shareExpires = $shareRow['expires_at'] === null ? 'Never' : (@date('Y-m-d H:i', $shareRow['expires_at']) ?: '—');
-                            ?>
-                            <tr>
-                                <td><code>/<?= h($shareRow['path']) ?></code></td>
-                                <td><?= h($shareRow['type']) ?></td>
-                                <td><?= h($shareExpires) ?></td>
-                                <td>
-                                    <div class="share-actions">
-                                        <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">Copy</button>
-                                        <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" style="display:inline">
-                                            <input type="hidden" name="action" value="share_revoke">
-                                            <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                                            <input type="hidden" name="share_token" value="<?= h($shareRow['token']) ?>">
-                                            <button type="submit" class="btn-share-sm">Revoke</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <?php else: ?>
-                    <p class="settings-help">No active share links. Use the share button on a file or folder in the listing.</p>
-                    <?php endif; ?>
-                </section>
-                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
     </div>
 
     <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
+    <div id="shares-list-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="shares-list-title">
+            <div class="modal-header">
+                <span class="modal-title" id="shares-list-title">Shared links</span>
+                <button type="button" class="modal-close" id="shares-list-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="settings-help">Public share links bypass IP access restrictions. Revoke links you no longer need.</p>
+                <?php if ($activeShares): ?>
+                <table class="shares-table">
+                    <thead>
+                        <tr>
+                            <th>Path</th>
+                            <th>Type</th>
+                            <th>Expires</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($activeShares as $shareRow): ?>
+                        <?php
+                            $shareRowUrl = shareUrl($indexHref, $shareRow['token']);
+                            $shareExpires = $shareRow['expires_at'] === null ? 'Never' : (@date('Y-m-d H:i', $shareRow['expires_at']) ?: '—');
+                        ?>
+                        <tr>
+                            <td><code>/<?= h($shareRow['path']) ?></code></td>
+                            <td><?= h($shareRow['type']) ?></td>
+                            <td><?= h($shareExpires) ?></td>
+                            <td>
+                                <div class="share-actions">
+                                    <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">Copy</button>
+                                    <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" style="display:inline">
+                                        <input type="hidden" name="action" value="share_revoke">
+                                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                                        <input type="hidden" name="share_token" value="<?= h($shareRow['token']) ?>">
+                                        <button type="submit" class="btn-share-sm">Revoke</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php else: ?>
+                <p class="settings-help">No active share links. Use the share button on a file or folder in the listing.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
     <div id="share-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal share-modal-panel" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
@@ -2656,6 +2759,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalPre = document.getElementById('modal-pre');
         var modalMd = document.getElementById('modal-md');
         var closeBtn = document.getElementById('modal-close');
+        var shareBtn = document.getElementById('modal-share-btn');
+        var currentSharePath = '';
+
+        function sharePathFromContentUrl(contentUrl, fileName) {
+            if (!contentUrl) return fileName || '';
+            var pathMatch = contentUrl.match(/[?&]path=([^&]+)/);
+            if (!pathMatch) return fileName || '';
+            return decodeURIComponent(pathMatch[1].replace(/\+/g, ' '));
+        }
+        function setModalSharePath(path) {
+            currentSharePath = path || '';
+            if (!shareBtn) return;
+            shareBtn.hidden = !currentSharePath;
+            if (currentSharePath) shareBtn.setAttribute('data-share-path', currentSharePath);
+            else shareBtn.removeAttribute('data-share-path');
+        }
 
         function buildListingUrlWithOpen(contentUrl, fileName) {
             var pathMatch = contentUrl && contentUrl.match(/[?&]path=([^&]+)/);
@@ -2690,10 +2809,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalPre.style.display = '';
             openLinkEl.style.display = 'none';
             openLinkEl.removeAttribute('href');
+            setModalSharePath('');
             removeOpenFromUrl();
         }
-        function openModal(name, content, lang, html, openUrl) {
+        function openModal(name, content, lang, html, openUrl, sharePath) {
             titleEl.textContent = name;
+            setModalSharePath(sharePath || '');
             if (openUrl) {
                 openLinkEl.href = openUrl;
                 openLinkEl.style.display = '';
@@ -2719,9 +2840,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'false');
         }
 
-        function openModalFromContentUrl(contentUrl, name, openUrl, pushStateUrl) {
+        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl) {
             fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl);
+                var path = sharePath || sharePathFromContentUrl(contentUrl, data.name || name);
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl, path);
                 if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
             }).catch(function() {
                 if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
@@ -2736,8 +2858,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var name = a.getAttribute('data-name') || '';
             if (!contentUrl) return;
             var openUrl = a.getAttribute('data-open-url') || '';
+            var sharePath = a.getAttribute('data-share-path') || sharePathFromContentUrl(contentUrl, name);
             var listingUrl = buildListingUrlWithOpen(contentUrl, name);
-            openModalFromContentUrl(contentUrl, name, openUrl, listingUrl);
+            openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl);
         });
 
         closeBtn.addEventListener('click', closeModal);
@@ -2756,7 +2879,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (initialContentUrl) {
             var initialName = body.getAttribute('data-open-name') || '';
             var initialOpenUrl = body.getAttribute('data-open-url') || '';
-            openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl);
+            var initialSharePath = body.getAttribute('data-open-share-path') || sharePathFromContentUrl(initialContentUrl, initialName);
+            openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl, initialSharePath);
         }
     })();
 
@@ -2769,6 +2893,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var STORAGE_SORT = 'dirindex_list_sort';
         var STORAGE_COL_SIZE = 'dirindex_col_size';
         var STORAGE_COL_MODIFIED = 'dirindex_col_modified';
+        var STORAGE_COL_PERMS = 'dirindex_col_perms';
 
         function getSetting(key, def) {
             try { return localStorage.getItem(key) || def; } catch (e) { return def; }
@@ -2785,7 +2910,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (!raw) return null;
                 var parsed = JSON.parse(raw);
                 if (!parsed || !parsed.col) return null;
-                if (['name', 'size', 'modified'].indexOf(parsed.col) === -1) return null;
+                if (['name', 'size', 'modified', 'perms'].indexOf(parsed.col) === -1) return null;
                 return { col: parsed.col, dir: parsed.dir === 'desc' ? 'desc' : 'asc' };
             } catch (e) {
                 return null;
@@ -2817,9 +2942,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             } else if (col === 'size') {
                 va = parseInt(a.getAttribute('data-sort-size') || '-1', 10);
                 vb = parseInt(b.getAttribute('data-sort-size') || '-1', 10);
-            } else {
+            } else if (col === 'modified') {
                 va = parseInt(a.getAttribute('data-sort-mtime') || '0', 10);
                 vb = parseInt(b.getAttribute('data-sort-mtime') || '0', 10);
+            } else {
+                va = parseInt(a.getAttribute('data-sort-perms') || '0', 10);
+                vb = parseInt(b.getAttribute('data-sort-perms') || '0', 10);
             }
             if (va < vb) return -1 * mul;
             if (va > vb) return 1 * mul;
@@ -2853,10 +2981,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         function applyColumns() {
             var showSize = getSetting(STORAGE_COL_SIZE, '1') !== '0';
             var showModified = getSetting(STORAGE_COL_MODIFIED, '1') !== '0';
+            var showPerms = getSetting(STORAGE_COL_PERMS, '1') !== '0';
             table.classList.toggle('listing-hide-size', !showSize);
             table.classList.toggle('listing-hide-modified', !showModified);
+            table.classList.toggle('listing-hide-perms', !showPerms);
             var sizeCheck = document.getElementById('setting-col-size');
             var modCheck = document.getElementById('setting-col-modified');
+            var permsCheck = document.getElementById('setting-col-perms');
             if (sizeCheck) {
                 sizeCheck.checked = showSize;
                 sizeCheck.setAttribute('aria-checked', showSize ? 'true' : 'false');
@@ -2864,6 +2995,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (modCheck) {
                 modCheck.checked = showModified;
                 modCheck.setAttribute('aria-checked', showModified ? 'true' : 'false');
+            }
+            if (permsCheck) {
+                permsCheck.checked = showPerms;
+                permsCheck.setAttribute('aria-checked', showPerms ? 'true' : 'false');
             }
         }
         function wireColumnCheckbox(check, storageKey) {
@@ -2920,6 +3055,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         wireColumnCheckbox(document.getElementById('setting-col-size'), STORAGE_COL_SIZE);
         wireColumnCheckbox(document.getElementById('setting-col-modified'), STORAGE_COL_MODIFIED);
+        wireColumnCheckbox(document.getElementById('setting-col-perms'), STORAGE_COL_PERMS);
         wireColumnPicker();
 
         applyColumns();
@@ -3066,6 +3202,35 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             });
         });
 
+        var sharesListOverlay = document.getElementById('shares-list-modal');
+        var btnShares = document.getElementById('btn-shares');
+        var sharesListClose = document.getElementById('shares-list-close');
+
+        function openSharesList() {
+            if (!sharesListOverlay) return;
+            sharesListOverlay.classList.add('is-open');
+            sharesListOverlay.setAttribute('aria-hidden', 'false');
+        }
+        function closeSharesList() {
+            if (!sharesListOverlay) return;
+            sharesListOverlay.classList.remove('is-open');
+            sharesListOverlay.setAttribute('aria-hidden', 'true');
+        }
+
+        if (btnShares) btnShares.addEventListener('click', openSharesList);
+        if (sharesListClose) sharesListClose.addEventListener('click', closeSharesList);
+        if (sharesListOverlay) {
+            sharesListOverlay.addEventListener('click', function(e) {
+                if (e.target === sharesListOverlay) closeSharesList();
+            });
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && sharesListOverlay && sharesListOverlay.classList.contains('is-open')) {
+                closeSharesList();
+                e.stopPropagation();
+            }
+        });
+
         var shareOverlay = document.getElementById('share-modal');
         var shareClose = document.getElementById('share-modal-close');
         var shareCancel = document.getElementById('share-modal-cancel');
@@ -3092,7 +3257,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
 
         document.addEventListener('click', function(e) {
-            var btn = e.target.closest('.entry-share');
+            var btn = e.target.closest('.entry-share, #modal-share-btn');
             if (!btn) return;
             e.preventDefault();
             openShareModal(btn.getAttribute('data-share-path') || '', btn.getAttribute('data-share-type') || 'file');
