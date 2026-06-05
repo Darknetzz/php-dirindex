@@ -24,11 +24,13 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 - `auth_password_hash` — password hash created with `password_hash()`.
 - `upload_max_bytes` — optional per-file limit; `0` means use PHP/web-server limits.
 
-**Advanced options** (edit `.dirindex.sqlite` settings table or `.dirindex.json`):
+**Access control** (Settings → Server settings when signed in as admin):
 
-- `ip_whitelist` — array of IPs or CIDR ranges (e.g. `["127.0.0.1", "192.168.0.0/16"]`). If non-empty, only these addresses may access the index; others get 403.
-- `ip_blacklist` — array of IPs or CIDR ranges. If the client IP matches any entry, access is denied with 403.
-- `ip_header` — when behind a reverse proxy, set to the header that holds the client IP (e.g. `"HTTP_X_FORWARDED_FOR"`). Otherwise `REMOTE_ADDR` is used.
+- **IP whitelist** — one IP or CIDR per line (e.g. `192.168.0.0/16`). If non-empty, only these addresses may browse the index; others get 403.
+- **IP blacklist** — one IP or CIDR per line. Matching addresses are denied unless they open a valid share link.
+- **Client IP header** — when behind a reverse proxy, choose the header that carries the real client IP (e.g. X-Forwarded-For). Otherwise `REMOTE_ADDR` is used.
+
+These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if needed.
 
 **Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 

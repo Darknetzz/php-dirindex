@@ -79,6 +79,68 @@ function ipMatchesList($ip, array $list) {
 }
 
 /**
+ * Parse newline- or comma-separated IP/CIDR list from settings input.
+ */
+function parseIpAccessListInput($text) {
+    $text = str_replace([',', ';'], "\n", (string) $text);
+    $entries = [];
+    foreach (preg_split('/\R/', $text) as $line) {
+        $entry = trim($line);
+        if ($entry !== '' && !str_starts_with($entry, '#')) {
+            $entries[] = $entry;
+        }
+    }
+    return $entries;
+}
+
+function formatIpAccessListForInput(array $list) {
+    return implode("\n", array_map('strval', $list));
+}
+
+function isValidIpAccessEntry($entry) {
+    $entry = trim((string) $entry);
+    if ($entry === '') {
+        return false;
+    }
+    if (strpos($entry, '/') !== false) {
+        $parts = explode('/', $entry, 2);
+        $network = trim($parts[0]);
+        if ($network === '' || !isset($parts[1]) || $parts[1] === '' || !ctype_digit((string) $parts[1])) {
+            return false;
+        }
+        $prefix = (int) $parts[1];
+        $netBin = @inet_pton($network);
+        if ($netBin === false) {
+            return false;
+        }
+        $maxPrefix = strlen($netBin) * 8;
+        return $prefix >= 0 && $prefix <= $maxPrefix;
+    }
+    return @inet_pton($entry) !== false;
+}
+
+function validateIpAccessList(array $entries, &$invalidEntry = null) {
+    foreach ($entries as $entry) {
+        if (!isValidIpAccessEntry($entry)) {
+            $invalidEntry = $entry;
+            return false;
+        }
+    }
+    return true;
+}
+
+function normalizeIpHeaderInput($value) {
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '';
+    }
+    if (!str_starts_with($value, 'HTTP_')) {
+        $value = 'HTTP_' . strtoupper(str_replace('-', '_', $value));
+    }
+    return preg_match('/^HTTP_[A-Z0-9_]+$/', $value) ? $value : null;
+}
+
+/**
  * Ensure a resolved path is under the base directory (prevents symlink escape).
  */
 function pathUnderBase($resolved, $realBase) {
@@ -979,12 +1041,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $maxBytes = trim((string) ($_POST['upload_max_bytes'] ?? ''));
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
+        $ipWhitelistEntries = parseIpAccessListInput($_POST['ip_whitelist'] ?? '');
+        $ipBlacklistEntries = parseIpAccessListInput($_POST['ip_blacklist'] ?? '');
+        $invalidIpEntry = null;
+        if (!validateIpAccessList($ipWhitelistEntries, $invalidIpEntry) || !validateIpAccessList($ipBlacklistEntries, $invalidIpEntry)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'ip_access_invalid');
+        }
+        $ipHeader = normalizeIpHeaderInput($_POST['ip_header'] ?? '');
+        if ($ipHeader === null) {
+            redirectToCurrentListing($indexHref, $relativePath, 'ip_header_invalid');
+        }
         $saveError = null;
         $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
+            'ip_whitelist' => $ipWhitelistEntries,
+            'ip_blacklist' => $ipBlacklistEntries,
+            'ip_header' => $ipHeader,
         ], $saveError);
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'settings_saved' : 'settings_write_failed');
     }
@@ -1207,6 +1282,8 @@ $messageMap = [
     'setup_write_failed' => ['error', 'Could not save upload settings. Check file permissions.'],
     'settings_saved' => ['success', 'Settings saved.'],
     'settings_write_failed' => ['error', 'Could not save settings. Check file permissions.'],
+    'ip_access_invalid' => ['error', 'Access list contains an invalid IP address or CIDR range.'],
+    'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
     'upload_bad_name' => ['error', 'Upload filename is not allowed.'],
     'upload_exists' => ['error', 'A file with that name already exists. Confirm overwrite and try again.'],
     'upload_failed' => ['error', 'Upload failed.'],
@@ -1961,7 +2038,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
-        .settings-modal .modal-body { padding: 1.25rem; }
+        .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
         .login-modal-panel,
         .share-modal-panel { max-width: 440px; }
         .shares-list-panel { max-width: 920px; }
@@ -2156,7 +2233,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-size: 0.9rem;
         }
         .settings-field input,
-        .settings-field select {
+        .settings-field select,
+        .settings-field textarea {
             width: 100%;
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -2164,6 +2242,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             padding: 0.55rem 0.65rem;
             font: inherit;
+        }
+        .settings-field textarea {
+            min-height: 5.5rem;
+            resize: vertical;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.45;
         }
         .settings-field select {
             appearance: none;
@@ -2188,6 +2273,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .settings-form .btn-auth {
             justify-self: start;
+        }
+        .settings-inline-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .settings-detected-ip {
+            margin: 0;
+            font-size: 0.85rem;
+        }
+        .settings-detected-ip code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
         }
         @media (max-width: 640px) {
             .admin-bar {
@@ -2804,6 +2903,43 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <input type="number" id="admin-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" value="<?= h((string) ((int) ($dirindexConfig['upload_max_bytes'] ?? 0))) ?>">
                             <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
                         </div>
+                        <div class="settings-field">
+                            <label for="admin-ip-whitelist">IP whitelist</label>
+                            <textarea id="admin-ip-whitelist" name="ip_whitelist" rows="4" spellcheck="false" placeholder="192.168.1.0/24&#10;10.0.0.0/8"><?= h(formatIpAccessListForInput($ipWhitelist)) ?></textarea>
+                            <span class="settings-help">One IP or CIDR per line. When non-empty, only these addresses can browse the index (share links still work for anyone).</span>
+                        </div>
+                        <div class="settings-field">
+                            <label for="admin-ip-blacklist">IP blacklist</label>
+                            <textarea id="admin-ip-blacklist" name="ip_blacklist" rows="4" spellcheck="false" placeholder="203.0.113.50"><?= h(formatIpAccessListForInput($ipBlacklist)) ?></textarea>
+                            <span class="settings-help">One IP or CIDR per line. Matching addresses are always denied unless they have a valid share link.</span>
+                        </div>
+                        <div class="settings-field">
+                            <label for="admin-ip-header">Client IP header (reverse proxy)</label>
+                            <?php
+                            $ipHeaderCurrent = (string) ($dirindexConfig['ip_header'] ?? '');
+                            $ipHeaderPresets = [
+                                '' => 'REMOTE_ADDR (direct connection)',
+                                'HTTP_X_FORWARDED_FOR' => 'X-Forwarded-For',
+                                'HTTP_X_REAL_IP' => 'X-Real-IP',
+                                'HTTP_CF_CONNECTING_IP' => 'CF-Connecting-IP (Cloudflare)',
+                            ];
+                            ?>
+                            <select id="admin-ip-header" name="ip_header">
+                                <?php foreach ($ipHeaderPresets as $value => $label): ?>
+                                <option value="<?= h($value) ?>"<?= $ipHeaderCurrent === $value ? ' selected' : '' ?>><?= h($label) ?></option>
+                                <?php endforeach; ?>
+                                <?php if ($ipHeaderCurrent !== '' && !isset($ipHeaderPresets[$ipHeaderCurrent])): ?>
+                                <option value="<?= h($ipHeaderCurrent) ?>" selected><?= h($ipHeaderCurrent) ?> (custom)</option>
+                                <?php endif; ?>
+                            </select>
+                            <span class="settings-help">Use when behind a reverse proxy so whitelist/blacklist see the real client IP.</span>
+                        </div>
+                        <?php if ($clientIp !== ''): ?>
+                        <p class="settings-detected-ip settings-help">Your detected IP: <code id="detected-client-ip"><?= h($clientIp) ?></code></p>
+                        <div class="settings-inline-actions">
+                            <button type="button" class="btn-auth btn-auth-secondary" id="btn-add-current-ip">Add my IP to whitelist</button>
+                        </div>
+                        <?php endif; ?>
                         <button type="submit" class="btn-auth">Save server settings</button>
                     </form>
                 </section>
@@ -3529,6 +3665,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 e.stopPropagation();
             }
         });
+
+        var btnAddCurrentIp = document.getElementById('btn-add-current-ip');
+        var ipWhitelistField = document.getElementById('admin-ip-whitelist');
+        var detectedClientIp = document.getElementById('detected-client-ip');
+        if (btnAddCurrentIp && ipWhitelistField && detectedClientIp) {
+            btnAddCurrentIp.addEventListener('click', function() {
+                var ip = detectedClientIp.textContent.trim();
+                if (!ip) return;
+                var lines = ipWhitelistField.value.split(/\r?\n/).map(function(line) { return line.trim(); }).filter(Boolean);
+                if (lines.indexOf(ip) === -1) {
+                    lines.push(ip);
+                }
+                ipWhitelistField.value = lines.join('\n');
+                ipWhitelistField.focus();
+            });
+        }
 
         loadAndApply();
     })();
