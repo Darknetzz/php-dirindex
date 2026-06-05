@@ -1432,9 +1432,65 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: rgba(0,0,0,0.12);
             min-height: 2.25rem;
         }
-        .listing-toolbar:empty,
-        .listing-toolbar:not(:has(.btn-listing-tool:not([hidden]))) {
+        .listing-col-picker {
+            position: relative;
+            margin-right: auto;
+        }
+        .listing-col-picker-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.3rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .listing-col-picker-btn:hover,
+        .listing-col-picker-btn[aria-expanded="true"] {
+            color: var(--text);
+            border-color: var(--text-muted);
+            background: var(--hover);
+        }
+        .listing-col-picker-btn .icon {
+            width: 0.9rem;
+            height: 0.9rem;
+            opacity: 0.85;
+        }
+        .listing-col-picker-menu {
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            z-index: 20;
+            min-width: 9rem;
+            padding: 0.35rem 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.28);
+        }
+        .listing-col-picker-menu[hidden] {
             display: none;
+        }
+        .listing-col-picker-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .listing-col-picker-option:hover {
+            background: var(--hover);
+        }
+        .listing-col-picker-option input {
+            accent-color: var(--accent);
+            cursor: pointer;
         }
         .btn-listing-tool {
             padding: 0.3rem 0.65rem;
@@ -1484,27 +1540,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing th.modified .listing-sort-btn {
             justify-content: flex-end;
         }
-        .listing-col-select th {
-            padding: 0.45rem 1rem 0.35rem;
-            border-bottom: none;
-            vertical-align: bottom;
-        }
-        .listing-col-select-wrap {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-        }
-        .listing-col-select .settings-toggle {
-            width: 2rem;
-            height: 1.1rem;
-        }
-        .listing-col-select .settings-toggle::after {
-            width: 0.85rem;
-            height: 0.85rem;
-        }
-        .listing-col-select .settings-toggle.is-on::after {
-            transform: translateX(0.9rem);
-        }
         .listing-sort-btn:hover,
         .listing-sort-btn:focus-visible {
             color: var(--text);
@@ -1516,15 +1551,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             opacity: 0.9;
             min-width: 0.65rem;
         }
-        .listing table.listing-hide-size tr:not(.listing-col-select) th.size,
+        .listing table.listing-hide-size th.size,
         .listing table.listing-hide-size td.size,
-        .listing table.listing-hide-modified tr:not(.listing-col-select) th.modified,
+        .listing table.listing-hide-modified th.modified,
         .listing table.listing-hide-modified td.modified {
             display: none;
-        }
-        .listing table.listing-hide-size th.size,
-        .listing table.listing-hide-modified th.modified {
-            width: 3.5rem;
         }
 
         .listing td {
@@ -2186,6 +2217,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         <div class="listing">
             <div class="listing-toolbar">
+                <div class="listing-col-picker">
+                    <button type="button" class="listing-col-picker-btn" id="listing-col-picker-btn" aria-expanded="false" aria-haspopup="true" aria-controls="listing-col-picker-menu">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                        Columns
+                    </button>
+                    <div class="listing-col-picker-menu" id="listing-col-picker-menu" role="menu" hidden>
+                        <label class="listing-col-picker-option" role="menuitemcheckbox">
+                            <input type="checkbox" id="setting-col-size" checked>
+                            Size
+                        </label>
+                        <label class="listing-col-picker-option" role="menuitemcheckbox">
+                            <input type="checkbox" id="setting-col-modified" checked>
+                            Modified
+                        </label>
+                    </div>
+                </div>
                 <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
             </div>
             <table id="listing-table">
@@ -2195,21 +2242,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <col class="col-modified">
                 </colgroup>
                 <thead>
-                    <tr class="listing-col-select">
-                        <th scope="col" class="name"></th>
-                        <th scope="col" class="size">
-                            <div class="listing-col-select-wrap">
-                                <input type="checkbox" id="setting-col-size" class="settings-check" checked>
-                                <span class="settings-toggle" id="setting-col-size-toggle" role="switch" aria-checked="true" aria-label="Show size column" tabindex="0" title="Show size column"></span>
-                            </div>
-                        </th>
-                        <th scope="col" class="modified">
-                            <div class="listing-col-select-wrap">
-                                <input type="checkbox" id="setting-col-modified" class="settings-check" checked>
-                                <span class="settings-toggle" id="setting-col-modified-toggle" role="switch" aria-checked="true" aria-label="Show modified column" tabindex="0" title="Show modified column"></span>
-                            </div>
-                        </th>
-                    </tr>
                     <tr>
                         <th scope="col" class="name" data-sort-col="name">
                             <button type="button" class="listing-sort-btn" data-sort-col="name">
@@ -2824,38 +2856,47 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             table.classList.toggle('listing-hide-size', !showSize);
             table.classList.toggle('listing-hide-modified', !showModified);
             var sizeCheck = document.getElementById('setting-col-size');
-            var sizeToggle = document.getElementById('setting-col-size-toggle');
             var modCheck = document.getElementById('setting-col-modified');
-            var modToggle = document.getElementById('setting-col-modified-toggle');
-            if (sizeCheck) sizeCheck.checked = showSize;
-            if (sizeToggle) {
-                sizeToggle.classList.toggle('is-on', showSize);
-                sizeToggle.setAttribute('aria-checked', showSize ? 'true' : 'false');
+            if (sizeCheck) {
+                sizeCheck.checked = showSize;
+                sizeCheck.setAttribute('aria-checked', showSize ? 'true' : 'false');
             }
-            if (modCheck) modCheck.checked = showModified;
-            if (modToggle) {
-                modToggle.classList.toggle('is-on', showModified);
-                modToggle.setAttribute('aria-checked', showModified ? 'true' : 'false');
+            if (modCheck) {
+                modCheck.checked = showModified;
+                modCheck.setAttribute('aria-checked', showModified ? 'true' : 'false');
             }
         }
-        function wireColumnToggle(check, toggle, storageKey) {
-            if (!check || !toggle) return;
-            function update() {
-                var on = check.checked;
-                toggle.classList.toggle('is-on', on);
-                toggle.setAttribute('aria-checked', on ? 'true' : 'false');
-                setSetting(storageKey, on ? '1' : '0');
+        function wireColumnCheckbox(check, storageKey) {
+            if (!check) return;
+            check.addEventListener('change', function() {
+                setSetting(storageKey, check.checked ? '1' : '0');
                 applyColumns();
-            }
-            function flip() {
-                check.checked = !check.checked;
-                update();
-            }
-            toggle.addEventListener('click', flip);
-            toggle.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
             });
-            check.addEventListener('change', update);
+        }
+        function wireColumnPicker() {
+            var pickerBtn = document.getElementById('listing-col-picker-btn');
+            var pickerMenu = document.getElementById('listing-col-picker-menu');
+            if (!pickerBtn || !pickerMenu) return;
+            function closePicker() {
+                pickerMenu.hidden = true;
+                pickerBtn.setAttribute('aria-expanded', 'false');
+            }
+            function openPicker() {
+                pickerMenu.hidden = false;
+                pickerBtn.setAttribute('aria-expanded', 'true');
+            }
+            pickerBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (pickerMenu.hidden) openPicker();
+                else closePicker();
+            });
+            pickerMenu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            document.addEventListener('click', closePicker);
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') closePicker();
+            });
         }
 
         table.querySelectorAll('.listing-sort-btn').forEach(function(btn) {
@@ -2877,16 +2918,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 applySort(null);
             });
         }
-        wireColumnToggle(
-            document.getElementById('setting-col-size'),
-            document.getElementById('setting-col-size-toggle'),
-            STORAGE_COL_SIZE
-        );
-        wireColumnToggle(
-            document.getElementById('setting-col-modified'),
-            document.getElementById('setting-col-modified-toggle'),
-            STORAGE_COL_MODIFIED
-        );
+        wireColumnCheckbox(document.getElementById('setting-col-size'), STORAGE_COL_SIZE);
+        wireColumnCheckbox(document.getElementById('setting-col-modified'), STORAGE_COL_MODIFIED);
+        wireColumnPicker();
 
         applyColumns();
         var initialSort = parseSort();
