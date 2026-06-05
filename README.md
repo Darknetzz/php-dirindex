@@ -18,12 +18,14 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 
 **Configurable options** (via the admin settings UI, or by editing `.dirindex.json` when SQLite is unavailable):
 
-- `show_symlinks` — set to `false` to hide symlinks from the listing (default: `true`).
-- `allow_open_symlinks_outside` — set to `true` to allow opening and following symlinks that point outside the index base (default: `false`; when false, a message is shown instead).
-- `upload_enabled` — enables the upload form when auth credentials are configured.
-- `auth_username` — upload login username.
-- `auth_password_hash` — password hash created with `password_hash()`.
-- `upload_max_bytes` — optional per-file limit; `0` means use PHP/web-server limits.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `show_symlinks` | `true` | Hide symlinks from the listing when set to `false`. |
+| `allow_open_symlinks_outside` | `false` | Allow opening and following symlinks outside the index base. When `false`, a message is shown instead. |
+| `upload_enabled` | `false` | Show the upload form when auth credentials are configured. |
+| `auth_username` | — | Admin login username. |
+| `auth_password_hash` | — | Password hash from `password_hash()` (not plain text). |
+| `upload_max_bytes` | `0` | Per-file upload limit in bytes; `0` uses PHP/web-server limits. |
 
 **Access control** (Settings → Server settings when signed in as admin):
 
