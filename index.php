@@ -914,9 +914,20 @@ function fileExtensionCategory($ext) {
     return 'file';
 }
 
-function fileTypeIconHtml($ext, $isDir = false) {
+function listingEntryTypeClass(array $item) {
+    if (!empty($item['isLink'])) {
+        return 'ft-type--symlink';
+    }
+    if (!empty($item['isDir'])) {
+        return 'ft-type--dir';
+    }
+    return 'ft-type--' . fileExtensionCategory($item['ext'] ?? '');
+}
+
+function fileTypeIconHtml($ext, $isDir = false, $compact = false) {
+    $class = 'ft-icon' . ($compact ? ' ft-icon--listing' : '');
     if ($isDir) {
-        return '<span class="ft-icon ft-icon--dir" aria-hidden="true">'
+        return '<span class="' . $class . ' ft-icon--dir" aria-hidden="true">'
             . '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
             . '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
             . '</svg></span>';
@@ -924,7 +935,7 @@ function fileTypeIconHtml($ext, $isDir = false) {
     $ext = strtolower((string) $ext);
     $label = $ext !== '' ? strtoupper(strlen($ext) <= 4 ? $ext : substr($ext, 0, 4)) : 'FILE';
     $category = fileExtensionCategory($ext);
-    return '<span class="ft-icon ft-icon--' . h($category) . '" aria-hidden="true">'
+    return '<span class="' . $class . ' ft-icon--' . h($category) . '" aria-hidden="true">'
         . '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">'
         . '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
         . '<polyline points="14 2 14 8 20 8"/>'
@@ -1722,6 +1733,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --accent: #a78bfa;
             --accent-dim: #7c3aed;
             --dir-color: #67e8f9;
+            --ft-dir: #22d3ee;
+            --ft-archive: #fbbf24;
+            --ft-image: #34d399;
+            --ft-video: #c084fc;
+            --ft-audio: #f472b6;
+            --ft-pdf: #f87171;
+            --ft-spreadsheet: #4ade80;
+            --ft-document: #60a5fa;
+            --ft-presentation: #fb923c;
+            --ft-code: #818cf8;
+            --ft-executable: #f87171;
+            --ft-file: #a1a1aa;
+            --ft-symlink: #a78bfa;
             --hover: #27272a;
         }
         html.theme-light {
@@ -1733,6 +1757,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --accent: #7c3aed;
             --accent-dim: #5b21b6;
             --dir-color: #0891b2;
+            --ft-dir: #0891b2;
+            --ft-archive: #d97706;
+            --ft-image: #059669;
+            --ft-video: #9333ea;
+            --ft-audio: #db2777;
+            --ft-pdf: #dc2626;
+            --ft-spreadsheet: #16a34a;
+            --ft-document: #2563eb;
+            --ft-presentation: #ea580c;
+            --ft-code: #4f46e5;
+            --ft-executable: #dc2626;
+            --ft-file: #71717a;
+            --ft-symlink: #7c3aed;
             --hover: #f4f4f5;
         }
         body.font-large { font-size: 17px; }
@@ -2076,14 +2113,28 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
+            min-width: 0;
         }
-        .listing .name a:hover { color: var(--accent); }
-        .listing .name .dir a { color: var(--dir-color); }
-        .listing .name .dir a:hover { color: #22d3ee; }
-        .listing .name.symlink a { color: var(--accent-dim); }
-        .listing .name.symlink a:hover { color: var(--accent); }
+        .listing .name a:hover { filter: brightness(1.12); }
+        .listing .name.ft-type--dir a { color: var(--ft-dir); }
+        .listing .name.ft-type--archive a { color: var(--ft-archive); }
+        .listing .name.ft-type--image a { color: var(--ft-image); }
+        .listing .name.ft-type--video a { color: var(--ft-video); }
+        .listing .name.ft-type--audio a { color: var(--ft-audio); }
+        .listing .name.ft-type--pdf a { color: var(--ft-pdf); }
+        .listing .name.ft-type--spreadsheet a { color: var(--ft-spreadsheet); }
+        .listing .name.ft-type--document a { color: var(--ft-document); }
+        .listing .name.ft-type--presentation a { color: var(--ft-presentation); }
+        .listing .name.ft-type--code a { color: var(--ft-code); }
+        .listing .name.ft-type--executable a { color: var(--ft-executable); }
+        .listing .name.ft-type--file a { color: var(--ft-file); }
+        .listing .name.ft-type--symlink a { color: var(--ft-symlink); }
         .listing .name a.file-preview,
         .listing .name a.file-binary { cursor: pointer; }
+        .entry-name {
+            min-width: 0;
+            word-break: break-word;
+        }
         .name-content {
             display: flex;
             align-items: center;
@@ -2172,25 +2223,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
         .modal-binary-meta { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
-        .ft-icon { position: relative; flex-shrink: 0; width: 3.5rem; height: 3.5rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(167, 139, 250, 0.12); color: var(--accent); }
+        .ft-icon {
+            position: relative;
+            flex-shrink: 0;
+            width: 3.5rem;
+            height: 3.5rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--ft-file) 14%, transparent);
+            color: var(--ft-file);
+        }
+        .ft-icon--listing {
+            width: 1.65rem;
+            height: 1.65rem;
+            border-radius: 6px;
+        }
         .ft-icon svg { width: 2.5rem; height: 2.5rem; }
+        .ft-icon--listing svg { width: 1.05rem; height: 1.05rem; }
         .ft-icon__label { position: absolute; left: 50%; bottom: 0.55rem; transform: translateX(-50%); font-size: 0.55rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1; }
-        .ft-icon--dir { background: rgba(34, 211, 238, 0.12); color: #22d3ee; }
-        .ft-icon--archive { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
-        .ft-icon--image { background: rgba(52, 211, 153, 0.14); color: #34d399; }
-        .ft-icon--video { background: rgba(192, 132, 252, 0.14); color: #c084fc; }
-        .ft-icon--audio { background: rgba(244, 114, 182, 0.14); color: #f472b6; }
-        .ft-icon--pdf { background: rgba(248, 113, 113, 0.14); color: #f87171; }
-        .ft-icon--spreadsheet { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
-        .ft-icon--document { background: rgba(96, 165, 250, 0.14); color: #60a5fa; }
-        .ft-icon--presentation { background: rgba(251, 146, 60, 0.14); color: #fb923c; }
-        .ft-icon--code { background: rgba(129, 140, 248, 0.14); color: #818cf8; }
-        .ft-icon--executable { background: rgba(248, 113, 113, 0.14); color: #f87171; }
-        .ft-icon--file { background: rgba(161, 161, 170, 0.14); color: #a1a1aa; }
+        .ft-icon--listing .ft-icon__label { font-size: 0.36rem; bottom: 0.18rem; letter-spacing: 0; }
+        .ft-icon--dir { background: color-mix(in srgb, var(--ft-dir) 14%, transparent); color: var(--ft-dir); }
+        .ft-icon--archive { background: color-mix(in srgb, var(--ft-archive) 14%, transparent); color: var(--ft-archive); }
+        .ft-icon--image { background: color-mix(in srgb, var(--ft-image) 14%, transparent); color: var(--ft-image); }
+        .ft-icon--video { background: color-mix(in srgb, var(--ft-video) 14%, transparent); color: var(--ft-video); }
+        .ft-icon--audio { background: color-mix(in srgb, var(--ft-audio) 14%, transparent); color: var(--ft-audio); }
+        .ft-icon--pdf { background: color-mix(in srgb, var(--ft-pdf) 14%, transparent); color: var(--ft-pdf); }
+        .ft-icon--spreadsheet { background: color-mix(in srgb, var(--ft-spreadsheet) 14%, transparent); color: var(--ft-spreadsheet); }
+        .ft-icon--document { background: color-mix(in srgb, var(--ft-document) 14%, transparent); color: var(--ft-document); }
+        .ft-icon--presentation { background: color-mix(in srgb, var(--ft-presentation) 14%, transparent); color: var(--ft-presentation); }
+        .ft-icon--code { background: color-mix(in srgb, var(--ft-code) 14%, transparent); color: var(--ft-code); }
+        .ft-icon--executable { background: color-mix(in srgb, var(--ft-executable) 14%, transparent); color: var(--ft-executable); }
+        .ft-icon--file { background: color-mix(in srgb, var(--ft-file) 14%, transparent); color: var(--ft-file); }
         .btn-download { display: inline-block; background: var(--accent-dim); color: #fff; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; }
         .btn-download:hover { background: var(--accent); color: #fff; }
-        .listing .name.binary a { color: var(--text-muted); }
-        .listing .name.binary a:hover { color: var(--accent); }
 
         .listing .size, .listing .modified, .listing .perms {
             color: var(--text-muted);
@@ -2894,7 +2961,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <tbody>
                     <?php if ($hasParent): $parentRel = dirname($relativePath); $parentRel = ($parentRel === '.' || $parentRel === '') ? '' : $parentRel; ?>
                     <tr data-sort-parent="1">
-                        <td class="name dir">
+                        <td class="name dir ft-type--dir">
                             <?php
                             $parentUrl = currentListingUrl($indexHref, $parentRel);
                             $parentDirectUrl = $inShareMode ? currentListingUrl($indexHref, $parentRel) : directEntryUrl($parentRel, true);
@@ -2954,19 +3021,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             }
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
+                        $entryTypeClass = listingEntryTypeClass($item);
                     ?>
                     <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
-                        <td class="name <?= trim($nameClass) ?>">
+                        <td class="name <?= trim($nameClass) ?> <?= h($entryTypeClass) ?>">
                             <div class="name-content">
                                 <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
                                     <?php if ($item['isLink']): ?>
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                                    <?php elseif ($item['isDir']): ?>
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                                     <?php else: ?>
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    <?= fileTypeIconHtml($item['ext'], $item['isDir'], true) ?>
                                     <?php endif; ?>
-                                    <?= h($item['name']) ?>
+                                    <span class="entry-name"><?= h($item['name']) ?></span>
                                 </a>
                                 <div class="name-actions">
                                 <?php if ($authenticated && !$inShareMode && $sharesAvailable && empty($item['isBrokenLink'])): ?>
