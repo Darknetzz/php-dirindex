@@ -652,6 +652,47 @@ function looksLikeBinary($absolutePath, $maxLen = 8192) {
     return $chunk === false || str_contains($chunk, "\0");
 }
 
+function fileExtensionCategory($ext) {
+    $ext = strtolower((string) $ext);
+    static $categories = [
+        'archive'      => ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'zst', 'lz', 'lzma', 'cab', 'iso'],
+        'image'        => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff', 'tif', 'avif', 'heic'],
+        'video'        => ['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'm4v', 'mpeg', 'mpg'],
+        'audio'        => ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'wma', 'opus'],
+        'pdf'          => ['pdf'],
+        'spreadsheet'  => ['xls', 'xlsx', 'ods', 'csv'],
+        'document'     => ['doc', 'docx', 'odt', 'rtf', 'txt', 'md', 'markdown'],
+        'presentation' => ['ppt', 'pptx', 'odp'],
+        'code'         => ['php', 'js', 'ts', 'py', 'json', 'xml', 'html', 'htm', 'css', 'sql', 'sh', 'bash', 'yaml', 'yml', 'ini', 'env', 'log', 'conf', 'cfg'],
+        'executable'   => ['exe', 'msi', 'deb', 'rpm', 'dmg', 'app', 'dll', 'so', 'bin'],
+    ];
+    foreach ($categories as $category => $exts) {
+        if (in_array($ext, $exts, true)) {
+            return $category;
+        }
+    }
+    return 'file';
+}
+
+function fileTypeIconHtml($ext, $isDir = false) {
+    if ($isDir) {
+        return '<span class="ft-icon ft-icon--dir" aria-hidden="true">'
+            . '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+            . '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
+            . '</svg></span>';
+    }
+    $ext = strtolower((string) $ext);
+    $label = $ext !== '' ? strtoupper(strlen($ext) <= 4 ? $ext : substr($ext, 0, 4)) : 'FILE';
+    $category = fileExtensionCategory($ext);
+    return '<span class="ft-icon ft-icon--' . h($category) . '" aria-hidden="true">'
+        . '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">'
+        . '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+        . '<polyline points="14 2 14 8 20 8"/>'
+        . '</svg>'
+        . '<span class="ft-icon__label">' . h($label) . '</span>'
+        . '</span>';
+}
+
 function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $isText, $size, $mtime, array $previewExts, $ext) {
     $name = basename($relativePath);
     $downloadParams = ['download' => '1'];
@@ -684,8 +725,25 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: 2rem; }
     .page { max-width: 720px; margin: 0 auto; }
     .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; }
+    .file-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+    .file-header-text { min-width: 0; }
     h1 { margin: 0 0 0.5rem; font-size: 1.5rem; word-break: break-word; }
-    .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+    .ft-icon { position: relative; flex-shrink: 0; width: 3.5rem; height: 3.5rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(167, 139, 250, 0.12); color: var(--accent); }
+    .ft-icon svg { width: 2.5rem; height: 2.5rem; }
+    .ft-icon__label { position: absolute; left: 50%; bottom: 0.55rem; transform: translateX(-50%); font-size: 0.55rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1; }
+    .ft-icon--dir { background: rgba(34, 211, 238, 0.12); color: #22d3ee; }
+    .ft-icon--archive { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+    .ft-icon--image { background: rgba(52, 211, 153, 0.14); color: #34d399; }
+    .ft-icon--video { background: rgba(192, 132, 252, 0.14); color: #c084fc; }
+    .ft-icon--audio { background: rgba(244, 114, 182, 0.14); color: #f472b6; }
+    .ft-icon--pdf { background: rgba(248, 113, 113, 0.14); color: #f87171; }
+    .ft-icon--spreadsheet { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
+    .ft-icon--document { background: rgba(96, 165, 250, 0.14); color: #60a5fa; }
+    .ft-icon--presentation { background: rgba(251, 146, 60, 0.14); color: #fb923c; }
+    .ft-icon--code { background: rgba(129, 140, 248, 0.14); color: #818cf8; }
+    .ft-icon--executable { background: rgba(248, 113, 113, 0.14); color: #f87171; }
+    .ft-icon--file { background: rgba(161, 161, 170, 0.14); color: #a1a1aa; }
     .btn-download { display: inline-block; background: var(--accent-dim); color: #fff; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; }
     .btn-download:hover { background: var(--accent); }
     .preview { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); }
@@ -694,8 +752,10 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .preview-code { background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
     ';
     $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="card">';
-    $html .= '<h1>' . h($name) . '</h1>';
-    $html .= '<p class="meta">' . h(formatSize($size)) . ' · Modified ' . h($mtimeFormatted) . '</p>';
+    $html .= '<div class="file-header">';
+    $html .= fileTypeIconHtml($ext, false);
+    $html .= '<div class="file-header-text"><h1>' . h($name) . '</h1>';
+    $html .= '<p class="meta">' . h(formatSize($size)) . ' · Modified ' . h($mtimeFormatted) . '</p></div></div>';
     $html .= '<a class="btn-download" href="' . h($downloadUrl) . '">Download</a>';
     if ($previewHtml !== '') {
         $html .= '<div class="preview"><h2>Preview</h2>' . $previewHtml . '</div>';
@@ -1471,10 +1531,30 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .breadcrumb-sep { color: var(--text-muted); margin: 0 0.35em; font-weight: 400; user-select: none; }
 
         .listing {
+            position: relative;
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 10px;
             overflow: hidden;
+        }
+        .listing.is-dragover {
+            border-color: var(--accent);
+        }
+        .listing.is-dragover::after {
+            content: 'Drop file to upload';
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: color-mix(in srgb, var(--accent) 15%, var(--bg-card));
+            border: 2px dashed var(--accent);
+            border-radius: 10px;
+            color: var(--accent);
+            font-size: 1rem;
+            font-weight: 600;
+            pointer-events: none;
         }
 
         .listing table {
@@ -1734,6 +1814,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-size: 0.85rem;
         }
         .listing .size { text-align: right; }
+        .listing .col-size { min-width: 5.5rem; }
+        .listing td.size, .listing th.size { white-space: nowrap; }
         .listing .col-modified { min-width: 10rem; }
         .listing td.modified, .listing th.modified { white-space: nowrap; }
         .listing .col-perms { min-width: 6.5rem; }
@@ -2733,6 +2815,49 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             }
             overwriteInput.value = '';
             e.preventDefault();
+        });
+
+        var listing = document.querySelector('.listing');
+        if (!listing) return;
+        var dragCounter = 0;
+
+        function hasFileDrag(e) {
+            var types = e.dataTransfer && e.dataTransfer.types;
+            if (!types) return false;
+            return Array.prototype.indexOf.call(types, 'Files') !== -1;
+        }
+
+        listing.addEventListener('dragenter', function(e) {
+            if (!hasFileDrag(e)) return;
+            e.preventDefault();
+            dragCounter++;
+            listing.classList.add('is-dragover');
+        });
+        listing.addEventListener('dragover', function(e) {
+            if (!hasFileDrag(e)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        });
+        listing.addEventListener('dragleave', function(e) {
+            if (!hasFileDrag(e)) return;
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                listing.classList.remove('is-dragover');
+            }
+        });
+        listing.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dragCounter = 0;
+            listing.classList.remove('is-dragover');
+            if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+            var file = e.dataTransfer.files[0];
+            if (!file || !fileInput) return;
+            var dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            overwriteInput.value = '';
+            uploadForm.requestSubmit();
         });
     })();
 
