@@ -282,6 +282,36 @@ function dirindexStoragePath($scriptDir) {
     return dirindexSqliteAvailable() ? dirindexSqlitePath($scriptDir) : dirindexJsonPath($scriptDir);
 }
 
+function dirindexStorageWritable($scriptDir, &$detail = null) {
+    $storagePath = dirindexStoragePath($scriptDir);
+    if (!is_dir($scriptDir)) {
+        $detail = 'Storage directory does not exist.';
+        return false;
+    }
+    if (!is_writable($scriptDir)) {
+        $detail = 'PHP cannot write to ' . $storagePath . ' (directory not writable).';
+        return false;
+    }
+    if (is_file($storagePath) && !is_writable($storagePath)) {
+        $detail = 'PHP cannot write to ' . $storagePath . ' (file not writable).';
+        return false;
+    }
+    return true;
+}
+
+function dirindexFlashSet($message) {
+    $_SESSION['dirindex_flash_message'] = (string) $message;
+}
+
+function dirindexFlashTake() {
+    if (!isset($_SESSION['dirindex_flash_message'])) {
+        return null;
+    }
+    $message = (string) $_SESSION['dirindex_flash_message'];
+    unset($_SESSION['dirindex_flash_message']);
+    return $message;
+}
+
 function dirindexStoredConfigKeys() {
     return [
         'show_symlinks',
@@ -1082,6 +1112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'upload_max_bytes' => (string) $maxBytesInt,
         ], $saveError);
         if (!$saved) {
+            dirindexFlashSet($saveError ?: ('Could not write ' . basename(dirindexStoragePath(__DIR__)) . ' in ' . __DIR__ . '.'));
             redirectToCurrentListing($indexHref, $relativePath, 'setup_write_failed');
         }
         session_regenerate_id(true);
@@ -1379,7 +1410,12 @@ $messageMap = [
 $statusMessage = null;
 if (isset($_GET['msg'], $messageMap[$_GET['msg']])) {
     $statusMessage = $messageMap[$_GET['msg']];
+    $flashDetail = $sessionNeeded ? dirindexFlashTake() : null;
+    if ($flashDetail !== null && $flashDetail !== '') {
+        $statusMessage = [$statusMessage[0], $statusMessage[1] . ' ' . $flashDetail];
+    }
 }
+$storageWritable = dirindexStorageWritable(__DIR__, $storageWritableDetail);
 $openLoginModal = $hasUploadCredentials && !$authenticated && isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true);
 $existingNames = [];
 foreach ($items as $item) {
@@ -2554,6 +2590,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <section class="setup-card" aria-label="Setup form">
             <h2>Set up uploads</h2>
             <p>These settings will be saved locally in <?= h(basename($dirindexStorage['path'])) ?>.</p>
+            <?php if (!$storageWritable): ?>
+            <div class="blocked-msg message-error" role="status">
+                <?= h($storageWritableDetail ?: 'PHP cannot write settings to this directory.') ?>
+                Make the folder containing <code>index.php</code> writable by the web server user, then try again.
+            </div>
+            <?php endif; ?>
             <?php if ($statusMessage): ?>
             <div class="blocked-msg message-<?= h($statusMessage[0]) ?>" role="status">
                 <?= h($statusMessage[1]) ?>
