@@ -1484,6 +1484,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing th.modified .listing-sort-btn {
             justify-content: flex-end;
         }
+        .listing-col-select th {
+            padding: 0.45rem 1rem 0.35rem;
+            border-bottom: none;
+            vertical-align: bottom;
+        }
+        .listing-col-select-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .listing-col-select .settings-toggle {
+            width: 2rem;
+            height: 1.1rem;
+        }
+        .listing-col-select .settings-toggle::after {
+            width: 0.85rem;
+            height: 0.85rem;
+        }
+        .listing-col-select .settings-toggle.is-on::after {
+            transform: translateX(0.9rem);
+        }
         .listing-sort-btn:hover,
         .listing-sort-btn:focus-visible {
             color: var(--text);
@@ -1495,13 +1516,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             opacity: 0.9;
             min-width: 0.65rem;
         }
-        .listing table.listing-hide-size .col-size,
-        .listing table.listing-hide-size th.size,
+        .listing table.listing-hide-size tr:not(.listing-col-select) th.size,
         .listing table.listing-hide-size td.size,
-        .listing table.listing-hide-modified .col-modified,
-        .listing table.listing-hide-modified th.modified,
+        .listing table.listing-hide-modified tr:not(.listing-col-select) th.modified,
         .listing table.listing-hide-modified td.modified {
             display: none;
+        }
+        .listing table.listing-hide-size th.size,
+        .listing table.listing-hide-modified th.modified {
+            width: 3.5rem;
         }
 
         .listing td {
@@ -2172,6 +2195,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <col class="col-modified">
                 </colgroup>
                 <thead>
+                    <tr class="listing-col-select">
+                        <th scope="col" class="name"></th>
+                        <th scope="col" class="size">
+                            <div class="listing-col-select-wrap">
+                                <input type="checkbox" id="setting-col-size" class="settings-check" checked>
+                                <span class="settings-toggle" id="setting-col-size-toggle" role="switch" aria-checked="true" aria-label="Show size column" tabindex="0" title="Show size column"></span>
+                            </div>
+                        </th>
+                        <th scope="col" class="modified">
+                            <div class="listing-col-select-wrap">
+                                <input type="checkbox" id="setting-col-modified" class="settings-check" checked>
+                                <span class="settings-toggle" id="setting-col-modified-toggle" role="switch" aria-checked="true" aria-label="Show modified column" tabindex="0" title="Show modified column"></span>
+                            </div>
+                        </th>
+                    </tr>
                     <tr>
                         <th scope="col" class="name" data-sort-col="name">
                             <button type="button" class="listing-sort-btn" data-sort-col="name">
@@ -2358,16 +2396,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <label for="setting-breadcrumb">Slash in breadcrumbs</label>
                         <input type="checkbox" id="setting-breadcrumb" class="settings-check">
                         <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
-                    </div>
-                    <div class="settings-row">
-                        <label for="setting-col-size">Size column</label>
-                        <input type="checkbox" id="setting-col-size" class="settings-check" checked>
-                        <span class="settings-toggle" id="setting-col-size-toggle" role="switch" aria-checked="true" tabindex="0" title="Show size column in file listing"></span>
-                    </div>
-                    <div class="settings-row">
-                        <label for="setting-col-modified">Modified column</label>
-                        <input type="checkbox" id="setting-col-modified" class="settings-check" checked>
-                        <span class="settings-toggle" id="setting-col-modified-toggle" role="switch" aria-checked="true" tabindex="0" title="Show modified column in file listing"></span>
                     </div>
                 </section>
 
