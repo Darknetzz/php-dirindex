@@ -1269,6 +1269,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirectToCurrentListing($indexHref, $relativePath, $exists ? 'upload_overwritten' : 'upload_ok');
     }
 
+    if ($action === 'create_entry') {
+        if (!$hasUploadCredentials || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        }
+        if (!is_dir($currentPath) || !is_writable($currentPath)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'upload_not_writable');
+        }
+        $name = cleanUploadFilename($_POST['entry_name'] ?? '');
+        if ($name === null || dirindexIsHiddenListingEntry($name)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'create_bad_name');
+        }
+        $entryType = (string) ($_POST['entry_type'] ?? '');
+        $destination = $currentPath . DIRECTORY_SEPARATOR . $name;
+        if ($entryType === 'folder') {
+            if (file_exists($destination)) {
+                redirectToCurrentListing($indexHref, $relativePath, 'create_exists');
+            }
+            if (!@mkdir($destination, 0755)) {
+                redirectToCurrentListing($indexHref, $relativePath, 'create_failed');
+            }
+            redirectToCurrentListing($indexHref, $relativePath, 'create_folder_ok');
+        }
+        if ($entryType === 'file') {
+            if (file_exists($destination)) {
+                if (is_dir($destination) || is_link($destination)) {
+                    redirectToCurrentListing($indexHref, $relativePath, 'upload_target_blocked');
+                }
+                redirectToCurrentListing($indexHref, $relativePath, 'create_exists');
+            }
+            if (@file_put_contents($destination, '') === false) {
+                redirectToCurrentListing($indexHref, $relativePath, 'create_failed');
+            }
+            redirectToCurrentListing($indexHref, $relativePath, 'create_file_ok');
+        }
+        redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
+    }
+
     if ($action === 'share_create') {
         if (!$hasUploadCredentials || !$authenticated) {
             redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
@@ -1431,6 +1468,11 @@ $messageMap = [
     'upload_partial' => ['error', 'Upload was interrupted before it completed.'],
     'upload_target_blocked' => ['error', 'Cannot overwrite a directory or symlink.'],
     'upload_too_large' => ['error', 'Uploaded file is too large.'],
+    'create_bad_name' => ['error', 'Name is not allowed.'],
+    'create_exists' => ['error', 'An entry with that name already exists.'],
+    'create_failed' => ['error', 'Could not create the entry.'],
+    'create_folder_ok' => ['success', 'Folder created.'],
+    'create_file_ok' => ['success', 'File created.'],
     'share_created' => ['success', 'Share link created. Copy the link below.'],
     'share_revoked' => ['success', 'Share link revoked.'],
     'share_failed' => ['error', 'Could not create or revoke the share link.'],
@@ -2812,6 +2854,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </label>
                     </div>
                 </div>
+                <?php if ($hasUploadCredentials && $authenticated && !$inShareMode): ?>
+                <button type="button" class="btn-listing-tool" id="btn-create-folder">New folder</button>
+                <button type="button" class="btn-listing-tool" id="btn-create-file">New file</button>
+                <?php endif; ?>
                 <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
             </div>
             <table id="listing-table">
@@ -3139,6 +3185,37 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
     </div>
 
+    <?php if ($hasUploadCredentials && $authenticated && !$inShareMode): ?>
+    <div id="create-entry-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal share-modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-entry-title">
+            <div class="modal-header">
+                <span class="modal-title" id="create-entry-title">Create new entry</span>
+                <button type="button" class="modal-close" id="create-entry-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="create-entry-form">
+                    <input type="hidden" name="action" value="create_entry">
+                    <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                    <input type="hidden" name="entry_type" id="create-entry-type" value="folder">
+                    <div class="settings-field">
+                        <label>Location</label>
+                        <div class="share-item-display" aria-live="polite">/<?= h($relativePath ?: '') ?></div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="create-entry-name">Name</label>
+                        <input type="text" id="create-entry-name" name="entry_name" required autocomplete="off" spellcheck="false" placeholder="notes.txt">
+                        <span class="settings-help" id="create-entry-help">Creates an empty folder in the current directory.</span>
+                    </div>
+                    <div class="share-form-footer">
+                        <button type="button" class="btn-auth btn-auth-secondary" id="create-entry-cancel">Cancel</button>
+                        <button type="submit" class="btn-auth" id="create-entry-submit">Create folder</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
     <div id="shares-list-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal shares-list-panel" role="dialog" aria-modal="true" aria-labelledby="shares-list-title">
@@ -3254,6 +3331,58 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var isOpen = panel.classList.toggle('is-open');
             toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             toggle.textContent = isOpen ? 'Hide upload' : 'Upload file';
+        });
+    })();
+
+    (function() {
+        var overlay = document.getElementById('create-entry-modal');
+        var closeBtn = document.getElementById('create-entry-close');
+        var cancelBtn = document.getElementById('create-entry-cancel');
+        var folderBtn = document.getElementById('btn-create-folder');
+        var fileBtn = document.getElementById('btn-create-file');
+        var typeInput = document.getElementById('create-entry-type');
+        var nameInput = document.getElementById('create-entry-name');
+        var helpText = document.getElementById('create-entry-help');
+        var submitBtn = document.getElementById('create-entry-submit');
+        var title = document.getElementById('create-entry-title');
+        if (!overlay || !typeInput || !nameInput) return;
+
+        function setCreateType(type) {
+            var isFolder = type === 'folder';
+            typeInput.value = isFolder ? 'folder' : 'file';
+            if (title) title.textContent = isFolder ? 'Create folder' : 'Create file';
+            if (helpText) helpText.textContent = isFolder
+                ? 'Creates an empty folder in the current directory.'
+                : 'Creates an empty file in the current directory.';
+            if (submitBtn) submitBtn.textContent = isFolder ? 'Create folder' : 'Create file';
+            if (nameInput) nameInput.placeholder = isFolder ? 'newfolder' : 'notes.txt';
+        }
+
+        function openCreateModal(type) {
+            setCreateType(type === 'file' ? 'file' : 'folder');
+            nameInput.value = '';
+            overlay.classList.add('is-open');
+            overlay.setAttribute('aria-hidden', 'false');
+            nameInput.focus();
+        }
+
+        function closeCreateModal() {
+            overlay.classList.remove('is-open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+
+        if (folderBtn) folderBtn.addEventListener('click', function() { openCreateModal('folder'); });
+        if (fileBtn) fileBtn.addEventListener('click', function() { openCreateModal('file'); });
+        if (closeBtn) closeBtn.addEventListener('click', closeCreateModal);
+        if (cancelBtn) cancelBtn.addEventListener('click', closeCreateModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeCreateModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('is-open')) {
+                closeCreateModal();
+                e.stopPropagation();
+            }
         });
     })();
 

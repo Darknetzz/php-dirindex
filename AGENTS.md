@@ -22,6 +22,7 @@ Runtime files (not in git): `.dirindex.sqlite` (settings and share links when PD
 - **Navigation** — Subfolders use `?path=subfolder`. Breadcrumbs and a `..` row go up. Path traversal (`..`, null bytes) is rejected; resolved paths must stay under the base unless `allow_open_symlinks_outside` is enabled.
 - **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in `.dirindex.sqlite` (or `.dirindex.json` without SQLite). CSRF tokens protect all POST actions.
+- **Create entries** — Signed-in admins can create empty folders (`mkdir`) and files in the current listing directory via `create_entry` POST. Uses `cleanUploadFilename()` and blocks hidden storage names (`.dirindex.sqlite`, etc.). Independent of `upload_enabled`.
 - **Access control** — Optional IP whitelist/blacklist with CIDR support; optional `ip_header` for reverse proxies.
 - **Share links** — Token-based public links stored in `.dirindex.sqlite` (`shares` table). Valid `?share=TOKEN` requests bypass IP checks. File shares render a download landing page; directory shares scope listing navigation to the shared folder. Create/revoke requires admin session + CSRF; viewing is read-only (POST blocked in share mode).
 
@@ -37,14 +38,14 @@ php -S localhost:8080
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
+No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
 
 ## Code conventions
 
 - **Monolith** — New behavior belongs in `index.php` unless there is a strong reason to split. Reuse existing helpers (`pathUnderBase`, `h`, `currentListingUrl`, config load/save functions, etc.) rather than duplicating logic.
 - **PHP style** — Procedural PHP with named functions (no classes). Use `h()` for HTML escaping. Prefer early `exit` after setting headers for API-style responses.
 - **Config** — Defaults live in `$dirindexConfig`; merge order is defaults → stored settings (SQLite or JSON). Legacy `config.php` keys are imported once if missing from storage. Document new keys in `README.md`.
-- **POST actions** — Use `action` field values (`setup`, `login`, `logout`, `upload`, `settings`, `account`). Always validate CSRF. Redirect with flash-style message keys via `redirectToCurrentListing`.
+- **POST actions** — Use `action` field values (`setup`, `login`, `logout`, `upload`, `create_entry`, `settings`, `account`). Always validate CSRF. Redirect with flash-style message keys via `redirectToCurrentListing`.
 - **Frontend** — Vanilla JS in `<script>` blocks at the bottom of `index.php`. UI preferences (theme, font size, breadcrumb style) use `localStorage`. External CDN: highlight.js only.
 
 ## Security boundaries
