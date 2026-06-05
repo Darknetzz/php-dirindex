@@ -1424,7 +1424,34 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; }
-        .login-modal-panel { max-width: 440px; }
+        .login-modal-panel,
+        .share-modal-panel { max-width: 440px; }
+        .share-item-display {
+            padding: 0.55rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+        .share-item-type {
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+        .share-form-note {
+            margin: 0;
+            line-height: 1.45;
+        }
+        .share-form-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            padding-top: 0.35rem;
+        }
         .login-modal-panel .auth-form {
             display: grid;
             gap: 0.8rem;
@@ -1584,7 +1611,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             font-size: 0.9rem;
         }
-        .settings-field input {
+        .settings-field input,
+        .settings-field select {
             width: 100%;
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -1592,6 +1620,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             padding: 0.55rem 0.65rem;
             font: inherit;
+        }
+        .settings-field select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.65rem center;
+            padding-right: 2rem;
+            cursor: pointer;
         }
         .settings-help {
             color: var(--text-muted);
@@ -2224,7 +2260,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
     <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
     <div id="share-modal" class="settings-overlay" aria-hidden="true">
-        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+        <div class="settings-modal share-modal-panel" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
                 <span class="modal-title" id="share-modal-title">Create share link</span>
                 <button type="button" class="modal-close" id="share-modal-close" aria-label="Close">&times;</button>
@@ -2235,8 +2271,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                     <input type="hidden" name="share_path" id="share-path-input" value="">
                     <div class="settings-field">
-                        <label>Item</label>
-                        <p id="share-item-label" class="settings-help" style="margin:0;font-family:'JetBrains Mono',monospace;color:var(--text)"></p>
+                        <label>Sharing</label>
+                        <div id="share-item-label" class="share-item-display" aria-live="polite"></div>
                     </div>
                     <div class="settings-field">
                         <label for="share-expires">Expires</label>
@@ -2247,8 +2283,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <option value="30d">30 days</option>
                         </select>
                     </div>
-                    <p class="settings-help">Share links allow public viewing and bypass IP whitelist/blacklist.</p>
-                    <button type="submit" class="btn-auth">Create share link</button>
+                    <p class="settings-help share-form-note">Public read-only access; bypasses IP whitelist and blacklist.</p>
+                    <div class="share-form-footer">
+                        <button type="button" class="btn-auth btn-auth-secondary" id="share-modal-cancel">Cancel</button>
+                        <button type="submit" class="btn-auth">Create link</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -2590,13 +2629,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         var shareOverlay = document.getElementById('share-modal');
         var shareClose = document.getElementById('share-modal-close');
+        var shareCancel = document.getElementById('share-modal-cancel');
         var sharePathInput = document.getElementById('share-path-input');
         var shareItemLabel = document.getElementById('share-item-label');
 
         function openShareModal(path, type) {
             if (!shareOverlay || !sharePathInput || !shareItemLabel) return;
             sharePathInput.value = path;
-            shareItemLabel.textContent = '/' + path + ' (' + type + ')';
+            var typeLabel = type === 'dir' ? 'folder' : 'file';
+            shareItemLabel.textContent = '';
+            shareItemLabel.appendChild(document.createTextNode('/' + path + ' '));
+            var typeSpan = document.createElement('span');
+            typeSpan.className = 'share-item-type';
+            typeSpan.textContent = '(' + typeLabel + ')';
+            shareItemLabel.appendChild(typeSpan);
             shareOverlay.classList.add('is-open');
             shareOverlay.setAttribute('aria-hidden', 'false');
         }
@@ -2614,6 +2660,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         });
 
         if (shareClose) shareClose.addEventListener('click', closeShareModal);
+        if (shareCancel) shareCancel.addEventListener('click', closeShareModal);
         if (shareOverlay) {
             shareOverlay.addEventListener('click', function(e) {
                 if (e.target === shareOverlay) closeShareModal();
