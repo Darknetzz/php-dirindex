@@ -1842,7 +1842,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <h1><?= $inShareMode ? 'Shared' : 'Index of' ?> <strong>/<?= h($relativePath ?: '') ?></strong><?php if ($inShareMode): ?><span class="share-badge">Public link</span><?php endif; ?></h1>
                 <nav class="breadcrumb">
                     <?php if ($inShareMode && $shareRootPath !== ''): ?>
-                    <a href="<?= h(shareUrl($indexHref, $shareTokenActive)) ?>">/</a>
+                    <a href="<?= h(shareUrl($indexHref, $shareTokenActive)) ?>">[root]</a>
                     <?php
                     $segments = $relativePath ? explode('/', $relativePath) : [];
                     $acc = '';
@@ -1856,7 +1856,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <span class="breadcrumb-sep" aria-hidden="true">›</span><a href="<?= h(currentListingUrl($indexHref, $crumbPath)) ?>"><?= h($seg) ?></a>
                     <?php endforeach; ?>
                     <?php else: ?>
-                    <a href="<?= h($indexHref) ?>">/</a>
+                    <a href="<?= h($indexHref) ?>">[root]</a>
                     <?php
                     $segments = $relativePath ? explode('/', $relativePath) : [];
                     $acc = '';
