@@ -1532,6 +1532,9 @@ $openLoginModal = $hasUploadCredentials && !$authenticated && !$inShareMode && (
     $browseAuthBlocked
     || (isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true))
 );
+$openAccountModal = $authenticated && !$inShareMode && (
+    isset($_GET['msg']) && in_array((string) $_GET['msg'], ['account_mismatch', 'account_missing', 'account_saved', 'account_short_password'], true)
+);
 $existingNames = [];
 foreach ($items as $item) {
     $existingNames[] = $item['name'];
@@ -2342,6 +2345,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
         .login-modal-panel,
+        .account-modal-panel,
         .share-modal-panel { max-width: 440px; }
         .shares-list-panel { max-width: 1100px; }
         .share-item-display {
@@ -2370,7 +2374,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             gap: 0.5rem;
             padding-top: 0.35rem;
         }
-        .login-modal-panel .auth-form {
+        .login-modal-panel .auth-form,
+        .account-modal-panel .settings-form {
             display: grid;
             gap: 0.8rem;
         }
@@ -2750,7 +2755,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
     </style>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -2882,6 +2887,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
                 <button type="button" class="btn-settings" id="btn-shares" aria-label="Shared links" title="Shared links" aria-haspopup="dialog" aria-controls="shares-list-modal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </button>
+                <?php endif; ?>
+                <?php if ($authenticated && !$inShareMode): ?>
+                <button type="button" class="btn-settings" id="btn-account" aria-label="Account" title="Account" aria-haspopup="dialog" aria-controls="account-modal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </button>
                 <?php endif; ?>
                 <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings" aria-haspopup="dialog" aria-controls="settings-modal">
@@ -3290,32 +3300,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <button type="submit" class="btn-auth">Save server settings</button>
                     </form>
                 </section>
-
-                <section class="settings-section" aria-labelledby="account-settings-title">
-                    <h3 id="account-settings-title">Admin account</h3>
-                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
-                        <input type="hidden" name="action" value="account">
-                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                        <div class="settings-field">
-                            <label for="admin-username">Username</label>
-                            <input type="text" id="admin-username" name="username" autocomplete="username" value="<?= h((string) $dirindexConfig['auth_username']) ?>" required>
-                        </div>
-                        <div class="settings-field">
-                            <label for="admin-password">New password</label>
-                            <input type="password" id="admin-password" name="password" autocomplete="new-password" minlength="8">
-                            <span class="settings-help">Leave blank to keep the current password.</span>
-                        </div>
-                        <div class="settings-field">
-                            <label for="admin-password-confirm">Confirm new password</label>
-                            <input type="password" id="admin-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8">
-                        </div>
-                        <button type="submit" class="btn-auth">Save account</button>
-                    </form>
-                </section>
                 <?php endif; ?>
             </div>
         </div>
     </div>
+
+    <?php if ($authenticated && !$inShareMode): ?>
+    <div id="account-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal account-modal-panel" role="dialog" aria-modal="true" aria-labelledby="account-title">
+            <div class="modal-header">
+                <span class="modal-title" id="account-title">Account</span>
+                <button type="button" class="modal-close" id="account-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
+                    <input type="hidden" name="action" value="account">
+                    <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                    <div class="settings-field">
+                        <label for="admin-username">Username</label>
+                        <input type="text" id="admin-username" name="username" autocomplete="username" value="<?= h((string) $dirindexConfig['auth_username']) ?>" required>
+                    </div>
+                    <div class="settings-field">
+                        <label for="admin-password">New password</label>
+                        <input type="password" id="admin-password" name="password" autocomplete="new-password" minlength="8">
+                        <span class="settings-help">Leave blank to keep the current password.</span>
+                    </div>
+                    <div class="settings-field">
+                        <label for="admin-password-confirm">Confirm new password</label>
+                        <input type="password" id="admin-password-confirm" name="password_confirm" autocomplete="new-password" minlength="8">
+                    </div>
+                    <button type="submit" class="btn-auth">Save account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if ($createEnabled && $authenticated && !$inShareMode): ?>
     <div id="create-entry-modal" class="settings-overlay" aria-hidden="true">
@@ -3618,6 +3637,42 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         });
         if (document.body.getAttribute('data-open-login') === '1') {
             openLogin();
+        }
+    })();
+
+    (function() {
+        var accountOverlay = document.getElementById('account-modal');
+        var btnAccount = document.getElementById('btn-account');
+        var accountClose = document.getElementById('account-close');
+        var adminUsernameInput = document.getElementById('admin-username');
+        if (!accountOverlay || !btnAccount || !accountClose) return;
+
+        function openAccount() {
+            accountOverlay.classList.add('is-open');
+            accountOverlay.setAttribute('aria-hidden', 'false');
+            window.setTimeout(function() {
+                if (adminUsernameInput) adminUsernameInput.focus();
+            }, 0);
+        }
+        function closeAccount() {
+            accountOverlay.classList.remove('is-open');
+            accountOverlay.setAttribute('aria-hidden', 'true');
+            btnAccount.focus();
+        }
+
+        btnAccount.addEventListener('click', openAccount);
+        accountClose.addEventListener('click', closeAccount);
+        accountOverlay.addEventListener('click', function(e) {
+            if (e.target === accountOverlay) closeAccount();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && accountOverlay.classList.contains('is-open')) {
+                closeAccount();
+                e.stopPropagation();
+            }
+        });
+        if (document.body.getAttribute('data-open-account') === '1') {
+            openAccount();
         }
     })();
 
