@@ -21,8 +21,8 @@ usage() {
     cat <<'EOF'
 Usage: ./scripts/release.sh [tag] [message] [--dry-run]
 
-  tag       Version tag (must start with v, e.g. v1.0.0). Prompted when omitted;
-            default is the latest v* tag with the last numeric segment bumped by 1.
+  tag       Version tag in vMAJOR.MINOR.PATCH form (e.g. v1.0.0). Prompted when omitted;
+            default is the latest tag with the patch segment bumped by 1.
   message   Optional annotated-tag message (defaults to the tag name)
   --dry-run Show what would happen without tagging or pushing
 
@@ -35,7 +35,7 @@ EOF
 
 suggest_next_tag() {
     local latest
-    latest="$(git tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+    latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname 2>/dev/null | head -1)"
 
     if [[ -z "$latest" ]]; then
         echo "v0.1.0"
@@ -43,20 +43,16 @@ suggest_next_tag() {
     fi
 
     local ver="${latest#v}"
-    if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(.*)$ ]]; then
-        echo "v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))${BASH_REMATCH[4]}"
-    elif [[ "$ver" =~ ^([0-9]+)\.([0-9]+)(.*)$ ]]; then
-        echo "v${BASH_REMATCH[1]}.$((BASH_REMATCH[2] + 1))${BASH_REMATCH[3]}"
-    elif [[ "$ver" =~ ^([0-9]+)(.*)$ ]]; then
-        echo "v$((BASH_REMATCH[1] + 1))${BASH_REMATCH[2]}"
+    if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+        echo "v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
     else
-        echo "${latest}.1"
+        echo "v0.1.0"
     fi
 }
 
 prompt_for_tag() {
     local latest default
-    latest="$(git tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+    latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname 2>/dev/null | head -1)"
     default="$(suggest_next_tag)"
 
     if [[ -n "$latest" ]]; then
@@ -91,8 +87,8 @@ if [[ -z "$TAG" ]]; then
     prompt_for_tag
 fi
 
-if [[ ! "$TAG" =~ ^v ]]; then
-    echo "Tag must start with v (e.g. v1.0.0). Got: $TAG" >&2
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Tag must match vMAJOR.MINOR.PATCH (e.g. v1.0.0). Got: $TAG" >&2
     exit 1
 fi
 
