@@ -32,9 +32,98 @@ function minifyJs(string $js): string
 {
     $js = preg_replace('#/\*[\s\S]*?\*/#', '', $js) ?? $js;
     $js = preg_replace('#^\s*//.*$#m', '', $js) ?? $js;
+
+    $protected = [];
+    $n = 0;
+    $js = protectJsRegexAndStrings($js, $protected, $n);
+
     $js = preg_replace('/\s+/', ' ', $js) ?? $js;
     $js = preg_replace('/\s*([{}();,:=\[\]?&|+\-*\/<>!])\s*/', '$1', $js) ?? $js;
-    return trim($js);
+
+    return strtr(trim($js), $protected);
+}
+
+/**
+ * Preserve string and regex literals before operator/whitespace minification.
+ */
+function protectJsRegexAndStrings(string $js, array &$protected, int &$n): string
+{
+    $out = '';
+    $len = strlen($js);
+    $i = 0;
+
+    while ($i < $len) {
+        $c = $js[$i];
+
+        if ($c === '"' || $c === "'") {
+            $start = $i;
+            $i++;
+            while ($i < $len) {
+                if ($js[$i] === '\\') {
+                    $i += 2;
+                    continue;
+                }
+                if ($js[$i] === $c) {
+                    $i++;
+                    break;
+                }
+                $i++;
+            }
+            $key = '___JSLIT' . ($n++) . '___';
+            $protected[$key] = substr($js, $start, $i - $start);
+            $out .= $key;
+            continue;
+        }
+
+        if ($c === '/' && $i + 1 < $len && $js[$i + 1] !== '/' && $js[$i + 1] !== '*') {
+            $trimmed = rtrim($out);
+            $isRegex = $trimmed === ''
+                || preg_match('/[{(\[=:;,!&|?+\-*~%<>]$/', $trimmed)
+                || preg_match('/(?:^|\s)(?:return|throw|case|typeof|instanceof|void|delete|new|in|of)\s*$/', $trimmed);
+            if ($isRegex) {
+                $start = $i;
+                $i++;
+                while ($i < $len) {
+                    if ($js[$i] === '\\') {
+                        $i += 2;
+                        continue;
+                    }
+                    if ($js[$i] === '[') {
+                        $i++;
+                        while ($i < $len) {
+                            if ($js[$i] === '\\') {
+                                $i += 2;
+                                continue;
+                            }
+                            if ($js[$i] === ']') {
+                                $i++;
+                                break;
+                            }
+                            $i++;
+                        }
+                        continue;
+                    }
+                    if ($js[$i] === '/') {
+                        $i++;
+                        while ($i < $len && ctype_alpha($js[$i])) {
+                            $i++;
+                        }
+                        break;
+                    }
+                    $i++;
+                }
+                $key = '___JSLIT' . ($n++) . '___';
+                $protected[$key] = substr($js, $start, $i - $start);
+                $out .= $key;
+                continue;
+            }
+        }
+
+        $out .= $c;
+        $i++;
+    }
+
+    return $out;
 }
 
 function minifyHtmlBlock(string $html): string

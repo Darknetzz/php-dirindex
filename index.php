@@ -4138,19 +4138,99 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
     <script>
     function entryNameHasControlChars(name) {
-        return /[\x00-\x1F\x7F]/.test(name);
+        for (var i = 0; i < name.length; i++) {
+            var code = name.charCodeAt(i);
+            if (code <= 31 || code === 127) return true;
+        }
+        return false;
     }
     function entryNameHasForbiddenChars(name) {
-        return /[\/\\:*?"<>|]/.test(name);
+        var forbidden = '/\\:*?"<>|';
+        for (var i = 0; i < name.length; i++) {
+            if (forbidden.indexOf(name.charAt(i)) !== -1) return true;
+        }
+        return false;
+    }
+    function entryNameTrimEdges(name, chars) {
+        var start = 0;
+        var end = name.length;
+        while (start < end && chars.indexOf(name.charAt(start)) !== -1) start++;
+        while (end > start && chars.indexOf(name.charAt(end - 1)) !== -1) end--;
+        return name.slice(start, end);
+    }
+    function entryNameTrimEnd(name, chars) {
+        var end = name.length;
+        while (end > 0 && chars.indexOf(name.charAt(end - 1)) !== -1) end--;
+        return name.slice(0, end);
     }
     function entryNameHasInvalidEdges(name) {
-        return name !== name.replace(/ +$/, '') || name !== name.replace(/\.+$/, '');
+        if (!name) return true;
+        var last = name.charAt(name.length - 1);
+        return last === ' ' || last === '.';
+    }
+    function entryNameCollapseChar(name, ch) {
+        var out = '';
+        var prev = false;
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            if (c === ch) {
+                if (!prev) out += c;
+                prev = true;
+            } else {
+                out += c;
+                prev = false;
+            }
+        }
+        return out;
+    }
+    function entryNameCollapseWhitespace(name) {
+        var out = '';
+        var prevSpace = false;
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+                if (!prevSpace) out += ' ';
+                prevSpace = true;
+            } else {
+                out += c;
+                prevSpace = false;
+            }
+        }
+        return out;
+    }
+    function entryNameReplaceForbidden(name) {
+        var forbidden = '/\\:*?"<>|';
+        var out = '';
+        for (var i = 0; i < name.length; i++) {
+            var c = name.charAt(i);
+            out += forbidden.indexOf(c) !== -1 ? '-' : c;
+        }
+        return out;
+    }
+    function entryNameStripControlChars(name) {
+        var out = '';
+        for (var i = 0; i < name.length; i++) {
+            var code = name.charCodeAt(i);
+            if (code > 31 && code !== 127) out += name.charAt(i);
+        }
+        return out;
+    }
+    function entryNameExtractExtension(name) {
+        var dot = name.lastIndexOf('.');
+        if (dot <= 0) return '';
+        var ext = name.slice(dot);
+        if (ext.length < 2 || ext.length > 17) return '';
+        for (var i = 1; i < ext.length; i++) {
+            var c = ext.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return '';
+        }
+        return ext;
     }
     function isWindowsReservedEntryName(name) {
         var base = name;
         var dot = base.lastIndexOf('.');
         if (dot > 0) base = base.slice(0, dot);
-        base = base.replace(/[. ]+$/, '').toUpperCase();
+        base = entryNameTrimEnd(base, '. ').toUpperCase();
         return ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'].indexOf(base) !== -1;
     }
     function isAllowedEntryName(name) {
@@ -4165,29 +4245,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     }
     function suggestSafeEntryName(name) {
         var original = (name || '').trim();
-        var ext = '';
-        var extMatch = original.match(/(\.[A-Za-z0-9]{1,16})$/);
-        if (extMatch) ext = extMatch[1];
+        var ext = entryNameExtractExtension(original);
         var base = ext ? original.slice(0, -ext.length) : original;
-        base = base.replace(/[\x00-\x1F\x7F]/g, '');
-        base = base.replace(/[\/\\:*?"<>|]/g, '-');
-        base = base.replace(/-+/g, '-');
-        base = base.replace(/\s+/g, ' ');
-        base = base.replace(/^[.\s-]+|[.\s-]+$/g, '');
+        base = entryNameStripControlChars(base);
+        base = entryNameReplaceForbidden(base);
+        base = entryNameCollapseChar(base, '-');
+        base = entryNameCollapseWhitespace(base);
+        base = entryNameTrimEdges(base, '. \t-');
         if (!base || base === '.' || base === '..') base = 'upload';
         var candidate = base + ext;
         var maxBaseLen = 255 - ext.length;
         if (maxBaseLen < 1) {
             candidate = base.slice(0, 255);
         } else if (base.length > maxBaseLen) {
-            base = base.slice(0, maxBaseLen).replace(/[.\s-]+$/, '');
+            base = entryNameTrimEnd(base.slice(0, maxBaseLen), '. \t-');
             if (!base || base === '.' || base === '..') base = 'upload';
             candidate = base + ext;
         }
         if (isWindowsReservedEntryName(candidate)) {
             base = 'file-' + base;
             if ((base + ext).length > 255) {
-                base = base.slice(0, Math.max(1, 255 - ext.length - 5)).replace(/[.\s-]+$/, '');
+                base = entryNameTrimEnd(base.slice(0, Math.max(1, 255 - ext.length - 5)), '. \t-');
             }
             candidate = base + ext;
         }
