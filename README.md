@@ -100,10 +100,13 @@ Or push both at once:
 git push origin main && git push github main
 ```
 
-**Publish a release** (GitHub Actions builds and attaches `index.php`, `index.min.php`, and a zip):
+**Publish a release** (script builds locally, tags, pushes to both remotes; GitHub Actions attaches release files):
 
 ```sh
-git tag -a v1.0.0 -m "v1.0.0"
-git push origin v1.0.0
-git push github v1.0.0    # tag must reach GitHub to trigger the release workflow
+./scripts/release.sh                    # prompt; defaults to last tag + 1 patch (v1.0.0 → v1.0.1)
+./scripts/release.sh v1.0.0
+./scripts/release.sh v1.2.0 "Optional tag message"
+./scripts/release.sh --dry-run          # preview only
 ```
+
+The script checks a clean `main` branch, runs `scripts/build-min.php`, creates an annotated tag, pushes `main` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page.

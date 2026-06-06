@@ -14,6 +14,7 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 |------|---------|
 | `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
+| `scripts/release.sh` | Tags a release and pushes to `origin` + `github` (triggers GitHub Actions) |
 | `README.md` | User-facing setup and configuration guide |
 | `.gitignore` | Ignores runtime files and generated `index.min.php` |
 
@@ -45,6 +46,9 @@ php scripts/build-min.php
 # Fail if index.min.php is missing or out of date (for CI)
 php scripts/build-min.php --check
 
+# Tag and push a release (prompts for version if omitted; build check; push to origin + github)
+./scripts/release.sh
+
 # Generate a password hash for manual config
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
@@ -61,7 +65,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Push `main` and tags to both. GitHub Actions (`.github/workflows/release.yml`) runs on tags pushed to `github` and publishes release assets built via `scripts/build-min.php`.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Use `./scripts/release.sh v1.0.0` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets built via `scripts/build-min.php`.
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 

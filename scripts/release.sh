@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Create a version tag and push it to GitLab + GitHub.
+# GitHub Actions (.github/workflows/release.yml) builds release assets when the tag lands on github.
+#
+# Usage (from repo root):
+#   ./scripts/release.sh                  # prompt; default bumps last version segment
+#   ./scripts/release.sh v1.0.0
+#   ./scripts/release.sh v1.0.0 "Short release notes for the tag message"
+#   ./scripts/release.sh --dry-run
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+DRY_RUN=0
+TAG=""
+MESSAGE=""
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/release.sh [tag] [message] [--dry-run]
+
+  tag       Version tag (must start with v, e.g. v1.0.0). Prompted when omitted;
+            default is the latest v* tag with the last numeric segment bumped by 1.
+  message   Optional annotated-tag message (defaults to the tag name)
+  --dry-run Show what would happen without tagging or pushing
+
+Examples:
+  ./scripts/release.sh
+  ./scripts/release.sh v1.0.0
+  ./scripts/release.sh v1.2.0 "Fix upload overwrite prompt"
+EOF
+}
+
+suggest_next_tag() {
+    local latest
+    latest="$(git tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+
+    if [[ -z "$latest" ]]; then
+        echo "v0.1.0"
+        return
+    fi
+
+    local ver="${latest#v}"
+    if [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(.*)$ ]]; then
+        echo "v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))${BASH_REMATCH[4]}"
+    elif [[ "$ver" =~ ^([0-9]+)\.([0-9]+)(.*)$ ]]; then
+        echo "v${BASH_REMATCH[1]}.$((BASH_REMATCH[2] + 1))${BASH_REMATCH[3]}"
+    elif [[ "$ver" =~ ^([0-9]+)(.*)$ ]]; then
+        echo "v$((BASH_REMATCH[1] + 1))${BASH_REMATCH[2]}"
+    else
+        echo "${latest}.1"
+    fi
+}
+
+prompt_for_tag() {
+    local latest default
+    latest="$(git tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1)"
+    default="$(suggest_next_tag)"
+
+    if [[ -n "$latest" ]]; then
+        echo "Latest tag: $latest"
+    else
+        echo "No existing v* tags found."
+    fi
+
+    read -r -p "Release tag [$default]: " TAG
+    TAG="${TAG:-$default}"
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            if [[ -z "$TAG" ]]; then
+                TAG="$arg"
+            elif [[ -z "$MESSAGE" ]]; then
+                MESSAGE="$arg"
+            else
+                echo "Unexpected argument: $arg" >&2
+                usage >&2
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+if [[ -z "$TAG" ]]; then
+    prompt_for_tag
+fi
+
+if [[ ! "$TAG" =~ ^v ]]; then
+    echo "Tag must start with v (e.g. v1.0.0). Got: $TAG" >&2
+    exit 1
+fi
+
+if [[ -z "$MESSAGE" ]]; then
+    MESSAGE="$TAG"
+fi
+
+if ! git remote get-url github &>/dev/null; then
+    echo "Remote 'github' is not configured. Add it first:" >&2
+    echo "  git remote add github git@github.com:YOU/php-dirindex.git" >&2
+    exit 1
+fi
+
+BRANCH="$(git branch --show-current)"
+if [[ "$BRANCH" != "main" ]]; then
+    echo "Not on main (on '$BRANCH'). Checkout main before releasing." >&2
+    exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Working tree is not clean. Commit or stash changes before releasing." >&2
+    git status --short >&2
+    exit 1
+fi
+
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "Tag already exists locally: $TAG" >&2
+    exit 1
+fi
+
+if git ls-remote --exit-code --tags origin "refs/tags/$TAG" &>/dev/null; then
+    echo "Tag already exists on origin: $TAG" >&2
+    exit 1
+fi
+
+if git ls-remote --exit-code --tags github "refs/tags/$TAG" &>/dev/null; then
+    echo "Tag already exists on github: $TAG" >&2
+    exit 1
+fi
+
+run() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "dry-run: $*"
+    else
+        "$@"
+    fi
+}
+
+echo "==> Verifying minified build"
+run php scripts/build-min.php
+run php -l index.php
+run php -l index.min.php
+
+AHEAD_ORIGIN="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+AHEAD_GITHUB="$(git rev-list --count github/main..HEAD 2>/dev/null || echo 0)"
+
+if [[ "$AHEAD_ORIGIN" != "0" || "$AHEAD_GITHUB" != "0" ]]; then
+    echo "==> Pushing main (ahead of origin: $AHEAD_ORIGIN, github: $AHEAD_GITHUB)"
+    run git push origin main
+    run git push github main
+fi
+
+echo "==> Creating annotated tag $TAG"
+run git tag -a "$TAG" -m "$MESSAGE"
+
+echo "==> Pushing tag to origin and github"
+run git push origin "$TAG"
+run git push github "$TAG"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "Dry run complete. No tag was created."
+    exit 0
+fi
+
+cat <<EOF
+
+Release tag $TAG pushed.
+
+GitHub Actions will build index.php, index.min.php, and a zip, then publish:
+  https://github.com/$(git remote get-url github | sed -E 's#.*github.com[:/](.+)(\.git)?$#\1#')/releases/tag/$TAG
+
+Track the workflow under Actions on GitHub if it does not appear within a minute.
+EOF
