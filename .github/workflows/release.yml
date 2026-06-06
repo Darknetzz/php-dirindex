@@ -32,9 +32,17 @@ jobs:
           cp index.php index.min.php README.md CHANGELOG.md dist/
           cd dist && zip -r "../php-dirindex-${GITHUB_REF_NAME}.zip" .
 
+      - name: Extract release notes from CHANGELOG
+        run: |
+          scripts/changelog-section.sh "${GITHUB_REF_NAME}" > release-notes.md
+          if [[ ! -s release-notes.md ]]; then
+            echo "No CHANGELOG section for ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             dist/index.php
             dist/index.min.php

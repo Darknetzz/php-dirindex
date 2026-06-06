@@ -119,6 +119,6 @@ git push origin main && git push github main
 ./scripts/release.sh --dry-run          # preview only
 ```
 
-The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag, pushes `main` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page.
+The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `main` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page, with the release description taken from the same CHANGELOG section.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md). Add bullets under `## [Unreleased]` as you make changes.

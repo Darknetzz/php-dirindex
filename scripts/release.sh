@@ -5,7 +5,7 @@
 # Usage (from repo root):
 #   ./scripts/release.sh                  # prompt; default bumps last version segment
 #   ./scripts/release.sh v1.0.0
-#   ./scripts/release.sh v1.0.0 "Short release notes for the tag message"
+#   ./scripts/release.sh v1.0.0 "Optional short annotated-tag message (GitHub release body uses CHANGELOG)"
 #   ./scripts/release.sh --dry-run
 
 set -euo pipefail
@@ -16,6 +16,7 @@ cd "$ROOT"
 DRY_RUN=0
 TAG=""
 MESSAGE=""
+MESSAGE_EXPLICIT=0
 
 usage() {
     cat <<'EOF'
@@ -23,7 +24,7 @@ Usage: ./scripts/release.sh [tag] [message] [--dry-run]
 
   tag       Version tag in vMAJOR.MINOR.PATCH form (e.g. v1.0.0). Prompted when omitted;
             default is the latest tag with the patch segment bumped by 1.
-  message   Optional annotated-tag message (defaults to the tag name)
+  message   Optional annotated-tag message (defaults to this version's CHANGELOG section)
   --dry-run Show what would happen without editing CHANGELOG, committing, tagging, or pushing
 
 Examples:
@@ -138,6 +139,7 @@ for arg in "$@"; do
                 TAG="$arg"
             elif [[ -z "$MESSAGE" ]]; then
                 MESSAGE="$arg"
+                MESSAGE_EXPLICIT=1
             else
                 echo "Unexpected argument: $arg" >&2
                 usage >&2
@@ -154,10 +156,6 @@ fi
 if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Tag must match vMAJOR.MINOR.PATCH (e.g. v1.0.0). Got: $TAG" >&2
     exit 1
-fi
-
-if [[ -z "$MESSAGE" ]]; then
-    MESSAGE="$TAG"
 fi
 
 if ! git remote get-url github &>/dev/null; then
@@ -204,6 +202,20 @@ run() {
 
 echo "==> Finalizing CHANGELOG.md"
 finalize_changelog "$TAG"
+
+if [[ "$MESSAGE_EXPLICIT" -eq 0 ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "dry-run: annotated tag message and GitHub release body would use the CHANGELOG section for $TAG"
+        MESSAGE="(CHANGELOG section for $TAG)"
+    else
+        MESSAGE="$("$ROOT/scripts/changelog-section.sh" "$TAG")"
+        if [[ -z "$MESSAGE" ]]; then
+            echo "No CHANGELOG section found for $TAG after finalizing CHANGELOG.md" >&2
+            exit 1
+        fi
+    fi
+fi
+
 if [[ "$DRY_RUN" -ne 1 ]]; then
     if ! git diff --quiet CHANGELOG.md; then
         run git add CHANGELOG.md

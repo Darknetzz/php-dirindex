@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- GitHub releases and annotated tags use the version's `CHANGELOG.md` section as the release description (via `scripts/changelog-section.sh`)
+
 ### Fixed
 
 

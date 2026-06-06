@@ -15,6 +15,7 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
 | `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, and pushes to `origin` + `github` |
+| `scripts/changelog-section.sh` | Prints one version's section from `CHANGELOG.md` (used by release script and GitHub Actions) |
 | `CHANGELOG.md` | Keep a Changelog format; user-facing history of releases |
 | `README.md` | User-facing setup and configuration guide |
 | `.gitignore` | Ignores runtime files and generated `index.min.php` |
@@ -66,7 +67,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Use `./scripts/release.sh v1.0.0` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets built via `scripts/build-min.php`.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Use `./scripts/release.sh v1.0.0` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets and sets the GitHub release description from the version's CHANGELOG section via `scripts/changelog-section.sh`.
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 
