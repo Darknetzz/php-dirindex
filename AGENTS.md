@@ -61,7 +61,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** GitLab is primary; GitHub is a push mirror. Tag on GitLab (`git push origin v1.0.0`); mirrored tags trigger `.github/workflows/release.yml` on GitHub, which runs `scripts/build-min.php` and attaches `index.php`, `index.min.php`, and a zip to the GitHub Release. Do not push directly to GitHub.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Push `main` and tags to both. GitHub Actions (`.github/workflows/release.yml`) runs on tags pushed to `github` and publishes release assets built via `scripts/build-min.php`.
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 

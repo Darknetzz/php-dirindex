@@ -77,25 +77,33 @@ Requires PHP only (no npm). After editing `index.php`, rebuild before shipping `
 
 ## Development and releases
 
-**Source of truth:** GitLab (`gitlab.kriss.li`) is the primary remote. GitHub is a read-only mirror for visibility and published releases.
+Two remotes: **GitLab** (`origin`) for day-to-day work, **GitHub** (`github`) for public visibility and releases.
 
-**Mirror GitLab → GitHub** (one-time setup on GitLab):
-
-1. Create an empty GitHub repo (no README/license).
-2. On GitLab: **Settings → Repository → Mirroring repositories → Add new**.
-3. **Git repository URL:** `ssh://git@github.com/Darknetzz/php-dirindex.git` (or HTTPS equivalent)
-4. **Mirror direction:** Push
-5. **Authentication:** SSH deploy key on GitHub with **Allow write access**, or a GitHub PAT with **Contents: Read and write** for HTTPS.
-6. Enable mirroring. GitLab pushes `main` and tags after each update.
-
-Do not push commits directly to GitHub; always push to GitLab and let the mirror propagate.
-
-**Publish a release:**
+**One-time setup:**
 
 ```sh
-# on main, after changes are pushed to GitLab
-git tag -a v1.0.0 -m "v1.0.0"
-git push origin v1.0.0
+git remote add github git@github.com:Darknetzz/php-dirindex.git
+# first push only (GitHub repo must exist and be empty):
+git push -u github main
 ```
 
-After the mirror runs, GitHub Actions builds `index.min.php` and attaches `index.php`, `index.min.php`, and a zip to the GitHub Release for that tag.
+**Day-to-day:**
+
+```sh
+git push origin main
+git push github main
+```
+
+Or push both at once:
+
+```sh
+git push origin main && git push github main
+```
+
+**Publish a release** (GitHub Actions builds and attaches `index.php`, `index.min.php`, and a zip):
+
+```sh
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+git push github v1.0.0    # tag must reach GitHub to trigger the release workflow
+```
