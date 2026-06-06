@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`delete_enabled`** — when signed in as admin, show a delete button on listing rows (confirmation required); folders are removed recursively
 - **`hidden_paths`** — hide files and folders from listings and block access through the index (Settings → Server settings); supports path prefixes and basename rules
 - File preview modal shows metadata (type, size, modified date, permissions) for text and binary files; metadata appears in a footer bar below the preview
 - **`browse_requires_auth`** — optional setting to require admin sign-in before browsing listings or opening files; share links still work without sign-in

@@ -3472,6 +3472,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </section>
         <?php endif; ?>
 
+        <?php if ($authenticated && !$inShareMode && $deleteEnabled): ?>
+        <form id="delete-entry-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" hidden>
+            <input type="hidden" name="action" value="delete_entry">
+            <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+            <input type="hidden" name="entry_path" id="delete-entry-path" value="">
+        </form>
+        <?php endif; ?>
+
         <div class="listing">
             <div class="listing-toolbar">
                 <div class="listing-col-picker">
@@ -3769,6 +3777,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <span>Allow creating folders and files</span>
                         </label>
                         <label class="settings-check-row">
+                            <input type="checkbox" name="delete_enabled" value="1" <?= $deleteEnabled ? 'checked' : '' ?>>
+                            <span>Allow deleting folders and files</span>
+                        </label>
+                        <label class="settings-check-row">
                             <input type="checkbox" name="browse_requires_auth" value="1" <?= !empty($dirindexConfig['browse_requires_auth']) ? 'checked' : '' ?>>
                             <span>Require sign-in to browse files</span>
                         </label>
@@ -4016,6 +4028,28 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var isOpen = panel.classList.toggle('is-open');
             toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             toggle.textContent = isOpen ? 'Hide upload' : 'Upload file';
+        });
+    })();
+
+    (function() {
+        var deleteForm = document.getElementById('delete-entry-form');
+        var deletePathInput = document.getElementById('delete-entry-path');
+        if (!deleteForm || !deletePathInput) return;
+
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('.entry-delete');
+            if (!btn) return;
+            e.preventDefault();
+            var path = btn.getAttribute('data-delete-path') || '';
+            var name = btn.getAttribute('data-delete-name') || path;
+            var isDir = btn.getAttribute('data-is-dir') === '1';
+            if (!path) return;
+            var message = isDir
+                ? 'Delete folder "' + name + '" and everything inside it? This cannot be undone.'
+                : 'Delete file "' + name + '"? This cannot be undone.';
+            if (!window.confirm(message)) return;
+            deletePathInput.value = path;
+            deleteForm.submit();
         });
     })();
 
