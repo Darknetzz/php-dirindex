@@ -2083,6 +2083,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             cursor: pointer;
         }
         .btn-listing-tool {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
             padding: 0.3rem 0.65rem;
             border: 1px solid var(--border);
             border-radius: 6px;
@@ -2091,6 +2094,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-size: 0.75rem;
             cursor: pointer;
             transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .btn-listing-tool .icon {
+            width: 0.9rem;
+            height: 0.9rem;
+            opacity: 0.85;
+            flex-shrink: 0;
         }
         .btn-listing-tool:hover {
             color: var(--text);
@@ -2989,8 +2998,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     </div>
                 </div>
                 <?php if ($createEnabled && $authenticated && !$inShareMode): ?>
-                <button type="button" class="btn-listing-tool" id="btn-create-folder">New folder</button>
-                <button type="button" class="btn-listing-tool" id="btn-create-file">New file</button>
+                <button type="button" class="btn-listing-tool" id="btn-create-folder">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    New folder
+                </button>
+                <button type="button" class="btn-listing-tool" id="btn-create-file">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    New file
+                </button>
                 <?php endif; ?>
                 <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
             </div>
