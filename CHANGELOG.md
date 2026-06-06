@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Upload and create-entry names use safe-general validation (blocks `/ \\ : * ? " < > |`, control chars, trailing dots/spaces, Windows reserved names); invalid uploads can be renamed via confirmation prompt
 - Upload form uses a styled drop zone with browse button and selected-file badge instead of the default file input
 - Admin username/password moved from Settings to a separate Account modal (header button next to Settings)
 - Folder and file icons on the New folder / New file listing toolbar buttons

@@ -136,7 +136,7 @@ function relativePathHasTraversal($path) {
 }
 
 /**
- * Whether a single path segment is safe as a file or folder name.
+ * Whether a single path segment is safe to reference (e.g. ?open=); permissive for existing files.
  */
 function isSafeEntryName($name) {
     $name = trim((string) $name);
@@ -147,6 +147,107 @@ function isSafeEntryName($name) {
         return false;
     }
     return true;
+}
+
+function entryNameMaxLength() {
+    return 255;
+}
+
+function entryNameHasControlChars($name) {
+    return (bool) preg_match('/[\x00-\x1F\x7F]/', (string) $name);
+}
+
+function entryNameHasForbiddenChars($name) {
+    return (bool) preg_match('/[\/\\\\:*?"<>|]/', (string) $name);
+}
+
+function entryNameHasInvalidEdges($name) {
+    $name = (string) $name;
+    return $name !== rtrim($name, ' ') || $name !== rtrim($name, '.');
+}
+
+function isWindowsReservedEntryName($name) {
+    $base = (string) $name;
+    $dot = strrpos($base, '.');
+    if ($dot !== false) {
+        $base = substr($base, 0, $dot);
+    }
+    $base = strtoupper(rtrim($base, '. '));
+    static $reserved = [
+        'CON', 'PRN', 'AUX', 'NUL',
+        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+    ];
+    return in_array($base, $reserved, true);
+}
+
+/**
+ * Safe-general rules for new uploads and created files/folders.
+ */
+function isAllowedEntryName($name) {
+    $name = trim((string) $name);
+    if ($name === '' || $name === '.' || $name === '..') {
+        return false;
+    }
+    if (str_contains($name, "\0")) {
+        return false;
+    }
+    if (entryNameHasForbiddenChars($name)) {
+        return false;
+    }
+    if (entryNameHasControlChars($name)) {
+        return false;
+    }
+    if (entryNameHasInvalidEdges($name)) {
+        return false;
+    }
+    if (strlen($name) > entryNameMaxLength()) {
+        return false;
+    }
+    if (isWindowsReservedEntryName($name)) {
+        return false;
+    }
+    return true;
+}
+
+function suggestSafeEntryName($name) {
+    $original = trim((string) $name);
+    $ext = '';
+    if (preg_match('/(\.[A-Za-z0-9]{1,16})$/', $original, $matches)) {
+        $ext = $matches[1];
+    }
+    $base = $ext !== '' ? substr($original, 0, -strlen($ext)) : $original;
+    $base = preg_replace('/[\x00-\x1F\x7F]/', '', $base);
+    $base = preg_replace('/[\/\\\\:*?"<>|]/', '-', $base);
+    $base = preg_replace('/-+/', '-', $base);
+    $base = preg_replace('/\s+/', ' ', $base);
+    $base = trim($base, ". \t-");
+    if ($base === '' || $base === '.' || $base === '..') {
+        $base = 'upload';
+    }
+    $candidate = $base . $ext;
+    $maxBaseLen = entryNameMaxLength() - strlen($ext);
+    if ($maxBaseLen < 1) {
+        $candidate = substr($base, 0, entryNameMaxLength());
+    } elseif (strlen($base) > $maxBaseLen) {
+        $base = rtrim(substr($base, 0, $maxBaseLen), ". \t-");
+        if ($base === '' || $base === '.' || $base === '..') {
+            $base = 'upload';
+        }
+        $candidate = $base . $ext;
+    }
+    if (isWindowsReservedEntryName($candidate)) {
+        $prefix = 'file-';
+        $base = $prefix . $base;
+        if (strlen($base . $ext) > entryNameMaxLength()) {
+            $base = rtrim(substr($base, 0, max(1, entryNameMaxLength() - strlen($ext) - strlen($prefix))), ". \t-");
+        }
+        $candidate = $base . $ext;
+    }
+    if (!isAllowedEntryName($candidate)) {
+        $candidate = 'upload' . $ext;
+    }
+    return $candidate;
 }
 
 function normalizeRelativePathForHidden($path) {
@@ -997,7 +1098,7 @@ function redirectToCurrentListing($indexHref, $relativePath, $messageKey = null)
 
 function cleanUploadFilename($name) {
     $name = trim((string) $name);
-    if (!isSafeEntryName($name)) {
+    if (!isAllowedEntryName($name)) {
         return null;
     }
     return $name;
@@ -1554,9 +1655,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((int) $file['error'] !== UPLOAD_ERR_OK) {
             redirectToCurrentListing($indexHref, $relativePath, uploadErrorMessage($file['error']));
         }
-        $name = cleanUploadFilename($file['name'] ?? '');
-        if ($name === null) {
-            redirectToCurrentListing($indexHref, $relativePath, 'upload_bad_name');
+        $uploadAsRaw = trim((string) ($_POST['upload_as'] ?? ''));
+        $name = null;
+        if ($uploadAsRaw !== '') {
+            $name = cleanUploadFilename($uploadAsRaw);
+            if ($name === null) {
+                redirectToCurrentListing($indexHref, $relativePath, 'upload_bad_name');
+            }
+        } else {
+            $originalName = (string) ($file['name'] ?? '');
+            $name = cleanUploadFilename($originalName);
+            if ($name === null) {
+                dirindexFlashSet('Suggested name: ' . suggestSafeEntryName($originalName));
+                redirectToCurrentListing($indexHref, $relativePath, 'upload_bad_name');
+            }
         }
         $uploadRelativePath = $relativePath !== '' ? $relativePath . '/' . $name : $name;
         if (isHiddenRelativePath($uploadRelativePath, $hiddenPaths)) {
@@ -1594,6 +1706,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $name = cleanUploadFilename($_POST['entry_name'] ?? '');
         if ($name === null || dirindexIsHiddenListingEntry($name)) {
+            $rawName = trim((string) ($_POST['entry_name'] ?? ''));
+            if ($name === null && $rawName !== '' && !dirindexIsHiddenListingEntry($rawName)) {
+                dirindexFlashSet('Suggested name: ' . suggestSafeEntryName($rawName));
+            }
             redirectToCurrentListing($indexHref, $relativePath, 'create_bad_name');
         }
         $createRelativePath = $relativePath !== '' ? $relativePath . '/' . $name : $name;
@@ -1811,7 +1927,7 @@ $messageMap = [
     'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
     'hidden_paths_invalid' => ['error', 'Hidden paths list contains an invalid entry. Use relative paths without ..'],
     'path_hidden' => ['error', 'That path is hidden and cannot be accessed.'],
-    'upload_bad_name' => ['error', 'Upload filename is not allowed.'],
+    'upload_bad_name' => ['error', 'Upload filename is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
     'upload_exists' => ['error', 'A file with that name already exists. Confirm overwrite and try again.'],
     'upload_failed' => ['error', 'Upload failed.'],
     'upload_missing' => ['error', 'Choose a file to upload.'],
@@ -1822,7 +1938,7 @@ $messageMap = [
     'upload_target_blocked' => ['error', 'Cannot overwrite a directory or symlink.'],
     'upload_too_large' => ['error', 'Uploaded file is too large.'],
     'create_disabled' => ['error', 'Creating folders and files is disabled in settings.'],
-    'create_bad_name' => ['error', 'Name is not allowed.'],
+    'create_bad_name' => ['error', 'Name is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
     'create_exists' => ['error', 'An entry with that name already exists.'],
     'create_failed' => ['error', 'Could not create the entry.'],
     'create_folder_ok' => ['success', 'Folder created.'],
@@ -3455,6 +3571,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <input type="hidden" name="action" value="upload">
                     <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                     <input type="hidden" name="overwrite" id="upload-overwrite" value="">
+                    <input type="hidden" name="upload_as" id="upload-as" value="">
                     <div class="upload-dropzone" id="upload-dropzone">
                         <input type="file" id="upload-file" class="upload-file-input" name="upload_file" required>
                         <svg class="upload-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 16V4"/><path d="m8 8 4-4 4 4"/><path d="M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
@@ -3900,8 +4017,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     </div>
                     <div class="settings-field">
                         <label for="create-entry-name">Name</label>
-                        <input type="text" id="create-entry-name" name="entry_name" required autocomplete="off" spellcheck="false" placeholder="notes.txt">
-                        <span class="settings-help" id="create-entry-help">Creates an empty folder in the current directory.</span>
+                        <input type="text" id="create-entry-name" name="entry_name" required autocomplete="off" spellcheck="false" placeholder="notes.txt" maxlength="255">
+                        <span class="settings-help" id="create-entry-help">Creates an empty folder in the current directory. Names may use letters, numbers, spaces, and . _ - ( ) [ ].</span>
                     </div>
                     <div class="share-form-footer">
                         <button type="button" class="btn-auth btn-auth-secondary" id="create-entry-cancel">Cancel</button>
@@ -4020,6 +4137,64 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scss.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ini.min.js"></script>
     <script>
+    function entryNameHasControlChars(name) {
+        return /[\x00-\x1F\x7F]/.test(name);
+    }
+    function entryNameHasForbiddenChars(name) {
+        return /[\/\\:*?"<>|]/.test(name);
+    }
+    function entryNameHasInvalidEdges(name) {
+        return name !== name.replace(/ +$/, '') || name !== name.replace(/\.+$/, '');
+    }
+    function isWindowsReservedEntryName(name) {
+        var base = name;
+        var dot = base.lastIndexOf('.');
+        if (dot > 0) base = base.slice(0, dot);
+        base = base.replace(/[. ]+$/, '').toUpperCase();
+        return ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'].indexOf(base) !== -1;
+    }
+    function isAllowedEntryName(name) {
+        name = (name || '').trim();
+        if (!name || name === '.' || name === '..') return false;
+        if (entryNameHasForbiddenChars(name)) return false;
+        if (entryNameHasControlChars(name)) return false;
+        if (entryNameHasInvalidEdges(name)) return false;
+        if (name.length > 255) return false;
+        if (isWindowsReservedEntryName(name)) return false;
+        return true;
+    }
+    function suggestSafeEntryName(name) {
+        var original = (name || '').trim();
+        var ext = '';
+        var extMatch = original.match(/(\.[A-Za-z0-9]{1,16})$/);
+        if (extMatch) ext = extMatch[1];
+        var base = ext ? original.slice(0, -ext.length) : original;
+        base = base.replace(/[\x00-\x1F\x7F]/g, '');
+        base = base.replace(/[\/\\:*?"<>|]/g, '-');
+        base = base.replace(/-+/g, '-');
+        base = base.replace(/\s+/g, ' ');
+        base = base.replace(/^[.\s-]+|[.\s-]+$/g, '');
+        if (!base || base === '.' || base === '..') base = 'upload';
+        var candidate = base + ext;
+        var maxBaseLen = 255 - ext.length;
+        if (maxBaseLen < 1) {
+            candidate = base.slice(0, 255);
+        } else if (base.length > maxBaseLen) {
+            base = base.slice(0, maxBaseLen).replace(/[.\s-]+$/, '');
+            if (!base || base === '.' || base === '..') base = 'upload';
+            candidate = base + ext;
+        }
+        if (isWindowsReservedEntryName(candidate)) {
+            base = 'file-' + base;
+            if ((base + ext).length > 255) {
+                base = base.slice(0, Math.max(1, 255 - ext.length - 5)).replace(/[.\s-]+$/, '');
+            }
+            candidate = base + ext;
+        }
+        if (!isAllowedEntryName(candidate)) candidate = 'upload' + ext;
+        return candidate;
+    }
+
     (function() {
         var toggle = document.getElementById('btn-upload-toggle');
         var panel = document.getElementById('upload-panel');
@@ -4064,15 +4239,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var helpText = document.getElementById('create-entry-help');
         var submitBtn = document.getElementById('create-entry-submit');
         var title = document.getElementById('create-entry-title');
+        var createForm = document.getElementById('create-entry-form');
         if (!overlay || !typeInput || !nameInput) return;
+
+        var createNameHint = ' Names may use letters, numbers, spaces, and . _ - ( ) [ ].';
 
         function setCreateType(type) {
             var isFolder = type === 'folder';
             typeInput.value = isFolder ? 'folder' : 'file';
             if (title) title.textContent = isFolder ? 'Create folder' : 'Create file';
-            if (helpText) helpText.textContent = isFolder
+            if (helpText) helpText.textContent = (isFolder
                 ? 'Creates an empty folder in the current directory.'
-                : 'Creates an empty file in the current directory.';
+                : 'Creates an empty file in the current directory.') + createNameHint;
             if (submitBtn) submitBtn.textContent = isFolder ? 'Create folder' : 'Create file';
             if (nameInput) nameInput.placeholder = isFolder ? 'newfolder' : 'notes.txt';
         }
@@ -4094,6 +4272,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (fileBtn) fileBtn.addEventListener('click', function() { openCreateModal('file'); });
         if (closeBtn) closeBtn.addEventListener('click', closeCreateModal);
         if (cancelBtn) cancelBtn.addEventListener('click', closeCreateModal);
+        if (createForm) {
+            createForm.addEventListener('submit', function(e) {
+                var value = nameInput.value || '';
+                if (isAllowedEntryName(value)) return;
+                e.preventDefault();
+                var suggested = suggestSafeEntryName(value);
+                window.alert('That name is not allowed.\n\nSuggested name: ' + suggested);
+                nameInput.value = suggested;
+                nameInput.focus();
+                nameInput.select();
+            });
+        }
         overlay.addEventListener('click', function(e) {
             if (e.target === overlay) closeCreateModal();
         });
@@ -4110,6 +4300,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (!uploadForm) return;
         var fileInput = document.getElementById('upload-file');
         var overwriteInput = document.getElementById('upload-overwrite');
+        var uploadAsInput = document.getElementById('upload-as');
         var dropzone = document.getElementById('upload-dropzone');
         var browseBtn = document.getElementById('upload-browse-btn');
         var fileNameEl = document.getElementById('upload-file-name');
@@ -4140,6 +4331,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (textEl) textEl.textContent = name;
         }
 
+        function clearUploadRename() {
+            if (uploadAsInput) uploadAsInput.value = '';
+        }
+        function uploadTargetName() {
+            if (uploadAsInput && uploadAsInput.value) return uploadAsInput.value;
+            if (!fileInput || !fileInput.files || !fileInput.files[0]) return '';
+            return fileInput.files[0].name;
+        }
+
         function assignDroppedFile(file) {
             if (!file || !fileInput) return;
             var dt = new DataTransfer();
@@ -4147,6 +4347,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             fileInput.files = dt.files;
             setSelectedFileName(file.name);
             overwriteInput.value = '';
+            clearUploadRename();
         }
 
         if (browseBtn && fileInput) {
@@ -4159,6 +4360,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var file = fileInput.files && fileInput.files[0];
                 setSelectedFileName(file ? file.name : '');
                 overwriteInput.value = '';
+                clearUploadRename();
             });
         }
         if (dropzone) {
@@ -4193,14 +4395,35 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         uploadForm.addEventListener('submit', function(e) {
             if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
-            var name = fileInput.files[0].name;
-            if (existingNames.indexOf(name) === -1) return;
-            if (window.confirm('A file named "' + name + '" already exists. Overwrite it?')) {
-                overwriteInput.value = '1';
+            var originalName = fileInput.files[0].name;
+
+            if (!uploadAsInput || !uploadAsInput.value) {
+                if (!isAllowedEntryName(originalName)) {
+                    e.preventDefault();
+                    var suggested = suggestSafeEntryName(originalName);
+                    if (window.confirm('"' + originalName + '" is not allowed.\n\nUpload as "' + suggested + '" instead?')) {
+                        uploadAsInput.value = suggested;
+                        uploadForm.requestSubmit();
+                    }
+                    return;
+                }
+            } else if (!isAllowedEntryName(uploadAsInput.value)) {
+                e.preventDefault();
+                clearUploadRename();
                 return;
             }
-            overwriteInput.value = '';
-            e.preventDefault();
+
+            var name = uploadTargetName();
+            if (existingNames.indexOf(name) !== -1 && overwriteInput.value !== '1') {
+                e.preventDefault();
+                if (window.confirm('A file named "' + name + '" already exists. Overwrite it?')) {
+                    overwriteInput.value = '1';
+                    uploadForm.requestSubmit();
+                } else {
+                    overwriteInput.value = '';
+                }
+                return;
+            }
         });
 
         var listing = document.querySelector('.listing');

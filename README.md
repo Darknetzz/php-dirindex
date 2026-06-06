@@ -5,8 +5,8 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
 - **Lists** the current directory with name, size, modified date, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
-- **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite.
-- **Create** empty folders and files in the current directory when signed in as admin (toolbar buttons in the listing).
+- **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.
+- **Create** empty folders and files in the current directory when signed in as admin (toolbar buttons in the listing). Same naming rules as uploads.
 - **Requires** PHP and a web server. Works when the script is symlinked or in a subdirectory; it uses `DOCUMENT_ROOT` when available so the index can show the server root.
 
 **Settings storage:** Drop in a single PHP file (`index.php` or `index.min.php`). On first run, the setup wizard saves upload credentials and other settings locally in the same folder. You can optionally enable **private-network browsing** during setup (RFC1918, link-local, and IPv6 private ranges). If you complete setup from a public IP, your current address is added to the whitelist automatically so you are not locked out.
