@@ -1926,15 +1926,35 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .breadcrumb {
             margin-top: 0.5rem;
-            font-size: 0.875rem;
-            color: var(--text-muted);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.8125rem;
         }
         .breadcrumb a {
+            display: inline-block;
             color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+            padding: 0.2rem 0.55rem;
+            border-radius: 6px;
             text-decoration: none;
+            line-height: 1.35;
+            transition: background 0.15s, border-color 0.15s;
         }
-        .breadcrumb a:hover { text-decoration: underline; }
-        .breadcrumb-sep { color: var(--text-muted); margin: 0 0.35em; font-weight: 400; user-select: none; }
+        .breadcrumb a:hover {
+            text-decoration: none;
+            background: color-mix(in srgb, var(--accent) 20%, transparent);
+            border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+        }
+        .breadcrumb-sep {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: 500;
+            opacity: 0.55;
+            user-select: none;
+        }
 
         .listing {
             position: relative;

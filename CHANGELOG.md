@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breadcrumb path segments styled as badges (matching the share-link badge look)
 - Documentation for `index.php` vs `index.min.php`, dual GitLab/GitHub remotes, and the release process
 
 ### Fixed
