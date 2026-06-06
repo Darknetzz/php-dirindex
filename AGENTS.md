@@ -14,7 +14,8 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 |------|---------|
 | `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
-| `scripts/release.sh` | Tags a release and pushes to `origin` + `github` (triggers GitHub Actions) |
+| `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, and pushes to `origin` + `github` |
+| `CHANGELOG.md` | Keep a Changelog format; user-facing history of releases |
 | `README.md` | User-facing setup and configuration guide |
 | `.gitignore` | Ignores runtime files and generated `index.min.php` |
 
@@ -97,6 +98,7 @@ Treat these as non-negotiable when making changes:
 - **Share links** — Use `dirindexGetSharesPdo()`, `shareUrl()`, `pathWithinShareScope()`. Preserve `share` in URLs via `currentListingUrl()` / `$shareTokenActive`. Binary files in share mode use `?download=1` through `index.php`, not `directEntryUrl()`.
 - **UI tweak** — CSS is in the same file; match existing dark/light theme variables and modal patterns.
 - **Release minify** — After UI or inline-template changes, run `php scripts/build-min.php` and verify the minified file in a browser. If the build script is changed, test inline `<?php if` / `<?php endif` blocks especially.
+- **Changelog** — On every user-visible or notable change, add a bullet under `## [Unreleased]` in `CHANGELOG.md` (sections: Added, Changed, Fixed, Removed, Security). `./scripts/release.sh` renames `[Unreleased]` to `[x.y.z] - date`, prepends a fresh empty `[Unreleased]`, commits, then tags.
 
 ## What not to do
 
@@ -109,4 +111,6 @@ Treat these as non-negotiable when making changes:
 ## Documentation
 
 - **README.md** — End-user setup, config keys, and upload instructions.
-When adding user-visible behavior, update README.md. When adding agent-relevant architecture or workflow notes, update this file.
+- **CHANGELOG.md** — Release notes in [Keep a Changelog](https://keepachangelog.com/) format.
+
+When adding user-visible behavior, update README.md and add an `[Unreleased]` entry to CHANGELOG.md. When adding agent-relevant architecture or workflow notes, update this file.

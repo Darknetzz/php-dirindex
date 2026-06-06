@@ -24,7 +24,7 @@ Usage: ./scripts/release.sh [tag] [message] [--dry-run]
   tag       Version tag in vMAJOR.MINOR.PATCH form (e.g. v1.0.0). Prompted when omitted;
             default is the latest tag with the patch segment bumped by 1.
   message   Optional annotated-tag message (defaults to the tag name)
-  --dry-run Show what would happen without tagging or pushing
+  --dry-run Show what would happen without editing CHANGELOG, committing, tagging, or pushing
 
 Examples:
   ./scripts/release.sh
@@ -48,6 +48,70 @@ suggest_next_tag() {
     else
         echo "v0.1.0"
     fi
+}
+
+CHANGELOG="$ROOT/CHANGELOG.md"
+
+changelog_has_unreleased_entries() {
+    awk '
+        /^## \[Unreleased\]/ { in_unreleased = 1; next }
+        in_unreleased && /^## \[/ { exit }
+        in_unreleased && /^- / { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$CHANGELOG"
+}
+
+finalize_changelog() {
+    local tag="$1"
+    local version="${tag#v}"
+    local date
+    date="$(date +%Y-%m-%d)"
+    local new_release_header="## [${version}] - ${date}"
+    local new_unreleased
+    new_unreleased='## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+'
+
+    if [[ ! -f "$CHANGELOG" ]]; then
+        echo "Missing CHANGELOG.md" >&2
+        exit 1
+    fi
+
+    if ! grep -q '^## \[Unreleased\]' "$CHANGELOG"; then
+        echo "CHANGELOG.md must contain a ## [Unreleased] section" >&2
+        exit 1
+    fi
+
+    if ! changelog_has_unreleased_entries; then
+        echo "CHANGELOG.md [Unreleased] has no bullet entries. Add notes before releasing." >&2
+        exit 1
+    fi
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "dry-run: would rename ## [Unreleased] to ${new_release_header}"
+        echo "dry-run: would prepend a fresh ## [Unreleased] section"
+        return
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    awk -v new="$new_release_header" '
+        /^## \[Unreleased\]/ && !done { print new; done = 1; next }
+        { print }
+    ' "$CHANGELOG" > "$tmp"
+    mv "$tmp" "$CHANGELOG"
+
+    tmp="$(mktemp)"
+    awk -v block="$new_unreleased" '
+        /^## \[[0-9]/ && !inserted { print block; print ""; inserted = 1 }
+        { print }
+    ' "$CHANGELOG" > "$tmp"
+    mv "$tmp" "$CHANGELOG"
 }
 
 prompt_for_tag() {
@@ -108,9 +172,10 @@ if [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
-if [[ -n "$(git status --porcelain)" ]]; then
+DIRTY_OTHER="$(git status --porcelain | grep -v '^.. CHANGELOG\.md$' || true)"
+if [[ -n "$DIRTY_OTHER" ]]; then
     echo "Working tree is not clean. Commit or stash changes before releasing." >&2
-    git status --short >&2
+    echo "$DIRTY_OTHER" >&2
     exit 1
 fi
 
@@ -136,6 +201,15 @@ run() {
         "$@"
     fi
 }
+
+echo "==> Finalizing CHANGELOG.md"
+finalize_changelog "$TAG"
+if [[ "$DRY_RUN" -ne 1 ]]; then
+    if ! git diff --quiet CHANGELOG.md; then
+        run git add CHANGELOG.md
+        run git commit -m "Prepare release $TAG"
+    fi
+fi
 
 echo "==> Verifying minified build"
 run php scripts/build-min.php
