@@ -28,6 +28,14 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `auth_username` | — | Admin login username. |
 | `auth_password_hash` | — | Password hash from `password_hash()` (not plain text). |
 | `upload_max_bytes` | `0` | Per-file upload limit in bytes; `0` uses PHP/web-server limits. |
+| `hidden_paths` | `[]` | Paths hidden from listings and blocked from index access (see below). |
+
+**Hidden paths** (Settings → Server settings when signed in as admin):
+
+- One relative path per line (from the index root). Lines starting with `#` are ignored.
+- **Folder path** (trailing slash or contains `/`, e.g. `private/` or `backups/old`): hides that path from the index root and everything beneath it.
+- **Name rule** (no slash, e.g. `.git` or `.env`): hides any file or folder with that name anywhere in the tree.
+- Hidden items are omitted from listings and cannot be opened, previewed, downloaded, uploaded to, or shared through the index. Share links to hidden paths return 404. This applies to the directory index only; protect sensitive files at the web-server level if they must not be reachable by direct URL.
 
 **Access control** (Settings → Server settings when signed in as admin):
 
