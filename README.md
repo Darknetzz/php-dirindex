@@ -52,3 +52,5 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 PHP settings such as `upload_max_filesize` and `post_max_size` still apply.
 
 No dependencies—just drop the file and run.
+
+**Release build:** To generate a smaller deploy artifact (like `*.min.js`), run `php scripts/build-min.php` from the repo root. It writes `index.min.php` next to `index.php` with minified CSS, JavaScript, and HTML plus stripped PHP comments. Edit `index.php` only; rebuild before shipping the minified copy. Use `php scripts/build-min.php --check` in CI to ensure the artifact is current.

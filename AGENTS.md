@@ -34,9 +34,14 @@ php -S localhost:8080
 
 # Open http://localhost:8080/index.php
 
+# Build index.min.php for release (CSS/JS/HTML/comment minification)
+php scripts/build-min.php
+
 # Generate a password hash for manual config
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
+
+Source of truth is always `index.php`. `index.min.php` is a generated deploy artifact (gitignored); run `scripts/build-min.php` before attaching it to a release.
 
 No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
 

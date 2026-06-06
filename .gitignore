@@ -1,3 +1,4 @@
 .dirindex.sqlite*
 .dirindex.json
 config.php
+index.min.php
