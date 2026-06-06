@@ -1100,7 +1100,24 @@ if ($relativePath !== '') {
             }
             if ($raw !== false) {
                 header('Content-Type: application/json; charset=UTF-8');
-                $out = ['content' => $raw, 'lang' => $lang, 'name' => basename($relativePath)];
+                $fileSize = filesize($requestedPath);
+                $fileMtime = @filemtime($requestedPath);
+                $fileMtimeFormatted = '—';
+                if ($fileMtime !== false && $fileMtime >= 0 && $fileMtime <= 2147483647) {
+                    $formatted = @date('Y-m-d H:i', (int) $fileMtime);
+                    $fileMtimeFormatted = $formatted !== false ? $formatted : '—';
+                }
+                $out = [
+                    'content'         => $raw,
+                    'lang'            => $lang,
+                    'name'            => basename($relativePath),
+                    'size'            => $fileSize,
+                    'size_formatted'  => formatSize($fileSize),
+                    'mtime'           => $fileMtime !== false ? (int) $fileMtime : null,
+                    'mtime_formatted' => $fileMtimeFormatted,
+                    'perms'           => formatEntryPermissions($requestedPath) ?? '',
+                    'ext'             => $ext,
+                ];
                 if ($ext === 'md' || $ext === 'markdown') {
                     $out['html'] = markdownToHtml($raw);
                 }
@@ -1555,12 +1572,18 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
             $openMtime = @filemtime($openReal);
             $openMtimeFormatted = ($openMtime !== false && $openMtime >= 0 && $openMtime <= 2147483647) ? (@date('Y-m-d H:i', (int) $openMtime) ?: '—') : '—';
             $openDownloadUrl = $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath);
+            $openPerms = formatEntryPermissions($openReal) ?? '';
+            $openType = $openExt !== '' ? '.' . $openExt : '';
             if ($isText) {
                 $openFileForModal = [
                     'content_url' => currentListingUrl($indexHref, $openFilePath, ['content' => '1']),
                     'name'        => $openName,
                     'open_url'    => $openDownloadUrl,
                     'share_path'  => $openFilePath,
+                    'size'        => formatSize(filesize($openReal)),
+                    'mtime'       => $openMtimeFormatted,
+                    'perms'       => $openPerms,
+                    'type'        => $openType,
                 ];
             } else {
                 $openFileForModal = [
@@ -1569,6 +1592,8 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                     'download_url' => $openDownloadUrl,
                     'size'         => formatSize(filesize($openReal)),
                     'mtime'        => $openMtimeFormatted,
+                    'perms'        => $openPerms,
+                    'type'         => $openType,
                     'icon_html'    => fileTypeIconHtml($openExt, false),
                     'share_path'   => $openFilePath,
                 ];
@@ -2268,6 +2293,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-share-btn svg { width: 0.9rem; height: 0.9rem; }
         .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; line-height: 1; border-radius: 4px; }
         .modal-close:hover { color: var(--text); background: var(--hover); }
+        .modal-file-meta {
+            padding: 0.45rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+        }
+        .modal-file-meta[hidden] { display: none !important; }
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
         .modal-body pre { margin: 0; font-size: 0.85rem; }
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
@@ -2285,7 +2319,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
-        .modal-binary-meta { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
         .ft-icon {
             position: relative;
             flex-shrink: 0;
@@ -2764,7 +2797,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
     </style>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -3080,24 +3113,33 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             } else {
                                 $directUrl = directEntryUrl($item['path']);
                             }
+                            $ts = isset($item['mtime']) ? $item['mtime'] : null;
+                            $mtimeFormatted = '—';
+                            if ($ts !== null && $ts >= 0 && $ts <= 2147483647) {
+                                $formatted = @date('Y-m-d H:i', (int) $ts);
+                                $mtimeFormatted = $formatted !== false ? $formatted : '—';
+                            }
+                            $sizeFormatted = formatSize($item['size']);
+                            $permsLabel = !empty($item['permsLabel']) ? $item['permsLabel'] : '';
+                            $typeLabel = $item['ext'] !== '' ? '.' . $item['ext'] : '';
                             if (!empty($item['isText'])) {
                                 $url = currentListingUrl($indexHref, $item['path']);
                                 $contentUrl = currentListingUrl($indexHref, $item['path'], ['content' => '1']);
                                 $openUrl = $directUrl;
-                                $linkAttrs = ' class="file-preview" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"';
+                                $linkAttrs = ' class="file-preview" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                    . ' data-size="' . h($sizeFormatted) . '"'
+                                    . ' data-mtime="' . h($mtimeFormatted) . '"'
+                                    . ' data-perms="' . h($permsLabel) . '"'
+                                    . ' data-type="' . h($typeLabel) . '"';
                             } else {
                                 $url = '#';
-                                $ts = isset($item['mtime']) ? $item['mtime'] : null;
-                                $mtimeFormatted = '—';
-                                if ($ts !== null && $ts >= 0 && $ts <= 2147483647) {
-                                    $formatted = @date('Y-m-d H:i', (int) $ts);
-                                    $mtimeFormatted = $formatted !== false ? $formatted : '—';
-                                }
                                 $linkAttrs = ' class="file-binary" title="View file info"'
                                     . ' data-name="' . h($item['name']) . '"'
                                     . ' data-download-url="' . h($directUrl) . '"'
-                                    . ' data-size="' . h(formatSize($item['size'])) . '"'
+                                    . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
+                                    . ' data-perms="' . h($permsLabel) . '"'
+                                    . ' data-type="' . h($typeLabel) . '"'
                                     . ' data-icon-html="' . h(fileTypeIconHtml($item['ext'], false)) . '"'
                                     . ' data-share-path="' . h($item['path']) . '"';
                             }
@@ -3169,13 +3211,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </div>
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
+            <div id="modal-file-meta" class="modal-file-meta" hidden></div>
             <div class="modal-body">
                 <div id="modal-binary" class="modal-binary" hidden aria-hidden="true">
                     <div class="modal-binary-header">
                         <span id="modal-binary-icon"></span>
                         <div class="modal-binary-text">
                             <h2 id="modal-binary-name" class="modal-binary-name"></h2>
-                            <p id="modal-binary-meta" class="modal-binary-meta"></p>
                         </div>
                     </div>
                     <a id="modal-binary-download" class="btn-download" href="#">Download</a>
@@ -3702,8 +3744,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalBinary = document.getElementById('modal-binary');
         var modalBinaryIcon = document.getElementById('modal-binary-icon');
         var modalBinaryName = document.getElementById('modal-binary-name');
-        var modalBinaryMeta = document.getElementById('modal-binary-meta');
         var modalBinaryDownload = document.getElementById('modal-binary-download');
+        var modalFileMeta = document.getElementById('modal-file-meta');
         var closeBtn = document.getElementById('modal-close');
         var shareBtn = document.getElementById('modal-share-btn');
         var currentSharePath = '';
@@ -3720,6 +3762,51 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             shareBtn.hidden = !currentSharePath;
             if (currentSharePath) shareBtn.setAttribute('data-share-path', currentSharePath);
             else shareBtn.removeAttribute('data-share-path');
+        }
+
+        function metaFromElement(el) {
+            if (!el) return {};
+            return {
+                type: el.getAttribute('data-type') || el.getAttribute('data-open-type') || '',
+                size: el.getAttribute('data-size') || el.getAttribute('data-open-size') || '',
+                mtime: el.getAttribute('data-mtime') || el.getAttribute('data-open-mtime') || '',
+                perms: el.getAttribute('data-perms') || el.getAttribute('data-open-perms') || ''
+            };
+        }
+        function metaFromApi(data) {
+            if (!data) return {};
+            return {
+                type: data.ext ? ('.' + data.ext) : '',
+                size: data.size_formatted || '',
+                mtime: data.mtime_formatted || '',
+                perms: data.perms || ''
+            };
+        }
+        function mergeModalMeta(primary, fallback) {
+            return {
+                type: primary.type || fallback.type || '',
+                size: primary.size || fallback.size || '',
+                mtime: primary.mtime || fallback.mtime || '',
+                perms: primary.perms || fallback.perms || ''
+            };
+        }
+        function setModalMeta(meta) {
+            if (!modalFileMeta) return;
+            var parts = [];
+            if (meta.type) parts.push(meta.type);
+            if (meta.size) parts.push(meta.size);
+            if (meta.mtime) parts.push('Modified ' + meta.mtime);
+            if (meta.perms) parts.push(meta.perms);
+            if (parts.length) {
+                modalFileMeta.textContent = parts.join(' · ');
+                modalFileMeta.hidden = false;
+            } else {
+                modalFileMeta.textContent = '';
+                modalFileMeta.hidden = true;
+            }
+        }
+        function clearModalMeta() {
+            setModalMeta({});
         }
 
         function buildListingUrlWithOpen(contentUrl, fileName, sharePath) {
@@ -3756,6 +3843,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalBinary.hidden = true;
             modalBinary.setAttribute('aria-hidden', 'true');
             if (modalPanel) modalPanel.classList.remove('is-binary');
+            clearModalMeta();
         }
 
         function closeModal() {
@@ -3768,10 +3856,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             setModalSharePath('');
             removeOpenFromUrl();
         }
-        function openModal(name, content, lang, html, openUrl, sharePath) {
+        function openModal(name, content, lang, html, openUrl, sharePath, meta) {
             hidePreviewPanels();
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
+            setModalMeta(meta || {});
             if (openUrl) {
                 openLinkEl.href = openUrl;
                 openLinkEl.style.display = '';
@@ -3793,14 +3882,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
-        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl) {
+        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-binary');
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
+            var fileMeta = meta || {};
+            if (!fileMeta.size && size) fileMeta.size = size;
+            if (!fileMeta.mtime && mtime) fileMeta.mtime = mtime;
+            setModalMeta(fileMeta);
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
-            modalBinaryMeta.textContent = (size || '—') + ' · Modified ' + (mtime || '—');
             modalBinaryDownload.href = downloadUrl || '#';
             if (downloadUrl) {
                 openLinkEl.href = downloadUrl;
@@ -3816,10 +3908,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
 
-        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl) {
+        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta) {
+            var fallbackMeta = meta || {};
             fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
                 var path = sharePath || sharePathFromContentUrl(contentUrl, data.name || name);
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl, path);
+                var mergedMeta = mergeModalMeta(metaFromApi(data), fallbackMeta);
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl, path, mergedMeta);
                 if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
             }).catch(function() {
                 if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
@@ -3836,7 +3930,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var openUrl = previewLink.getAttribute('data-open-url') || '';
                 var sharePath = previewLink.getAttribute('data-share-path') || sharePathFromContentUrl(contentUrl, name);
                 var listingUrl = buildListingUrlWithOpen(contentUrl, name, sharePath);
-                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl);
+                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink));
                 return;
             }
             var binaryLink = e.target.closest('a.file-binary');
@@ -3854,7 +3948,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 binaryLink.getAttribute('data-icon-html') || '',
                 downloadUrl,
                 binarySharePath,
-                listingUrl
+                listingUrl,
+                metaFromElement(binaryLink)
             );
         });
 
@@ -3877,7 +3972,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-mtime') || '',
                 body.getAttribute('data-open-icon-html') || '',
                 body.getAttribute('data-open-download-url') || '',
-                body.getAttribute('data-open-share-path') || ''
+                body.getAttribute('data-open-share-path') || '',
+                undefined,
+                metaFromElement(body)
             );
         } else {
             var initialContentUrl = body.getAttribute('data-open-content-url');
@@ -3885,7 +3982,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var initialName = body.getAttribute('data-open-name') || '';
                 var initialOpenUrl = body.getAttribute('data-open-url') || '';
                 var initialSharePath = body.getAttribute('data-open-share-path') || sharePathFromContentUrl(initialContentUrl, initialName);
-                openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl, initialSharePath);
+                openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl, initialSharePath, undefined, metaFromElement(body));
             }
         }
     })();
