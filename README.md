@@ -23,6 +23,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `show_symlinks` | `true` | Hide symlinks from the listing when set to `false`. |
 | `allow_open_symlinks_outside` | `false` | Allow opening and following symlinks outside the index base. When `false`, a message is shown instead. |
 | `upload_enabled` | `false` | Show the upload form when auth credentials are configured. |
+| `create_enabled` | `true` | When signed in as admin, show **New folder** / **New file** in the listing toolbar. Independent of `upload_enabled`. |
 | `auth_username` | — | Admin login username. |
 | `auth_password_hash` | — | Password hash from `password_hash()` (not plain text). |
 | `upload_max_bytes` | `0` | Per-file upload limit in bytes; `0` uses PHP/web-server limits. |

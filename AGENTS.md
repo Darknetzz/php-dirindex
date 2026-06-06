@@ -22,7 +22,7 @@ Runtime files (not in git): `.dirindex.sqlite` (settings and share links when PD
 - **Navigation** — Subfolders use `?path=subfolder`. Breadcrumbs and a `..` row go up. Path traversal (`..`, null bytes) is rejected; resolved paths must stay under the base unless `allow_open_symlinks_outside` is enabled.
 - **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in `.dirindex.sqlite` (or `.dirindex.json` without SQLite). CSRF tokens protect all POST actions.
-- **Create entries** — Signed-in admins can create empty folders (`mkdir`) and files in the current listing directory via `create_entry` POST. Uses `cleanUploadFilename()` and blocks hidden storage names (`.dirindex.sqlite`, etc.). Independent of `upload_enabled`.
+- **Create entries** — Signed-in admins can create empty folders (`mkdir`) and files in the current listing directory via `create_entry` POST when `create_enabled` is true (default). Uses `cleanUploadFilename()` and blocks hidden storage names (`.dirindex.sqlite`, etc.). Independent of `upload_enabled`; toggle in Settings → Server settings.
 - **Access control** — Optional IP whitelist/blacklist with CIDR support; optional `ip_header` for reverse proxies.
 - **Share links** — Token-based public links stored in `.dirindex.sqlite` (`shares` table). Valid `?share=TOKEN` requests bypass IP checks. File shares render a download landing page; directory shares scope listing navigation to the shared folder. Create/revoke requires admin session + CSRF; viewing is read-only (POST blocked in share mode).
 

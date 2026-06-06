@@ -343,6 +343,7 @@ function dirindexStoredConfigKeys() {
         'ip_blacklist',
         'ip_header',
         'upload_enabled',
+        'create_enabled',
         'auth_username',
         'auth_password_hash',
         'upload_max_bytes',
@@ -389,7 +390,7 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
@@ -689,6 +690,10 @@ function isUploadEnabled(array $config) {
     return !empty($config['upload_enabled']) && hasUploadCredentials($config);
 }
 
+function isCreateEnabled(array $config) {
+    return !empty($config['create_enabled']) && hasUploadCredentials($config);
+}
+
 function currentListingUrl($indexHref, $relativePath, array $params = [], $shareToken = null) {
     global $shareTokenActive;
     $token = ($shareToken !== null && $shareToken !== '') ? $shareToken : $shareTokenActive;
@@ -779,6 +784,7 @@ $dirindexConfig = [
     'ip_whitelist'              => [],
     'ip_blacklist'              => [],
     'upload_enabled'            => false,
+    'create_enabled'            => true,
     'auth_username'             => '',
     'auth_password_hash'        => '',
     'upload_max_bytes'          => 0,
@@ -794,6 +800,7 @@ $allowOutside = !empty($dirindexConfig['allow_open_symlinks_outside']);
 $hasUploadCredentials = hasUploadCredentials($dirindexConfig);
 $setupNeeded = !$hasUploadCredentials;
 $uploadEnabled = isUploadEnabled($dirindexConfig);
+$createEnabled = isCreateEnabled($dirindexConfig);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
@@ -1141,6 +1148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $restrictPrivateNetworks = !empty($_POST['restrict_private_networks']);
         $setupSettings = [
             'upload_enabled' => '1',
+            'create_enabled' => '1',
             'auth_username' => $username,
             'auth_password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'upload_max_bytes' => (string) $maxBytesInt,
@@ -1204,6 +1212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
+            'create_enabled' => isset($_POST['create_enabled']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
@@ -1281,8 +1290,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'create_entry') {
-        if (!$hasUploadCredentials || !$authenticated) {
-            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        if (!$createEnabled || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, $createEnabled ? 'auth_required' : 'create_disabled');
         }
         if (!is_dir($currentPath) || !is_writable($currentPath)) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_not_writable');
@@ -1479,6 +1488,7 @@ $messageMap = [
     'upload_partial' => ['error', 'Upload was interrupted before it completed.'],
     'upload_target_blocked' => ['error', 'Cannot overwrite a directory or symlink.'],
     'upload_too_large' => ['error', 'Uploaded file is too large.'],
+    'create_disabled' => ['error', 'Creating folders and files is disabled in settings.'],
     'create_bad_name' => ['error', 'Name is not allowed.'],
     'create_exists' => ['error', 'An entry with that name already exists.'],
     'create_failed' => ['error', 'Could not create the entry.'],
@@ -2867,7 +2877,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             <div class="admin-bar">
                 <div>
                     <h2 id="upload-title">Admin tools</h2>
-                    <p>Signed in as <?= h($dirindexConfig['auth_username']) ?>. Uploads are <?= $uploadEnabled ? 'enabled' : 'disabled' ?>.</p>
+                    <p>Signed in as <?= h($dirindexConfig['auth_username']) ?>. Uploads are <?= $uploadEnabled ? 'enabled' : 'disabled' ?>. Creating folders/files is <?= $createEnabled ? 'enabled' : 'disabled' ?>.</p>
                 </div>
                 <div class="admin-bar-actions">
                     <?php if ($uploadEnabled): ?>
@@ -2921,7 +2931,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </label>
                     </div>
                 </div>
-                <?php if ($hasUploadCredentials && $authenticated && !$inShareMode): ?>
+                <?php if ($createEnabled && $authenticated && !$inShareMode): ?>
                 <button type="button" class="btn-listing-tool" id="btn-create-folder">New folder</button>
                 <button type="button" class="btn-listing-tool" id="btn-create-file">New file</button>
                 <?php endif; ?>
@@ -3169,6 +3179,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <span>Enable uploads</span>
                         </label>
                         <label class="settings-check-row">
+                            <input type="checkbox" name="create_enabled" value="1" <?= $createEnabled ? 'checked' : '' ?>>
+                            <span>Allow creating folders and files</span>
+                        </label>
+                        <label class="settings-check-row">
                             <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
                             <span>Show symlinks in listings</span>
                         </label>
@@ -3251,7 +3265,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
     </div>
 
-    <?php if ($hasUploadCredentials && $authenticated && !$inShareMode): ?>
+    <?php if ($createEnabled && $authenticated && !$inShareMode): ?>
     <div id="create-entry-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal share-modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-entry-title">
             <div class="modal-header">
