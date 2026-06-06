@@ -2992,6 +2992,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             background: var(--hover);
         }
+        .btn-auth-danger {
+            border-color: color-mix(in srgb, #f87171 55%, var(--accent-dim));
+            background: color-mix(in srgb, #f87171 88%, var(--accent-dim));
+        }
+        .btn-auth-danger:hover {
+            filter: brightness(1.08);
+        }
+        .confirm-modal-panel { max-width: 420px; }
+        .confirm-modal-message {
+            margin: 0 0 0.75rem;
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .confirm-modal-target {
+            margin: 0 0 0.75rem;
+            padding: 0.55rem 0.65rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.85rem;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        .confirm-modal-target[hidden] { display: none !important; }
+        .confirm-modal-detail {
+            margin: 0 0 1rem;
+        }
+        .confirm-modal-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 0.65rem;
+        }
         .admin-bar {
             display: flex;
             align-items: center;
@@ -4125,6 +4160,24 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     </div>
     <?php endif; ?>
 
+    <div id="confirm-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal share-modal-panel confirm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+            <div class="modal-header">
+                <span class="modal-title" id="confirm-modal-title">Confirm</span>
+                <button type="button" class="modal-close" id="confirm-modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-modal-message" class="confirm-modal-message"></p>
+                <div id="confirm-modal-target" class="confirm-modal-target" hidden></div>
+                <p id="confirm-modal-detail" class="confirm-modal-detail settings-help"></p>
+                <div class="confirm-modal-actions">
+                    <button type="button" class="btn-auth btn-auth-secondary" id="confirm-modal-cancel">Cancel</button>
+                    <button type="button" class="btn-auth" id="confirm-modal-ok">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
@@ -4273,6 +4326,83 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         return candidate;
     }
 
+    var confirmModalState = { resolve: null };
+
+    function showConfirmModal(options) {
+        options = options || {};
+        var overlay = document.getElementById('confirm-modal');
+        var titleEl = document.getElementById('confirm-modal-title');
+        var messageEl = document.getElementById('confirm-modal-message');
+        var targetEl = document.getElementById('confirm-modal-target');
+        var detailEl = document.getElementById('confirm-modal-detail');
+        var okBtn = document.getElementById('confirm-modal-ok');
+        var cancelBtn = document.getElementById('confirm-modal-cancel');
+        var closeBtn = document.getElementById('confirm-modal-close');
+        if (!overlay || !messageEl || !okBtn || !cancelBtn) {
+            return Promise.resolve(false);
+        }
+        if (confirmModalState.resolve) {
+            confirmModalState.resolve(false);
+            confirmModalState.resolve = null;
+        }
+        if (titleEl) titleEl.textContent = options.title || 'Confirm';
+        messageEl.textContent = options.message || 'Are you sure?';
+        if (targetEl) {
+            if (options.target) {
+                targetEl.textContent = options.target;
+                targetEl.hidden = false;
+            } else {
+                targetEl.textContent = '';
+                targetEl.hidden = true;
+            }
+        }
+        if (detailEl) {
+            detailEl.textContent = options.detail || '';
+            detailEl.hidden = !options.detail;
+        }
+        okBtn.textContent = options.confirmLabel || 'OK';
+        cancelBtn.textContent = options.cancelLabel || 'Cancel';
+        okBtn.classList.toggle('btn-auth-danger', !!options.danger);
+        overlay.classList.add('is-open');
+        overlay.setAttribute('aria-hidden', 'false');
+        okBtn.focus();
+        return new Promise(function(resolve) {
+            confirmModalState.resolve = resolve;
+        });
+    }
+
+    function closeConfirmModal(confirmed) {
+        var overlay = document.getElementById('confirm-modal');
+        if (overlay) {
+            overlay.classList.remove('is-open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+        if (confirmModalState.resolve) {
+            confirmModalState.resolve(!!confirmed);
+            confirmModalState.resolve = null;
+        }
+    }
+
+    (function() {
+        var overlay = document.getElementById('confirm-modal');
+        var okBtn = document.getElementById('confirm-modal-ok');
+        var cancelBtn = document.getElementById('confirm-modal-cancel');
+        var closeBtn = document.getElementById('confirm-modal-close');
+        if (!overlay || !okBtn || !cancelBtn) return;
+        okBtn.addEventListener('click', function() { closeConfirmModal(true); });
+        cancelBtn.addEventListener('click', function() { closeConfirmModal(false); });
+        if (closeBtn) closeBtn.addEventListener('click', function() { closeConfirmModal(false); });
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeConfirmModal(false);
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && overlay.classList.contains('is-open')) {
+                closeConfirmModal(false);
+                e.stopPropagation();
+            }
+        });
+    })();
+
     (function() {
         var toggle = document.getElementById('btn-upload-toggle');
         var panel = document.getElementById('upload-panel');
@@ -4297,12 +4427,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var name = btn.getAttribute('data-delete-name') || path;
             var isDir = btn.getAttribute('data-is-dir') === '1';
             if (!path) return;
-            var message = isDir
-                ? 'Delete folder "' + name + '" and everything inside it? This cannot be undone.'
-                : 'Delete file "' + name + '"? This cannot be undone.';
-            if (!window.confirm(message)) return;
-            deletePathInput.value = path;
-            deleteForm.submit();
+            showConfirmModal({
+                title: isDir ? 'Delete folder?' : 'Delete file?',
+                message: isDir ? 'Delete this folder and everything inside it?' : 'Delete this file?',
+                target: name,
+                detail: 'This cannot be undone.',
+                confirmLabel: 'Delete',
+                danger: true
+            }).then(function(confirmed) {
+                if (!confirmed) return;
+                deletePathInput.value = path;
+                deleteForm.submit();
+            });
         });
     })();
 
