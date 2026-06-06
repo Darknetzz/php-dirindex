@@ -116,9 +116,42 @@ function formatHiddenPathsForInput(array $list) {
     return implode("\n", array_map('strval', $list));
 }
 
+/**
+ * True when a relative path contains traversal segments (.. or .) or empty segments.
+ */
+function relativePathHasTraversal($path) {
+    if ($path === '' || str_contains((string) $path, "\0")) {
+        return false;
+    }
+    $normalized = trim(str_replace('\\', '/', (string) $path), '/');
+    if ($normalized === '') {
+        return false;
+    }
+    foreach (explode('/', $normalized) as $segment) {
+        if ($segment === '' || $segment === '.' || $segment === '..') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Whether a single path segment is safe as a file or folder name.
+ */
+function isSafeEntryName($name) {
+    $name = trim((string) $name);
+    if ($name === '' || $name === '.' || $name === '..' || str_contains($name, "\0")) {
+        return false;
+    }
+    if (str_contains($name, '/') || str_contains($name, '\\')) {
+        return false;
+    }
+    return true;
+}
+
 function normalizeRelativePathForHidden($path) {
     $path = trim(str_replace('\\', '/', (string) $path), '/');
-    if ($path === '' || strpos($path, '..') !== false || str_contains($path, "\0")) {
+    if ($path === '' || relativePathHasTraversal($path) || str_contains($path, "\0")) {
         return null;
     }
     return $path;
@@ -127,7 +160,7 @@ function normalizeRelativePathForHidden($path) {
 function normalizeHiddenPathRule($entry) {
     $entry = trim(str_replace('\\', '/', (string) $entry));
     $entry = trim($entry, '/');
-    if ($entry === '' || strpos($entry, '..') !== false || str_contains($entry, "\0")) {
+    if ($entry === '' || relativePathHasTraversal($entry) || str_contains($entry, "\0")) {
         return null;
     }
     return $entry;
@@ -391,6 +424,103 @@ function resolveShareableEntry($absolutePath, $realBase, $allowOutside) {
     return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
 }
 
+function deleteDirectoryRecursive($dir) {
+    if (!is_dir($dir)) {
+        return false;
+    }
+    $items = @scandir($dir);
+    if ($items === false) {
+        return false;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+        if (is_link($path)) {
+            if (!@unlink($path)) {
+                return false;
+            }
+            continue;
+        }
+        if (is_dir($path)) {
+            if (!deleteDirectoryRecursive($path)) {
+                return false;
+            }
+            continue;
+        }
+        if (!@unlink($path)) {
+            return false;
+        }
+    }
+    return @rmdir($dir);
+}
+
+function deleteFilesystemEntry($absolutePath) {
+    if (is_link($absolutePath)) {
+        return @unlink($absolutePath);
+    }
+    if (is_dir($absolutePath)) {
+        return deleteDirectoryRecursive($absolutePath);
+    }
+    if (is_file($absolutePath)) {
+        return @unlink($absolutePath);
+    }
+    return false;
+}
+
+function resolveDeletableEntry($relativePath, $baseDir, $realBase, $allowOutside, array $hiddenPaths) {
+    $relativePath = trim(str_replace('\\', '/', (string) $relativePath), '/');
+    if ($relativePath === '' || relativePathHasTraversal($relativePath) || str_contains($relativePath, "\0")) {
+        return ['ok' => false, 'error' => 'delete_invalid'];
+    }
+    if (isHiddenRelativePath($relativePath, $hiddenPaths)) {
+        return ['ok' => false, 'error' => 'path_hidden'];
+    }
+    if (dirindexIsHiddenListingEntry(basename($relativePath))) {
+        return ['ok' => false, 'error' => 'delete_blocked'];
+    }
+    $absolutePath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+    if (!file_exists($absolutePath) && !is_link($absolutePath)) {
+        return ['ok' => false, 'error' => 'delete_missing'];
+    }
+    if (!pathLogicalUnderBase($absolutePath, $realBase)) {
+        return ['ok' => false, 'error' => 'delete_blocked'];
+    }
+    if (is_link($absolutePath)) {
+        $resolved = realpath($absolutePath);
+        if ($resolved === false) {
+            return ['ok' => true, 'absolute' => $absolutePath, 'is_dir' => false];
+        }
+        if (!$allowOutside && !pathUnderBase($resolved, $realBase)) {
+            return ['ok' => false, 'error' => 'delete_outside'];
+        }
+    } elseif (!$allowOutside) {
+        $resolved = realpath($absolutePath);
+        if ($resolved !== false && !pathUnderBase($resolved, $realBase)) {
+            return ['ok' => false, 'error' => 'delete_outside'];
+        }
+    }
+    $parentDir = dirname($absolutePath);
+    if (!is_dir($parentDir) || !is_writable($parentDir)) {
+        return ['ok' => false, 'error' => 'delete_not_writable'];
+    }
+    return [
+        'ok'       => true,
+        'absolute' => $absolutePath,
+        'is_dir'   => is_dir($absolutePath) && !is_link($absolutePath),
+    ];
+}
+
+function revokeSharesForDeletedPath($pdo, $relativePath) {
+    $relativePath = trim(str_replace('\\', '/', (string) $relativePath), '/');
+    if ($relativePath === '') {
+        return;
+    }
+    $stmt = $pdo->prepare('DELETE FROM shares WHERE path = ? OR path LIKE ?');
+    $stmt->execute([$relativePath, $relativePath . '/%']);
+}
+
 function dirindexSqliteAvailable() {
     return extension_loaded('pdo_sqlite') && class_exists('PDO');
 }
@@ -446,6 +576,7 @@ function dirindexStoredConfigKeys() {
         'ip_header',
         'upload_enabled',
         'create_enabled',
+        'delete_enabled',
         'auth_username',
         'auth_password_hash',
         'upload_max_bytes',
@@ -493,7 +624,7 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
@@ -797,6 +928,10 @@ function isCreateEnabled(array $config) {
     return !empty($config['create_enabled']) && hasUploadCredentials($config);
 }
 
+function isDeleteEnabled(array $config) {
+    return !empty($config['delete_enabled']) && hasUploadCredentials($config);
+}
+
 function isBrowseAuthRequired(array $config) {
     return !empty($config['browse_requires_auth']) && hasUploadCredentials($config);
 }
@@ -862,8 +997,9 @@ function redirectToCurrentListing($indexHref, $relativePath, $messageKey = null)
 
 function cleanUploadFilename($name) {
     $name = trim((string) $name);
-    if ($name === '' || $name === '.' || $name === '..') return null;
-    if (str_contains($name, "\0") || str_contains($name, '/') || str_contains($name, '\\')) return null;
+    if (!isSafeEntryName($name)) {
+        return null;
+    }
     return $name;
 }
 
@@ -892,6 +1028,7 @@ $dirindexConfig = [
     'ip_blacklist'              => [],
     'upload_enabled'            => false,
     'create_enabled'            => true,
+    'delete_enabled'            => true,
     'browse_requires_auth'      => false,
     'auth_username'             => '',
     'auth_password_hash'        => '',
@@ -911,6 +1048,7 @@ $hasUploadCredentials = hasUploadCredentials($dirindexConfig);
 $setupNeeded = !$hasUploadCredentials;
 $uploadEnabled = isUploadEnabled($dirindexConfig);
 $createEnabled = isCreateEnabled($dirindexConfig);
+$deleteEnabled = isDeleteEnabled($dirindexConfig);
 $browseAuthRequired = isBrowseAuthRequired($dirindexConfig);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
@@ -969,7 +1107,7 @@ if (!$inShareMode && $clientIp !== '' && !isLoopbackIp($clientIp) && (ipMatchesL
 // Subdirectory path from query (e.g. index.php?path=foo/bar)
 $relativePath = isset($_GET['path']) ? trim((string) $_GET['path'], '/') : '';
 // Reject directory traversal and null bytes
-if ($relativePath !== '' && (strpos($relativePath, '..') !== false || str_contains($relativePath, "\0"))) {
+if ($relativePath !== '' && (relativePathHasTraversal($relativePath) || str_contains($relativePath, "\0"))) {
     $relativePath = '';
 }
 if ($inShareMode && $shareContext) {
@@ -1294,6 +1432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $setupSettings = [
             'upload_enabled' => '1',
             'create_enabled' => '1',
+            'delete_enabled' => '1',
             'auth_username' => $username,
             'auth_password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'upload_max_bytes' => (string) $maxBytesInt,
@@ -1363,6 +1502,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
             'create_enabled' => isset($_POST['create_enabled']) ? '1' : '0',
+            'delete_enabled' => isset($_POST['delete_enabled']) ? '1' : '0',
             'browse_requires_auth' => isset($_POST['browse_requires_auth']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
@@ -1486,6 +1626,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
     }
 
+    if ($action === 'delete_entry') {
+        if (!$deleteEnabled || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, $deleteEnabled ? 'auth_required' : 'delete_disabled');
+        }
+        $entryPath = trim(str_replace('\\', '/', (string) ($_POST['entry_path'] ?? '')), '/');
+        $resolved = resolveDeletableEntry($entryPath, $baseDir, $realBase, $allowOutside, $hiddenPaths);
+        if (!$resolved['ok']) {
+            redirectToCurrentListing($indexHref, $relativePath, $resolved['error']);
+        }
+        if (!deleteFilesystemEntry($resolved['absolute'])) {
+            redirectToCurrentListing($indexHref, $relativePath, 'delete_failed');
+        }
+        if ($sharesAvailable) {
+            $shareError = null;
+            $pdo = dirindexGetSharesPdo(__DIR__, $shareError);
+            if ($pdo) {
+                revokeSharesForDeletedPath($pdo, $entryPath);
+            }
+        }
+        $parentPath = dirname($entryPath);
+        if ($parentPath === '.' || $parentPath === '') {
+            $parentPath = '';
+        }
+        redirectToCurrentListing($indexHref, $parentPath, 'delete_ok');
+    }
+
     if ($action === 'share_create') {
         if (!$hasUploadCredentials || !$authenticated) {
             redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
@@ -1494,7 +1660,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, 'share_unavailable');
         }
         $sharePath = trim((string) ($_POST['share_path'] ?? ''), '/');
-        if ($sharePath === '' || strpos($sharePath, '..') !== false || str_contains($sharePath, "\0")) {
+        if ($sharePath === '' || relativePathHasTraversal($sharePath) || str_contains($sharePath, "\0")) {
             redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
         }
         if (isHiddenRelativePath($sharePath, $hiddenPaths)) {
@@ -1661,6 +1827,14 @@ $messageMap = [
     'create_failed' => ['error', 'Could not create the entry.'],
     'create_folder_ok' => ['success', 'Folder created.'],
     'create_file_ok' => ['success', 'File created.'],
+    'delete_disabled' => ['error', 'Deleting files and folders is disabled in settings.'],
+    'delete_invalid' => ['error', 'That path cannot be deleted.'],
+    'delete_missing' => ['error', 'That file or folder no longer exists.'],
+    'delete_blocked' => ['error', 'That entry cannot be deleted.'],
+    'delete_outside' => ['error', 'That entry points outside the listing root and cannot be deleted.'],
+    'delete_not_writable' => ['error', 'This directory is not writable by PHP.'],
+    'delete_failed' => ['error', 'Could not delete the entry.'],
+    'delete_ok' => ['success', 'Entry deleted.'],
     'share_created' => ['success', 'Share link created. Copy the link below.'],
     'share_revoked' => ['success', 'Share link revoked.'],
     'share_failed' => ['error', 'Could not create or revoke the share link.'],
@@ -1693,7 +1867,7 @@ foreach ($items as $item) {
 $openFileForModal = null;
 if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
     $openParam = trim((string) $_GET['open'], '/');
-    if ($openParam !== '' && strpos($openParam, '..') === false && !str_contains($openParam, "\0")) {
+    if ($openParam !== '' && isSafeEntryName($openParam)) {
         $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
         if (isHiddenRelativePath($openFilePath, $hiddenPaths)) {
             $blockedMessage = 'This path is not available.';
@@ -2034,10 +2208,29 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             opacity: 0;
             transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
         }
+        .entry-delete {
+            width: 1.75rem;
+            height: 1.75rem;
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text-muted);
+            background: transparent;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+        }
         .listing tr:hover .entry-share,
-        .entry-share:focus-visible { opacity: 1; }
+        .listing tr:hover .entry-delete,
+        .entry-share:focus-visible,
+        .entry-delete:focus-visible { opacity: 1; }
         .entry-share:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--bg); }
-        .entry-share svg { width: 0.95rem; height: 0.95rem; }
+        .entry-delete:hover { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, var(--border)); background: color-mix(in srgb, #f87171 10%, var(--bg)); }
+        .entry-share svg,
+        .entry-delete svg { width: 0.95rem; height: 0.95rem; }
         .name-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
         .share-url-box {
             display: flex;
@@ -3243,7 +3436,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             <div class="admin-bar">
                 <div>
                     <h2 id="upload-title">Admin tools</h2>
-                    <p>Signed in as <?= h($dirindexConfig['auth_username']) ?>. Uploads are <?= $uploadEnabled ? 'enabled' : 'disabled' ?>. Creating folders/files is <?= $createEnabled ? 'enabled' : 'disabled' ?>.</p>
+                    <p>Signed in as <?= h($dirindexConfig['auth_username']) ?>. Uploads are <?= $uploadEnabled ? 'enabled' : 'disabled' ?>. Creating folders/files is <?= $createEnabled ? 'enabled' : 'disabled' ?>. Deleting is <?= $deleteEnabled ? 'enabled' : 'disabled' ?>.</p>
                 </div>
                 <div class="admin-bar-actions">
                     <?php if ($uploadEnabled): ?>
@@ -3430,6 +3623,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     <span class="entry-name"><?= h($item['name']) ?></span>
                                 </a>
                                 <div class="name-actions">
+                                <?php if ($authenticated && !$inShareMode && $deleteEnabled): ?>
+                                <button type="button" class="entry-delete" data-delete-path="<?= h($item['path']) ?>" data-delete-name="<?= h($item['name']) ?>" data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" aria-label="Delete <?= h($item['name']) ?>" title="Delete">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                </button>
+                                <?php endif; ?>
                                 <?php if ($authenticated && !$inShareMode && $sharesAvailable && empty($item['isBrokenLink'])): ?>
                                 <button type="button" class="entry-share" data-share-path="<?= h($item['path']) ?>" data-share-type="<?= h($item['isDir'] ? 'dir' : 'file') ?>" aria-label="Share <?= h($item['name']) ?>" title="Create share link">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
