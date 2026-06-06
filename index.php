@@ -694,6 +694,10 @@ function isCreateEnabled(array $config) {
     return !empty($config['create_enabled']) && hasUploadCredentials($config);
 }
 
+function isBrowseAuthRequired(array $config) {
+    return !empty($config['browse_requires_auth']) && hasUploadCredentials($config);
+}
+
 function currentListingUrl($indexHref, $relativePath, array $params = [], $shareToken = null) {
     global $shareTokenActive;
     $token = ($shareToken !== null && $shareToken !== '') ? $shareToken : $shareTokenActive;
@@ -785,6 +789,7 @@ $dirindexConfig = [
     'ip_blacklist'              => [],
     'upload_enabled'            => false,
     'create_enabled'            => true,
+    'browse_requires_auth'      => false,
     'auth_username'             => '',
     'auth_password_hash'        => '',
     'upload_max_bytes'          => 0,
@@ -801,7 +806,8 @@ $hasUploadCredentials = hasUploadCredentials($dirindexConfig);
 $setupNeeded = !$hasUploadCredentials;
 $uploadEnabled = isUploadEnabled($dirindexConfig);
 $createEnabled = isCreateEnabled($dirindexConfig);
-$sessionNeeded = $setupNeeded || $hasUploadCredentials || $_SERVER['REQUEST_METHOD'] === 'POST';
+$browseAuthRequired = isBrowseAuthRequired($dirindexConfig);
+$sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
 }
@@ -1022,8 +1028,19 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     return $html;
 }
 
-$canBrowse = !$setupNeeded || $inShareMode;
+$canBrowse = $inShareMode || (!$setupNeeded && (!$browseAuthRequired || $authenticated));
+$browseAuthBlocked = $browseAuthRequired && !$authenticated && !$inShareMode && !$setupNeeded;
 $blockedMessage = null;
+
+if ($browseAuthBlocked) {
+    if (isset($_GET['content'])) {
+        header('HTTP/1.1 401 Unauthorized');
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['error' => 'Authentication required.'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    $relativePath = '';
+}
 
 if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
     $shareFilePath = trim($shareContext['path'], '/');
@@ -1213,6 +1230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
             'create_enabled' => isset($_POST['create_enabled']) ? '1' : '0',
+            'browse_requires_auth' => isset($_POST['browse_requires_auth']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
@@ -1510,7 +1528,10 @@ if (isset($_GET['msg'], $messageMap[$_GET['msg']])) {
     }
 }
 $storageWritable = dirindexStorageWritable(__DIR__, $storageWritableDetail);
-$openLoginModal = $hasUploadCredentials && !$authenticated && isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true);
+$openLoginModal = $hasUploadCredentials && !$authenticated && !$inShareMode && (
+    $browseAuthBlocked
+    || (isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true))
+);
 $existingNames = [];
 foreach ($items as $item) {
     $existingNames[] = $item['name'];
@@ -2881,6 +2902,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
         <?php endif; ?>
 
+        <?php if ($browseAuthBlocked): ?>
+        <div class="blocked-msg" role="status">
+            Sign in to browse this directory. Share links are not affected.
+        </div>
+        <?php endif; ?>
+
         <?php if ($shareCreatedUrl): ?>
         <div class="blocked-msg message-success" role="status">
             <p style="margin:0 0 0.5rem">Share link created:</p>
@@ -3202,6 +3229,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <input type="checkbox" name="create_enabled" value="1" <?= $createEnabled ? 'checked' : '' ?>>
                             <span>Allow creating folders and files</span>
                         </label>
+                        <label class="settings-check-row">
+                            <input type="checkbox" name="browse_requires_auth" value="1" <?= !empty($dirindexConfig['browse_requires_auth']) ? 'checked' : '' ?>>
+                            <span>Require sign-in to browse files</span>
+                        </label>
+                        <p class="settings-help">When enabled, visitors must sign in to view listings or open files. Valid share links still work without signing in.</p>
                         <label class="settings-check-row">
                             <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
                             <span>Show symlinks in listings</span>
