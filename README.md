@@ -2,16 +2,16 @@
 
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
-- **Place** `index.php` in any folder (or document root) and open it in a browser.
+- **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
 - **Lists** the current directory with name, size, modified date, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
 - **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite.
 - **Create** empty folders and files in the current directory when signed in as admin (toolbar buttons in the listing).
 - **Requires** PHP and a web server. Works when the script is symlinked or in a subdirectory; it uses `DOCUMENT_ROOT` when available so the index can show the server root.
 
-**Settings storage:** Drop in only `index.php`. On first run, the setup wizard saves upload credentials and other settings locally. You can optionally enable **private-network browsing** during setup (RFC1918, link-local, and IPv6 private ranges). If you complete setup from a public IP, your current address is added to the whitelist automatically so you are not locked out.
+**Settings storage:** Drop in a single PHP file (`index.php` or `index.min.php`). On first run, the setup wizard saves upload credentials and other settings locally in the same folder. You can optionally enable **private-network browsing** during setup (RFC1918, link-local, and IPv6 private ranges). If you complete setup from a public IP, your current address is added to the whitelist automatically so you are not locked out.
 
-- **PDO SQLite available (recommended):** `.dirindex.sqlite` next to `index.php` (upload settings, share links, and UI-managed options).
+- **PDO SQLite available (recommended):** `.dirindex.sqlite` next to the script (upload settings, share links, and UI-managed options).
 - **No SQLite:** `.dirindex.json` in the same folder (upload and UI-managed options; share links require SQLite).
 
 If you still have a legacy `config.php`, missing keys are imported into the active store on first request. You can delete `config.php` afterward.
@@ -53,7 +53,27 @@ PHP settings such as `upload_max_filesize` and `post_max_size` still apply.
 
 No dependencies—just drop the file and run.
 
-**Release build:** To generate a smaller deploy artifact (like `*.min.js`), run `php scripts/build-min.php` from the repo root. It writes `index.min.php` next to `index.php` with minified CSS, JavaScript, and HTML plus stripped PHP comments. Edit `index.php` only; rebuild before shipping the minified copy. Use `php scripts/build-min.php --check` in CI to ensure the artifact is current.
+## `index.php` vs `index.min.php`
+
+Both files are the same application. Use whichever fits your workflow:
+
+| | `index.php` | `index.min.php` |
+|--|-------------|-----------------|
+| **Purpose** | Development and patching | Smaller production drop-in |
+| **Size** | Full source (~200 KB) | Minified (~145 KB; ~10–15% smaller over gzip) |
+| **Readable** | Yes | No (minified CSS, JS, HTML; stripped comments) |
+| **In git** | Yes | No (built at release time) |
+
+`index.min.php` is generated from `index.php` — like `app.min.js` beside `app.js`. Settings (`.dirindex.sqlite` / `.dirindex.json`) are created next to whichever filename you deploy; the app does not require the file to be named `index.php`.
+
+**Download:** GitHub Releases include both files and a zip. **Build locally:**
+
+```sh
+php scripts/build-min.php          # writes index.min.php
+php scripts/build-min.php --check  # exit 1 if index.min.php is missing or stale
+```
+
+Requires PHP only (no npm). After editing `index.php`, rebuild before shipping `index.min.php`.
 
 ## Development and releases
 
@@ -63,9 +83,9 @@ No dependencies—just drop the file and run.
 
 1. Create an empty GitHub repo (no README/license).
 2. On GitLab: **Settings → Repository → Mirroring repositories → Add new**.
-3. **Git repository URL:** `https://github.com/YOU/php-dirindex.git`
+3. **Git repository URL:** `ssh://git@github.com/Darknetzz/php-dirindex.git` (or HTTPS equivalent)
 4. **Mirror direction:** Push
-5. **Authentication:** GitHub fine-grained or classic PAT with **Contents: Read and write**.
+5. **Authentication:** SSH deploy key on GitHub with **Allow write access**, or a GitHub PAT with **Contents: Read and write** for HTTPS.
 6. Enable mirroring. GitLab pushes `main` and tags after each update.
 
 Do not push commits directly to GitHub; always push to GitLab and let the mirror propagate.

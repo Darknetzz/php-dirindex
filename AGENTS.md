@@ -4,17 +4,22 @@
 
 **php-dirindex** is a single-file PHP directory index. Drop `index.php` into any folder (or document root), open it in a browser, and get a dark-themed listing of files and folders with navigation, in-browser text preview, optional authenticated uploads, and optional IP access controls.
 
-There is no build step, no Composer dependencies, and no framework. Almost all application logic lives in `index.php` (~2000 lines): PHP helpers at the top, request handling in the middle, and inline HTML/CSS/JavaScript at the bottom.
+There is no runtime build step, no Composer dependencies, and no framework. Almost all application logic lives in `index.php` (~4000 lines): PHP helpers at the top, request handling in the middle, and inline HTML/CSS/JavaScript at the bottom.
+
+An optional **release build** produces `index.min.php` — a smaller, functionally identical copy of `index.php` (like `*.min.js`). Edit `index.php` only; never hand-edit the minified file.
 
 ## Repository layout
 
 | File | Purpose |
 |------|---------|
-| `index.php` | The entire application (listing, preview, auth, uploads, UI) |
+| `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
+| `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
 | `README.md` | User-facing setup and configuration guide |
-| `.gitignore` | Ignores runtime files: `.dirindex.sqlite*`, `.dirindex.json`, legacy `config.php` |
+| `.gitignore` | Ignores runtime files and generated `index.min.php` |
 
 Runtime files (not in git): `.dirindex.sqlite` (settings and share links when PDO SQLite is available), or `.dirindex.json` (settings fallback without SQLite). Legacy `config.php` is imported once if present, then ignored.
+
+Generated (not in git): `index.min.php` — deploy artifact from `scripts/build-min.php`. Rebuild after changing `index.php` before shipping or tagging a release.
 
 ## How it works
 
@@ -37,13 +42,28 @@ php -S localhost:8080
 # Build index.min.php for release (CSS/JS/HTML/comment minification)
 php scripts/build-min.php
 
+# Fail if index.min.php is missing or out of date (for CI)
+php scripts/build-min.php --check
+
 # Generate a password hash for manual config
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-Source of truth is always `index.php`. `index.min.php` is a generated deploy artifact (gitignored); run `scripts/build-min.php` before attaching it to a release.
+### `index.min.php` build
 
-**Remotes:** GitLab is primary; GitHub is a push mirror. Tag on GitLab (`git push origin v1.0.0`); mirrored tags trigger `.github/workflows/release.yml` on GitHub, which builds and publishes release assets. Do not push directly to GitHub.
+`scripts/build-min.php` reads `index.php` and writes `index.min.php`. It:
+
+- Strips PHP comments from the main logic block and inline `<?php … ?>` snippets
+- Minifies inline `<style>` / `<script>` blocks and `$css = '…'` string literals
+- Collapses HTML whitespace outside `<pre>`, `<textarea>`, `<script>`, and `<style>`
+- Preserves required whitespace after inline `<?php` tags (e.g. `<?php if` must not become `<?phpif`)
+- Runs `php -l` and rejects broken inline-PHP patterns (`<?phpif`, etc.)
+
+Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
+
+**Remotes:** GitLab is primary; GitHub is a push mirror. Tag on GitLab (`git push origin v1.0.0`); mirrored tags trigger `.github/workflows/release.yml` on GitHub, which runs `scripts/build-min.php` and attaches `index.php`, `index.min.php`, and a zip to the GitHub Release. Do not push directly to GitHub.
+
+When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 
 No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
 
@@ -72,9 +92,11 @@ Treat these as non-negotiable when making changes:
 - **New POST action** — Add handler after existing actions, include CSRF check, redirect with a new `$messageMap` entry. Block POST in share mode (`$inShareMode`).
 - **Share links** — Use `dirindexGetSharesPdo()`, `shareUrl()`, `pathWithinShareScope()`. Preserve `share` in URLs via `currentListingUrl()` / `$shareTokenActive`. Binary files in share mode use `?download=1` through `index.php`, not `directEntryUrl()`.
 - **UI tweak** — CSS is in the same file; match existing dark/light theme variables and modal patterns.
+- **Release minify** — After UI or inline-template changes, run `php scripts/build-min.php` and verify the minified file in a browser. If the build script is changed, test inline `<?php if` / `<?php endif` blocks especially.
 
 ## What not to do
 
+- Do not edit or commit `index.min.php`; always change `index.php` and rebuild.
 - Do not add Composer, npm, or a bundler unless explicitly requested.
 - Do not extract into multiple PHP files without a clear maintenance benefit.
 - Do not weaken upload or path-traversal checks for convenience.
