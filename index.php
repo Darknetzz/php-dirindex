@@ -2260,48 +2260,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; max-width: 95vw; max-height: 85vh; width: 1200px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
         .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .modal-title-wrap { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
-        .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
+        .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .modal-header-actions {
             display: flex;
             align-items: center;
             gap: 0.5rem;
             flex-shrink: 0;
         }
-        .modal-open-link { font-size: 0.8rem; color: var(--accent); text-decoration: none; white-space: nowrap; }
-        .modal-open-link:hover { text-decoration: underline; }
-        .modal-share-btn {
+        .modal-action-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
-            padding: 0.25rem 0.55rem;
+            gap: 0.35rem;
+            padding: 0.35rem 0.65rem;
             border: 1px solid var(--border);
             border-radius: 6px;
             background: transparent;
             color: var(--text-muted);
             font-size: 0.8rem;
+            font-family: inherit;
+            line-height: 1.2;
             white-space: nowrap;
             cursor: pointer;
+            text-decoration: none;
             transition: color 0.15s, border-color 0.15s, background 0.15s;
         }
-        .modal-share-btn:hover,
-        .modal-share-btn:focus-visible {
+        .modal-action-btn:hover,
+        .modal-action-btn:focus-visible {
             color: var(--accent);
             border-color: var(--accent-dim);
             background: var(--hover);
             outline: none;
         }
-        .modal-share-btn svg { width: 0.9rem; height: 0.9rem; }
+        .modal-action-btn[hidden] { display: none !important; }
+        .modal-action-btn svg { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
         .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; line-height: 1; border-radius: 4px; }
         .modal-close:hover { color: var(--text); background: var(--hover); }
-        .modal-file-meta {
-            padding: 0.45rem 1rem;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-family: 'JetBrains Mono', monospace;
-            flex-shrink: 0;
-        }
-        .modal-file-meta[hidden] { display: none !important; }
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
         .modal-body pre { margin: 0; font-size: 0.85rem; }
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
@@ -2314,11 +2307,35 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body .modal-md .task-list-item { list-style: none; margin-left: -1.5rem; }
         .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
         .modal-body .modal-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
+        .modal-file-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem 1.75rem;
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--border);
+            background: color-mix(in srgb, var(--bg) 50%, transparent);
+            flex-shrink: 0;
+        }
+        .modal-file-meta[hidden] { display: none !important; }
+        .modal-file-meta-item { display: flex; flex-direction: column; gap: 0.2rem; min-width: 4.5rem; }
+        .modal-file-meta-label {
+            font-size: 0.68rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .modal-file-meta-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text);
+            word-break: break-word;
+        }
         .modal.is-binary { width: min(520px, 95vw); }
         .modal-binary[hidden] { display: none !important; }
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
-        .modal-binary-name { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
+        .modal-binary-name { margin: 0; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
         .ft-icon {
             position: relative;
             flex-shrink: 0;
@@ -3201,9 +3218,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <span class="modal-title" id="modal-title"></span>
                 </div>
                 <div class="modal-header-actions">
-                    <a id="modal-open-link" class="modal-open-link" href="#" target="_blank" rel="noopener noreferrer" style="display: none;">Open in new tab</a>
+                    <a id="modal-open-link" class="modal-action-btn" href="#" target="_blank" rel="noopener noreferrer" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                        Open in new tab
+                    </a>
                     <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
-                    <button type="button" class="modal-share-btn" id="modal-share-btn" hidden aria-label="Share file" title="Create share link">
+                    <button type="button" class="modal-action-btn" id="modal-share-btn" hidden aria-label="Share file" title="Create share link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                         Share
                     </button>
@@ -3211,7 +3231,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </div>
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
-            <div id="modal-file-meta" class="modal-file-meta" hidden></div>
             <div class="modal-body">
                 <div id="modal-binary" class="modal-binary" hidden aria-hidden="true">
                     <div class="modal-binary-header">
@@ -3225,6 +3244,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <div id="modal-md" class="modal-md" aria-hidden="true"></div>
                 <pre id="modal-pre"><code id="modal-code"></code></pre>
             </div>
+            <div id="modal-file-meta" class="modal-file-meta" hidden></div>
         </div>
     </div>
 
@@ -3792,18 +3812,30 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         function setModalMeta(meta) {
             if (!modalFileMeta) return;
-            var parts = [];
-            if (meta.type) parts.push(meta.type);
-            if (meta.size) parts.push(meta.size);
-            if (meta.mtime) parts.push('Modified ' + meta.mtime);
-            if (meta.perms) parts.push(meta.perms);
-            if (parts.length) {
-                modalFileMeta.textContent = parts.join(' · ');
-                modalFileMeta.hidden = false;
-            } else {
-                modalFileMeta.textContent = '';
-                modalFileMeta.hidden = true;
-            }
+            var fields = [
+                { label: 'Type', value: meta.type || '' },
+                { label: 'Size', value: meta.size || '' },
+                { label: 'Modified', value: meta.mtime || '' },
+                { label: 'Permissions', value: meta.perms || '' }
+            ];
+            modalFileMeta.innerHTML = '';
+            var hasValue = false;
+            fields.forEach(function(field) {
+                if (!field.value) return;
+                hasValue = true;
+                var item = document.createElement('div');
+                item.className = 'modal-file-meta-item';
+                var label = document.createElement('span');
+                label.className = 'modal-file-meta-label';
+                label.textContent = field.label;
+                var value = document.createElement('span');
+                value.className = 'modal-file-meta-value';
+                value.textContent = field.value;
+                item.appendChild(label);
+                item.appendChild(value);
+                modalFileMeta.appendChild(item);
+            });
+            modalFileMeta.hidden = !hasValue;
         }
         function clearModalMeta() {
             setModalMeta({});
@@ -3851,23 +3883,26 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'true');
             hidePreviewPanels();
             modalPre.style.display = '';
-            openLinkEl.style.display = 'none';
+            openLinkEl.hidden = true;
             openLinkEl.removeAttribute('href');
             setModalSharePath('');
             removeOpenFromUrl();
+        }
+        function setModalOpenLink(openUrl) {
+            if (openUrl) {
+                openLinkEl.href = openUrl;
+                openLinkEl.hidden = false;
+            } else {
+                openLinkEl.hidden = true;
+                openLinkEl.removeAttribute('href');
+            }
         }
         function openModal(name, content, lang, html, openUrl, sharePath, meta) {
             hidePreviewPanels();
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
             setModalMeta(meta || {});
-            if (openUrl) {
-                openLinkEl.href = openUrl;
-                openLinkEl.style.display = '';
-            } else {
-                openLinkEl.style.display = 'none';
-                openLinkEl.removeAttribute('href');
-            }
+            setModalOpenLink(openUrl || '');
             if (html) {
                 modalMd.innerHTML = html;
                 modalMd.classList.add('is-visible');
@@ -3894,13 +3929,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
             modalBinaryDownload.href = downloadUrl || '#';
-            if (downloadUrl) {
-                openLinkEl.href = downloadUrl;
-                openLinkEl.style.display = '';
-            } else {
-                openLinkEl.style.display = 'none';
-                openLinkEl.removeAttribute('href');
-            }
+            setModalOpenLink(downloadUrl || '');
             modalBinary.hidden = false;
             modalBinary.setAttribute('aria-hidden', 'false');
             overlay.classList.add('is-open');

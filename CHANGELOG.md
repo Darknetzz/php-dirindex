@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- File preview modal shows metadata (type, size, modified date, permissions) for text and binary files
+- File preview modal shows metadata (type, size, modified date, permissions) for text and binary files; metadata appears in a footer bar below the preview
 - **`browse_requires_auth`** — optional setting to require admin sign-in before browsing listings or opening files; share links still work without sign-in
 - `CHANGELOG.md` and release-time automation in `scripts/release.sh`
 - `index.min.php` build (`scripts/build-min.php`) — smaller production drop-in, like `*.min.js`
