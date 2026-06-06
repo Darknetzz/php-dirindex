@@ -43,6 +43,8 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Source of truth is always `index.php`. `index.min.php` is a generated deploy artifact (gitignored); run `scripts/build-min.php` before attaching it to a release.
 
+**Remotes:** GitLab is primary; GitHub is a push mirror. Tag on GitLab (`git push origin v1.0.0`); mirrored tags trigger `.github/workflows/release.yml` on GitHub, which builds and publishes release assets. Do not push directly to GitHub.
+
 No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
 
 ## Code conventions

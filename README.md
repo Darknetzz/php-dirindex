@@ -54,3 +54,28 @@ PHP settings such as `upload_max_filesize` and `post_max_size` still apply.
 No dependencies—just drop the file and run.
 
 **Release build:** To generate a smaller deploy artifact (like `*.min.js`), run `php scripts/build-min.php` from the repo root. It writes `index.min.php` next to `index.php` with minified CSS, JavaScript, and HTML plus stripped PHP comments. Edit `index.php` only; rebuild before shipping the minified copy. Use `php scripts/build-min.php --check` in CI to ensure the artifact is current.
+
+## Development and releases
+
+**Source of truth:** GitLab (`gitlab.kriss.li`) is the primary remote. GitHub is a read-only mirror for visibility and published releases.
+
+**Mirror GitLab → GitHub** (one-time setup on GitLab):
+
+1. Create an empty GitHub repo (no README/license).
+2. On GitLab: **Settings → Repository → Mirroring repositories → Add new**.
+3. **Git repository URL:** `https://github.com/YOU/php-dirindex.git`
+4. **Mirror direction:** Push
+5. **Authentication:** GitHub fine-grained or classic PAT with **Contents: Read and write**.
+6. Enable mirroring. GitLab pushes `main` and tags after each update.
+
+Do not push commits directly to GitHub; always push to GitLab and let the mirror propagate.
+
+**Publish a release:**
+
+```sh
+# on main, after changes are pushed to GitLab
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+```
+
+After the mirror runs, GitHub Actions builds `index.min.php` and attaches `index.php`, `index.min.php`, and a zip to the GitHub Release for that tag.

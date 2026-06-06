@@ -76,6 +76,17 @@ function minifyStyleScriptBlocks(string $chunk): string
     ) ?? $chunk;
 }
 
+function minifyInlinePhpBlock(string $code, string $openTag): string
+{
+    $min = minifyPhpCode($code);
+    // PHP only recognizes inline blocks when <?php is followed by whitespace.
+    if ($openTag === '<?php' && $min !== '') {
+        $min = ' ' . ltrim($min);
+    }
+
+    return $min;
+}
+
 function minifyPhpCode(string $code): string
 {
     // token_get_all() only parses PHP when the snippet starts with an open tag.
@@ -155,15 +166,22 @@ function buildMinifiedPhp(string $source): string
     }
 
     $inPhp = true;
+    $isMainPhpBlock = true;
+    $lastOpenTag = '<?php';
 
     while ($pos < $len) {
         if ($inPhp) {
             $close = strpos($source, '?>', $pos);
             if ($close === false) {
-                $out .= minifyPhpCode(substr($source, $pos));
+                $code = substr($source, $pos);
+                $out .= $isMainPhpBlock ? minifyPhpCode($code) : minifyInlinePhpBlock($code, $lastOpenTag);
                 break;
             }
-            $out .= minifyPhpCode(substr($source, $pos, $close - $pos));
+            $code = substr($source, $pos, $close - $pos);
+            $out .= $isMainPhpBlock
+                ? minifyPhpCode($code)
+                : minifyInlinePhpBlock($code, $lastOpenTag);
+            $isMainPhpBlock = false;
             $out .= '?>';
             $pos = $close + 2;
             $inPhp = false;
@@ -177,6 +195,7 @@ function buildMinifiedPhp(string $source): string
             $html = minifyHtmlBlock($html);
             $out .= $html;
             $out .= $m[0][0];
+            $lastOpenTag = $m[0][0];
             $pos = $open + strlen($m[0][0]);
             $inPhp = true;
             continue;
@@ -238,6 +257,13 @@ $lint = shell_exec('php -l ' . escapeshellarg($outputPath) . ' 2>&1');
 if ($lint === null || strpos($lint, 'No syntax errors') === false) {
     fwrite(STDERR, "Syntax check failed:\n{$lint}\n");
     exit(1);
+}
+
+foreach (['<?phpif', '<?phpelse', '<?phpendif', '<?phpforeach', '<?phpendforeach'] as $brokenTag) {
+    if (strpos($built, $brokenTag) !== false) {
+        fwrite(STDERR, "Build produced invalid inline PHP ({$brokenTag}); fix scripts/build-min.php.\n");
+        exit(1);
+    }
 }
 
 fwrite(STDOUT, trim($lint) . "\n");
