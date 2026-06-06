@@ -2708,6 +2708,120 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .upload-panel.is-open {
             display: block;
         }
+        .upload-form {
+            display: grid;
+            gap: 1rem;
+        }
+        .upload-dropzone {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            min-height: 8.5rem;
+            padding: 1.5rem 1.25rem;
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--bg) 55%, transparent);
+            text-align: center;
+            transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+        }
+        .upload-dropzone:hover,
+        .upload-dropzone.is-dragover {
+            border-color: var(--accent-dim);
+            background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+        }
+        .upload-dropzone.has-file {
+            border-style: solid;
+            border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+            background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+        }
+        .upload-file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        .upload-dropzone-icon {
+            width: 2.25rem;
+            height: 2.25rem;
+            color: var(--accent);
+            opacity: 0.9;
+        }
+        .upload-dropzone-title {
+            margin: 0;
+            color: var(--text);
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .upload-dropzone-hint {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+        .upload-browse-btn {
+            margin-top: 0.35rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.4rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text);
+            font: inherit;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .upload-browse-btn:hover,
+        .upload-browse-btn:focus-visible {
+            color: var(--accent);
+            border-color: var(--accent-dim);
+            background: var(--hover);
+            outline: none;
+        }
+        .upload-file-name {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            max-width: 100%;
+            margin-top: 0.35rem;
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--accent) 14%, transparent);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.3;
+        }
+        .upload-file-name:empty {
+            display: none;
+        }
+        .upload-file-name svg {
+            flex-shrink: 0;
+            width: 0.95rem;
+            height: 0.95rem;
+            color: var(--accent);
+        }
+        .upload-file-name-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .upload-form-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 0.65rem;
+        }
         .settings-section {
             padding: 1rem 0;
             border-top: 1px solid var(--border);
@@ -3144,15 +3258,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             </div>
             <?php if ($uploadEnabled): ?>
             <div class="upload-panel" id="upload-panel">
-                <form class="auth-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>">
+                <form class="upload-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>">
                     <input type="hidden" name="action" value="upload">
                     <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                     <input type="hidden" name="overwrite" id="upload-overwrite" value="">
-                    <div class="auth-field">
-                        <label for="upload-file">File</label>
-                        <input type="file" id="upload-file" name="upload_file" required>
+                    <div class="upload-dropzone" id="upload-dropzone">
+                        <input type="file" id="upload-file" class="upload-file-input" name="upload_file" required>
+                        <svg class="upload-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 16V4"/><path d="m8 8 4-4 4 4"/><path d="M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
+                        <p class="upload-dropzone-title">Drop a file here</p>
+                        <p class="upload-dropzone-hint">or choose one from your device</p>
+                        <button type="button" class="upload-browse-btn" id="upload-browse-btn">Browse files</button>
+                        <span class="upload-file-name" id="upload-file-name" aria-live="polite"></span>
                     </div>
-                    <div class="auth-actions">
+                    <div class="upload-form-actions">
                         <button type="submit" class="btn-auth">Upload to /<?= h($relativePath ?: '') ?></button>
                     </div>
                 </form>
@@ -3760,12 +3878,87 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (!uploadForm) return;
         var fileInput = document.getElementById('upload-file');
         var overwriteInput = document.getElementById('upload-overwrite');
+        var dropzone = document.getElementById('upload-dropzone');
+        var browseBtn = document.getElementById('upload-browse-btn');
+        var fileNameEl = document.getElementById('upload-file-name');
         var existingNames = [];
         try {
             existingNames = JSON.parse(uploadForm.getAttribute('data-existing-names') || '[]');
         } catch (e) {
             existingNames = [];
         }
+
+        function hasFileDrag(e) {
+            var types = e.dataTransfer && e.dataTransfer.types;
+            if (!types) return false;
+            return Array.prototype.indexOf.call(types, 'Files') !== -1;
+        }
+
+        function setSelectedFileName(name) {
+            if (!dropzone || !fileNameEl) return;
+            if (!name) {
+                dropzone.classList.remove('has-file');
+                fileNameEl.textContent = '';
+                fileNameEl.innerHTML = '';
+                return;
+            }
+            dropzone.classList.add('has-file');
+            fileNameEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg><span class="upload-file-name-text"></span>';
+            var textEl = fileNameEl.querySelector('.upload-file-name-text');
+            if (textEl) textEl.textContent = name;
+        }
+
+        function assignDroppedFile(file) {
+            if (!file || !fileInput) return;
+            var dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            setSelectedFileName(file.name);
+            overwriteInput.value = '';
+        }
+
+        if (browseBtn && fileInput) {
+            browseBtn.addEventListener('click', function() {
+                fileInput.click();
+            });
+        }
+        if (fileInput) {
+            fileInput.addEventListener('change', function() {
+                var file = fileInput.files && fileInput.files[0];
+                setSelectedFileName(file ? file.name : '');
+                overwriteInput.value = '';
+            });
+        }
+        if (dropzone) {
+            var dropCounter = 0;
+            dropzone.addEventListener('dragenter', function(e) {
+                if (!hasFileDrag(e)) return;
+                e.preventDefault();
+                dropCounter++;
+                dropzone.classList.add('is-dragover');
+            });
+            dropzone.addEventListener('dragover', function(e) {
+                if (!hasFileDrag(e)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+            });
+            dropzone.addEventListener('dragleave', function(e) {
+                if (!hasFileDrag(e)) return;
+                dropCounter--;
+                if (dropCounter <= 0) {
+                    dropCounter = 0;
+                    dropzone.classList.remove('is-dragover');
+                }
+            });
+            dropzone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropCounter = 0;
+                dropzone.classList.remove('is-dragover');
+                if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+                assignDroppedFile(e.dataTransfer.files[0]);
+            });
+        }
+
         uploadForm.addEventListener('submit', function(e) {
             if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
             var name = fileInput.files[0].name;
@@ -3780,18 +3973,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         var listing = document.querySelector('.listing');
         if (!listing) return;
-        var dragCounter = 0;
-
-        function hasFileDrag(e) {
-            var types = e.dataTransfer && e.dataTransfer.types;
-            if (!types) return false;
-            return Array.prototype.indexOf.call(types, 'Files') !== -1;
-        }
+        var listingDragCounter = 0;
 
         listing.addEventListener('dragenter', function(e) {
             if (!hasFileDrag(e)) return;
             e.preventDefault();
-            dragCounter++;
+            listingDragCounter++;
             listing.classList.add('is-dragover');
         });
         listing.addEventListener('dragover', function(e) {
@@ -3801,23 +3988,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         });
         listing.addEventListener('dragleave', function(e) {
             if (!hasFileDrag(e)) return;
-            dragCounter--;
-            if (dragCounter <= 0) {
-                dragCounter = 0;
+            listingDragCounter--;
+            if (listingDragCounter <= 0) {
+                listingDragCounter = 0;
                 listing.classList.remove('is-dragover');
             }
         });
         listing.addEventListener('drop', function(e) {
             e.preventDefault();
-            dragCounter = 0;
+            listingDragCounter = 0;
             listing.classList.remove('is-dragover');
             if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-            var file = e.dataTransfer.files[0];
-            if (!file || !fileInput) return;
-            var dt = new DataTransfer();
-            dt.items.add(file);
-            fileInput.files = dt.files;
-            overwriteInput.value = '';
+            assignDroppedFile(e.dataTransfer.files[0]);
+            var panel = document.getElementById('upload-panel');
+            var toggle = document.getElementById('btn-upload-toggle');
+            if (panel && !panel.classList.contains('is-open')) {
+                panel.classList.add('is-open');
+                if (toggle) {
+                    toggle.setAttribute('aria-expanded', 'true');
+                    toggle.textContent = 'Hide upload';
+                }
+            }
             uploadForm.requestSubmit();
         });
     })();
