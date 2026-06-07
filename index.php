@@ -723,6 +723,7 @@ function dirindexStoredConfigKeys() {
         'upload_max_bytes',
         'path_whitelist',
         'path_blacklist',
+        'web_root_url',
     ];
 }
 
@@ -1134,6 +1135,72 @@ function requestOrigin() {
     return ($https ? 'https' : 'http') . '://' . $host;
 }
 
+function indexDirectoryWebPath($indexHref) {
+    $dir = str_replace('\\', '/', dirname((string) $indexHref));
+    if ($dir === '/' || $dir === '.') {
+        return '/';
+    }
+    return rtrim($dir, '/') . '/';
+}
+
+function detectWebRootUrl($indexHref) {
+    $origin = requestOrigin();
+    $path = indexDirectoryWebPath($indexHref);
+    if ($origin !== '') {
+        return $origin . $path;
+    }
+    return $path;
+}
+
+function normalizeWebRootUrlInput($value) {
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '';
+    }
+    if (strlen($value) > 2048) {
+        return null;
+    }
+    if (preg_match('#^https?://#i', $value)) {
+        $parts = parse_url($value);
+        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+            return null;
+        }
+        if (!in_array(strtolower((string) $parts['scheme']), ['http', 'https'], true)) {
+            return null;
+        }
+        $path = (string) ($parts['path'] ?? '/');
+        if ($path === '') {
+            $path = '/';
+        }
+        if ($path !== '/' && !str_ends_with($path, '/')) {
+            $path .= '/';
+        }
+        $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
+        return strtolower((string) $parts['scheme']) . '://' . $parts['host'] . $port . $path;
+    }
+    if ($value[0] !== '/') {
+        return null;
+    }
+    if (str_contains($value, '..') || str_contains($value, "\0")) {
+        return null;
+    }
+    if ($value !== '/' && !str_ends_with($value, '/')) {
+        $value .= '/';
+    }
+    return $value;
+}
+
+function effectiveWebRootUrl(array $config, $indexHref) {
+    $configured = trim((string) ($config['web_root_url'] ?? ''));
+    if ($configured !== '') {
+        $normalized = normalizeWebRootUrlInput($configured);
+        if ($normalized !== null && $normalized !== '') {
+            return $normalized;
+        }
+    }
+    return detectWebRootUrl($indexHref);
+}
+
 function shareUrl($indexHref, $token, array $params = [], $absolute = false) {
     $params = array_merge(['share' => $token], $params);
     $url = $indexHref . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
@@ -1145,15 +1212,36 @@ function shareUrl($indexHref, $token, array $params = [], $absolute = false) {
 }
 
 function directEntryUrl($relativePath, $trailingSlash = false) {
+    global $effectiveWebRootUrl;
+    $base = $effectiveWebRootUrl ?? '/';
     $relativePath = trim((string) $relativePath, '/');
-    if ($relativePath === '') {
-        return '/';
+    $pathPart = '/';
+    if ($relativePath !== '') {
+        $segments = array_values(array_filter(explode('/', $relativePath), function ($segment) {
+            return $segment !== '';
+        }));
+        $pathPart = '/' . implode('/', array_map('rawurlencode', $segments));
+        if ($trailingSlash) {
+            $pathPart = rtrim($pathPart, '/') . '/';
+        }
+    } elseif ($trailingSlash) {
+        $pathPart = '/';
     }
-    $segments = array_values(array_filter(explode('/', $relativePath), function ($segment) {
-        return $segment !== '';
-    }));
-    $url = '/' . implode('/', array_map('rawurlencode', $segments));
-    return $trailingSlash ? rtrim($url, '/') . '/' : $url;
+    if (preg_match('#^https?://#i', $base)) {
+        $base = rtrim($base, '/');
+        return $base . $pathPart;
+    }
+    $base = rtrim($base, '/');
+    if ($base === '') {
+        $base = '/';
+    }
+    if ($pathPart === '/') {
+        return $base === '/' ? '/' : $base . '/';
+    }
+    if ($base === '/') {
+        return $pathPart;
+    }
+    return $base . $pathPart;
 }
 
 function redirectToCurrentListing($indexHref, $relativePath, $messageKey = null) {
@@ -1205,6 +1293,7 @@ $dirindexConfig = [
     'upload_max_bytes'          => 0,
     'path_whitelist'            => [],
     'path_blacklist'            => [],
+    'web_root_url'              => '',
     'session_name'              => 'dirindex_upload',
 ];
 $dirindexStorage = [];
@@ -1213,6 +1302,9 @@ $storedConfig = dirindexImportLegacyConfigIfNeeded(__DIR__, $storedConfig);
 if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
 }
+$effectiveWebRootUrl = effectiveWebRootUrl($dirindexConfig, $indexHref);
+$webRootUrlConfigured = trim((string) ($dirindexConfig['web_root_url'] ?? ''));
+$webRootUrlDetected = detectWebRootUrl($indexHref);
 $pathWhitelist = isset($dirindexConfig['path_whitelist']) && is_array($dirindexConfig['path_whitelist']) ? array_values($dirindexConfig['path_whitelist']) : [];
 $pathBlacklist = isset($dirindexConfig['path_blacklist']) && is_array($dirindexConfig['path_blacklist']) ? array_values($dirindexConfig['path_blacklist']) : [];
 if ($pathBlacklist === [] && isset($dirindexConfig['hidden_paths']) && is_array($dirindexConfig['hidden_paths'])) {
@@ -1661,6 +1753,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
         $restrictPrivateNetworks = !empty($_POST['restrict_private_networks']);
+        $webRootInput = trim((string) ($_POST['web_root_url'] ?? ''));
+        if ($webRootInput === '') {
+            $webRootUrl = detectWebRootUrl($indexHref);
+        } else {
+            $webRootUrl = normalizeWebRootUrlInput($webRootInput);
+            if ($webRootUrl === null) {
+                redirectToCurrentListing($indexHref, $relativePath, 'web_root_url_invalid');
+            }
+        }
         $setupSettings = [
             'upload_enabled' => '1',
             'create_enabled' => '1',
@@ -1668,6 +1769,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'auth_username' => $username,
             'auth_password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'upload_max_bytes' => (string) $maxBytesInt,
+            'web_root_url' => $webRootUrl,
         ];
         if ($restrictPrivateNetworks) {
             $setupSettings['ip_whitelist'] = dirindexBuildPrivateNetworkWhitelist($clientIp);
@@ -1729,6 +1831,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($ipHeader === null) {
             redirectToCurrentListing($indexHref, $relativePath, 'ip_header_invalid');
         }
+        $webRootInput = trim((string) ($_POST['web_root_url'] ?? ''));
+        $webRootUrl = $webRootInput === '' ? '' : normalizeWebRootUrlInput($webRootInput);
+        if ($webRootUrl === null) {
+            redirectToCurrentListing($indexHref, $relativePath, 'web_root_url_invalid');
+        }
         $saveError = null;
         $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
@@ -1743,6 +1850,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'path_whitelist' => $pathWhitelistEntries,
             'path_blacklist' => $pathBlacklistEntries,
             'ip_header' => $ipHeader,
+            'web_root_url' => $webRootUrl,
         ], $saveError);
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'settings_saved' : 'settings_write_failed');
     }
@@ -2074,6 +2182,7 @@ $messageMap = [
     'reset_failed' => ['error', 'Could not reset settings. Check file permissions.'],
     'ip_access_invalid' => ['error', 'Access list contains an invalid IP address or CIDR range.'],
     'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
+    'web_root_url_invalid' => ['error', 'Web root URL must be an absolute URL or a path starting with /.'],
     'path_access_invalid' => ['error', 'Path access list contains an invalid entry. Use relative paths without ..'],
     'path_denied' => ['error', 'That path is not allowed.'],
     'upload_bad_name' => ['error', 'Upload filename is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
@@ -2130,6 +2239,7 @@ $openSettingsModal = $authenticated && !$inShareMode && isset($_GET['msg']) && i
     'ip_access_invalid',
     'ip_header_invalid',
     'path_access_invalid',
+    'web_root_url_invalid',
 ], true);
 if ($openSettingsModal) {
     $settingsMsg = (string) $_GET['msg'];
@@ -2137,6 +2247,8 @@ if ($openSettingsModal) {
         $settingsPanelFocus = 'network';
     } elseif ($settingsMsg === 'path_access_invalid') {
         $settingsPanelFocus = 'path';
+    } elseif ($settingsMsg === 'web_root_url_invalid') {
+        $settingsPanelFocus = 'filesystem';
     }
 }
 $existingNames = [];
@@ -3875,6 +3987,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     </span>
                 </label>
                 <div class="auth-field">
+                    <label for="setup-web-root">Web root URL</label>
+                    <input type="text" id="setup-web-root" name="web_root_url" value="<?= h($webRootUrlDetected) ?>" spellcheck="false" autocomplete="off" placeholder="https://example.com/files/">
+                    <span class="field-help">Base URL for <strong>Open in new tab</strong> links. Pre-filled from this request; change it if files are published under a different public URL (e.g. the site root while this index lives in a subdirectory).</span>
+                </div>
+                <div class="auth-field">
                     <label for="setup-upload-max">Upload limit in bytes</label>
                     <input type="number" id="setup-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" placeholder="0">
                     <span class="field-help">Optional. Use 0 for your PHP configuration default.</span>
@@ -4399,10 +4516,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <summary class="settings-panel-summary">
                             <span class="settings-panel-summary-main">
                                 <span class="settings-panel-title">Filesystem</span>
-                                <span class="settings-panel-hint">Symlink visibility and follow rules</span>
+                                <span class="settings-panel-hint">Symlinks, follow rules, and public file URLs</span>
                             </span>
                         </summary>
                         <div class="settings-panel-body">
+                            <div class="settings-field">
+                                <label for="admin-web-root-url">Web root URL</label>
+                                <input type="text" id="admin-web-root-url" name="web_root_url" value="<?= h($webRootUrlConfigured) ?>" spellcheck="false" autocomplete="off" placeholder="<?= h($webRootUrlDetected) ?>">
+                                <span class="settings-help">Used for <strong>Open in new tab</strong> and file preview download links. Absolute URL (<code>https://files.example.com/</code>) or site path (<code>/public/</code>). Leave empty to auto-detect from this index (<code><?= h($webRootUrlDetected) ?></code>).</span>
+                            </div>
                             <label class="settings-check-row">
                                 <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
                                 <span>Show symlinks in listings</span>
