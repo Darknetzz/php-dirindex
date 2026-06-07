@@ -3081,6 +3081,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
+        .settings-main-panel { max-width: 880px; }
         .login-modal-panel,
         .account-modal-panel,
         .share-modal-panel,
@@ -3419,8 +3420,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: color-mix(in srgb, var(--bg) 88%, var(--bg-card));
         }
         .settings-panel + .settings-panel,
-        .settings-server-form + .settings-panel {
-            margin-top: 0.65rem;
+        .settings-server-form + .settings-panel,
+        .settings-server-form > .settings-panel:first-child {
+            margin-top: 1rem;
         }
         .settings-panel-summary {
             display: flex;
@@ -3474,9 +3476,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .settings-panel--danger .settings-panel-title {
             color: #f87171;
-        }
-        .settings-section + .settings-server-form {
-            margin-top: 0.35rem;
         }
         .settings-server-form {
             display: grid;
@@ -4235,7 +4234,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     </div>
 
     <div id="settings-modal" class="settings-overlay" aria-hidden="true">
-        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="settings-modal settings-main-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
             <div class="modal-header">
                 <span class="modal-title" id="settings-title">Settings</span>
                 <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
