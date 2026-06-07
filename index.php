@@ -2817,6 +2817,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-color: var(--text-muted);
             background: var(--hover);
         }
+        .listing-col-picker-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .listing-col-picker-btn:disabled:hover {
+            color: var(--text-muted);
+            border-color: var(--border);
+            background: transparent;
+        }
         .listing-col-picker-btn .icon {
             width: 0.9rem;
             height: 0.9rem;
@@ -4210,7 +4219,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             </label>
                         </div>
                     </div>
-                    <button type="button" class="listing-col-picker-btn" id="listing-sort-reset" hidden>
+                    <button type="button" class="listing-col-picker-btn" id="listing-sort-reset" disabled>
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                         Reset sort
                     </button>
@@ -5825,8 +5834,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             return 0;
         }
         function updateSortUi(sort) {
-            var showReset = !isDefaultSort(sort);
-            if (sortResetBtn) sortResetBtn.hidden = !showReset;
+            var canReset = !isDefaultSort(sort);
+            if (sortResetBtn) sortResetBtn.disabled = !canReset;
             table.querySelectorAll('th[data-sort-col]').forEach(function(th) {
                 var col = th.getAttribute('data-sort-col');
                 var active = sort && sort.col === col;
