@@ -2975,6 +2975,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             width: 1.75rem;
             height: 1.75rem;
             flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
             justify-content: center;
             border: 1px solid var(--border);
             border-radius: 7px;
@@ -4247,7 +4249,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <td class="name dir ft-type--dir">
                             <?php
                             $parentUrl = currentListingUrl($indexHref, $parentRel);
-                            $parentDirectUrl = $inShareMode ? currentListingUrl($indexHref, $parentRel) : directEntryUrl($parentRel, true);
+                            $parentNewTabUrl = currentListingUrl($indexHref, $parentRel);
                             ?>
                             <div class="name-content">
                                 <a href="<?= h($parentUrl) ?>">
@@ -4255,11 +4257,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     ..
                                 </a>
                                 <div class="name-actions">
-                                <?php if (!$inShareMode): ?>
-                                <a class="entry-open-new" href="<?= h($parentDirectUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open parent directory in new tab" title="Open in new tab">
+                                <a class="entry-open-new" href="<?= h($parentNewTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open parent directory in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
-                                <?php endif; ?>
                                 </div>
                             </div>
                         </td>
@@ -4273,7 +4273,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     foreach ($items as $item):
                         if ($item['isDir']) {
                             $url = currentListingUrl($indexHref, $item['path']);
-                            $directUrl = $inShareMode ? $url : directEntryUrl($item['path'], true);
+                            $newTabUrl = $url;
                             $linkAttrs = '';
                         } else {
                             if ($inShareMode) {
@@ -4281,6 +4281,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             } else {
                                 $directUrl = directEntryUrl($item['path']);
                             }
+                            $newTabUrl = $directUrl;
                             $ts = isset($item['mtime']) ? $item['mtime'] : null;
                             $mtimeFormatted = '—';
                             if ($ts !== null && $ts >= 0 && $ts <= 2147483647) {
@@ -4337,8 +4338,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                 </button>
                                 <?php endif; ?>
-                                <?php if (!$inShareMode): ?>
-                                <a class="entry-open-new" href="<?= h($directUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
+                                <?php if (!$inShareMode || $item['isDir']): ?>
+                                <a class="entry-open-new" href="<?= h($newTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?><?= $item['isDir'] ? ' folder listing' : '' ?> in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
                                 <?php endif; ?>
