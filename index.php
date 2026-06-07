@@ -899,6 +899,34 @@ function saveDirindexStoredConfig($scriptDir, array $settings, &$error = null) {
     return true;
 }
 
+function dirindexDeleteStorage($scriptDir, &$error = null) {
+    if (!is_dir($scriptDir)) {
+        $error = 'Storage directory does not exist.';
+        return false;
+    }
+    if (!is_writable($scriptDir)) {
+        $error = 'PHP cannot write to the directory containing settings storage.';
+        return false;
+    }
+    $paths = [
+        dirindexSqlitePath($scriptDir),
+        dirindexJsonPath($scriptDir),
+    ];
+    foreach (glob($scriptDir . DIRECTORY_SEPARATOR . '.dirindex.sqlite-*') ?: [] as $sidecar) {
+        $paths[] = $sidecar;
+    }
+    foreach ($paths as $path) {
+        if (!is_file($path)) {
+            continue;
+        }
+        if (!@unlink($path)) {
+            $error = 'Could not delete ' . basename($path) . '.';
+            return false;
+        }
+    }
+    return true;
+}
+
 function dirindexEnsureSharesTable($pdo) {
     $pdo->exec('CREATE TABLE IF NOT EXISTS shares (
         token TEXT PRIMARY KEY,
@@ -1682,6 +1710,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'account_saved' : 'settings_write_failed');
     }
 
+    if ($action === 'reset') {
+        if (!$hasUploadCredentials || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        }
+        $resetError = null;
+        if (!dirindexDeleteStorage(__DIR__, $resetError)) {
+            dirindexFlashSet($resetError ?: 'Could not delete settings storage.');
+            redirectToCurrentListing($indexHref, $relativePath, 'reset_failed');
+        }
+        unset($_SESSION['dirindex_authenticated']);
+        session_regenerate_id(true);
+        redirectToCurrentListing($indexHref, '', 'reset_done');
+    }
+
     if ($action === 'upload') {
         if (!$uploadEnabled || !$authenticated) {
             redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
@@ -1964,6 +2006,8 @@ $messageMap = [
     'setup_write_failed' => ['error', 'Could not save upload settings. Check file permissions.'],
     'settings_saved' => ['success', 'Settings saved.'],
     'settings_write_failed' => ['error', 'Could not save settings. Check file permissions.'],
+    'reset_done' => ['info', 'All settings were reset. Complete setup to continue.'],
+    'reset_failed' => ['error', 'Could not reset settings. Check file permissions.'],
     'ip_access_invalid' => ['error', 'Access list contains an invalid IP address or CIDR range.'],
     'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
     'path_access_invalid' => ['error', 'Path access list contains an invalid entry. Use relative paths without ..'],
@@ -4044,6 +4088,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <button type="submit" class="btn-auth">Save server settings</button>
                     </form>
                 </section>
+                <section class="settings-section" aria-labelledby="reset-settings-title">
+                    <h3 id="reset-settings-title">Reset</h3>
+                    <p class="settings-help">Delete <?= h(basename(dirindexStoragePath(__DIR__))) ?> and return to first-run setup. This removes the admin account, server settings, and share links. Files in the directory are not deleted.</p>
+                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="reset-settings-form">
+                        <input type="hidden" name="action" value="reset">
+                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                        <button type="button" class="btn-auth btn-auth-danger" id="btn-reset-settings">Reset all settings</button>
+                    </form>
+                </section>
                 <?php endif; ?>
             </div>
         </div>
@@ -5352,6 +5405,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 }
                 ipWhitelistField.value = lines.join('\n');
                 ipWhitelistField.focus();
+            });
+        }
+
+        var resetForm = document.getElementById('reset-settings-form');
+        var btnResetSettings = document.getElementById('btn-reset-settings');
+        if (resetForm && btnResetSettings) {
+            btnResetSettings.addEventListener('click', function() {
+                showConfirmModal({
+                    title: 'Reset all settings?',
+                    message: 'Delete stored settings and return to first-run setup?',
+                    detail: 'This removes the admin account, access rules, and share links. It cannot be undone.',
+                    confirmLabel: 'Reset',
+                    danger: true
+                }).then(function(confirmed) {
+                    if (confirmed) resetForm.submit();
+                });
             });
         }
 

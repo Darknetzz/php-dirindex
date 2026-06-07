@@ -50,6 +50,8 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 
 These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if needed.
 
+**Reset:** Signed-in admins can use **Settings → Reset** to delete the settings file and return to first-run setup (admin account, access rules, and share links are removed; indexed files are not deleted).
+
 **Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP and path whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 
 Example URLs:

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings → Reset** — signed-in admins can delete `.dirindex.sqlite` / `.dirindex.json` and return to first-run setup (confirmation required)
+
 ### Changed
 
 - **`path_whitelist` / `path_blacklist`** — replace `hidden_paths` with separate path whitelist and blacklist (same combined logic as IP access). Legacy `hidden_paths` values migrate to `path_blacklist` on load. Share links bypass path rules.
