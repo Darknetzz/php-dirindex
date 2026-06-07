@@ -2233,16 +2233,21 @@ $openAccountModal = $authenticated && !$inShareMode && (
     isset($_GET['msg']) && in_array((string) $_GET['msg'], ['account_mismatch', 'account_missing', 'account_saved', 'account_short_password'], true)
 );
 $settingsPanelFocus = null;
-$openSettingsModal = $authenticated && !$inShareMode && isset($_GET['msg']) && in_array((string) $_GET['msg'], [
+$settingsModalMessageKeys = [
     'settings_saved',
     'settings_write_failed',
     'ip_access_invalid',
     'ip_header_invalid',
     'path_access_invalid',
     'web_root_url_invalid',
-], true);
+];
+$settingsModalMessage = null;
+$openSettingsModal = $authenticated && !$inShareMode && isset($_GET['msg']) && in_array((string) $_GET['msg'], $settingsModalMessageKeys, true);
 if ($openSettingsModal) {
     $settingsMsg = (string) $_GET['msg'];
+    if ($statusMessage !== null) {
+        $settingsModalMessage = $statusMessage;
+    }
     if (in_array($settingsMsg, ['ip_access_invalid', 'ip_header_invalid'], true)) {
         $settingsPanelFocus = 'network';
     } elseif ($settingsMsg === 'path_access_invalid') {
@@ -3194,7 +3199,38 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
-        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); position: relative; }
+        .settings-modal-message {
+            margin: 0;
+            font-size: 0.875rem;
+            line-height: 1.45;
+        }
+        .settings-modal-message--alert {
+            margin: 0 0 0.85rem;
+        }
+        .settings-modal-message--toast {
+            position: absolute;
+            top: 0.85rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            width: calc(100% - 2.5rem);
+            margin: 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+            pointer-events: none;
+            animation: settingsToastIn 0.22s ease;
+        }
+        .settings-modal-message--toast.is-hiding {
+            animation: settingsToastOut 0.25s ease forwards;
+        }
+        @keyframes settingsToastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(-0.35rem); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes settingsToastOut {
+            from { opacity: 1; transform: translateX(-50%) translateY(0); }
+            to { opacity: 0; transform: translateX(-50%) translateY(-0.35rem); }
+        }
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-footer {
             padding: 1rem 1.25rem;
@@ -4067,7 +4103,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
         <?php endif; ?>
 
-        <?php if ($statusMessage): ?>
+        <?php if ($statusMessage && $settingsModalMessage === null): ?>
         <div class="blocked-msg message-<?= h($statusMessage[0]) ?>" role="status">
             <?= h($statusMessage[1]) ?>
         </div>
@@ -4435,11 +4471,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
     <div id="settings-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal settings-main-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <?php if ($settingsModalMessage && $settingsModalMessage[0] === 'success'): ?>
+            <div id="settings-modal-message" class="settings-modal-message blocked-msg message-success settings-modal-message--toast" role="status" aria-live="polite">
+                <?= h($settingsModalMessage[1]) ?>
+            </div>
+            <?php endif; ?>
             <div class="modal-header">
                 <span class="modal-title" id="settings-title">Settings</span>
                 <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
+                <?php if ($settingsModalMessage && $settingsModalMessage[0] !== 'success'): ?>
+                <div id="settings-modal-message" class="settings-modal-message blocked-msg message-<?= h($settingsModalMessage[0]) ?> settings-modal-message--alert" role="alert">
+                    <?= h($settingsModalMessage[1]) ?>
+                </div>
+                <?php endif; ?>
                 <details class="settings-panel" id="settings-panel-display" data-settings-panel="display" open>
                     <summary class="settings-panel-summary">
                         <span class="settings-panel-summary-main">
@@ -6050,6 +6096,24 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         initSettingsPanels();
         if (document.body.getAttribute('data-open-settings') === '1') {
             openSettings();
+            var settingsMessage = document.getElementById('settings-modal-message');
+            if (settingsMessage && settingsMessage.classList.contains('settings-modal-message--toast')) {
+                window.setTimeout(function() {
+                    settingsMessage.classList.add('is-hiding');
+                    window.setTimeout(function() {
+                        settingsMessage.hidden = true;
+                    }, 260);
+                }, 4000);
+            }
+            try {
+                var cleanParams = new URLSearchParams(window.location.search);
+                if (cleanParams.has('msg')) {
+                    cleanParams.delete('msg');
+                    var cleanQuery = cleanParams.toString();
+                    var cleanUrl = window.location.pathname + (cleanQuery ? '?' + cleanQuery : '') + window.location.hash;
+                    history.replaceState(null, '', cleanUrl);
+                }
+            } catch (e) {}
         }
 
         if (btnSettings) btnSettings.addEventListener('click', openSettings);
