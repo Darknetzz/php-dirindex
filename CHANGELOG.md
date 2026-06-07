@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [1.1.0] - 2026-06-07
+
+### Added
+
 - **Display settings** — theme (follow system, light, or dark), five text sizes (scales all UI via root `rem`), and a custom breadcrumb separator; stored in the browser
 - **`web_root_url`** — configurable public URL base for “Open in new tab” file and folder links; auto-detected and saved during setup
 - **Listing** — toolbar and folder rows include “Open in new tab” at the configured web root URL; optional **Owner** column (POSIX username, or numeric UID when name lookup is unavailable)
