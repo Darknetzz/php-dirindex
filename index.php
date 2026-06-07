@@ -3418,19 +3418,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             justify-content: flex-end;
             gap: 0.65rem;
         }
-        .settings-section {
-            padding: 1rem 0;
-            border-top: 1px solid var(--border);
-        }
-        .settings-section:first-child {
-            padding-top: 0;
-            border-top: none;
-        }
-        .settings-section h3 {
-            margin: 0 0 0.75rem;
-            color: var(--text);
-            font-size: 0.95rem;
-        }
         .settings-panel {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -3438,7 +3425,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .settings-panel + .settings-panel,
         .settings-server-form + .settings-panel,
-        .settings-server-form > .settings-panel:first-child {
+        .settings-panel + .settings-server-form {
             margin-top: 1rem;
         }
         .settings-panel-summary {
@@ -3487,6 +3474,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             gap: 1rem;
             padding: 1rem 1rem 1.25rem;
             border-top: 1px solid var(--border);
+        }
+        .settings-panel-body--display {
+            gap: 0;
         }
         .settings-panel--danger {
             border-color: color-mix(in srgb, #f87171 35%, var(--border));
@@ -4254,24 +4244,31 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <section class="settings-section" aria-labelledby="display-settings-title">
-                    <h3 id="display-settings-title">Display</h3>
-                    <div class="settings-row">
-                        <label for="setting-theme">Light mode</label>
-                        <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
-                        <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
+                <details class="settings-panel" id="settings-panel-display" data-settings-panel="display" open>
+                    <summary class="settings-panel-summary">
+                        <span class="settings-panel-summary-main">
+                            <span class="settings-panel-title" id="display-settings-title">Display</span>
+                            <span class="settings-panel-hint">Theme, text size, and breadcrumbs</span>
+                        </span>
+                    </summary>
+                    <div class="settings-panel-body settings-panel-body--display">
+                        <div class="settings-row">
+                            <label for="setting-theme">Light mode</label>
+                            <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
+                            <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
+                        </div>
+                        <div class="settings-row">
+                            <label for="setting-font">Large text</label>
+                            <input type="checkbox" id="setting-font" class="settings-check">
+                            <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
+                        </div>
+                        <div class="settings-row">
+                            <label for="setting-breadcrumb">Slash in breadcrumbs</label>
+                            <input type="checkbox" id="setting-breadcrumb" class="settings-check">
+                            <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
+                        </div>
                     </div>
-                    <div class="settings-row">
-                        <label for="setting-font">Large text</label>
-                        <input type="checkbox" id="setting-font" class="settings-check">
-                        <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
-                    </div>
-                    <div class="settings-row">
-                        <label for="setting-breadcrumb">Slash in breadcrumbs</label>
-                        <input type="checkbox" id="setting-breadcrumb" class="settings-check">
-                        <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
-                    </div>
-                </section>
+                </details>
 
                 <?php if ($authenticated && !$inShareMode): ?>
                 <form class="settings-form settings-server-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="settings-server-form">
