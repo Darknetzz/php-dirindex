@@ -3061,9 +3061,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             gap: 0.5rem 0.75rem;
         }
         .about-links a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
             color: var(--accent);
             text-decoration: none;
             font-size: 0.9rem;
+        }
+        .about-links a svg {
+            width: 0.95rem;
+            height: 0.95rem;
+            flex-shrink: 0;
         }
         .about-links a:hover { text-decoration: underline; }
 
