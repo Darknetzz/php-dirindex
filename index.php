@@ -2789,9 +2789,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: rgba(0,0,0,0.12);
             min-height: 2.25rem;
         }
+        .listing-toolbar-start {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-right: auto;
+        }
         .listing-col-picker {
             position: relative;
-            margin-right: auto;
         }
         .listing-col-picker-btn {
             display: inline-flex;
@@ -4184,25 +4189,31 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <div class="listing">
             <?php $currentDirNewTabUrl = currentListingUrl($indexHref, $relativePath); ?>
             <div class="listing-toolbar">
-                <div class="listing-col-picker">
-                    <button type="button" class="listing-col-picker-btn" id="listing-col-picker-btn" aria-expanded="false" aria-haspopup="true" aria-controls="listing-col-picker-menu">
-                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-                        Columns
-                    </button>
-                    <div class="listing-col-picker-menu" id="listing-col-picker-menu" role="menu" hidden>
-                        <label class="listing-col-picker-option" role="menuitemcheckbox">
-                            <input type="checkbox" id="setting-col-size" checked>
-                            Size
-                        </label>
-                        <label class="listing-col-picker-option" role="menuitemcheckbox">
-                            <input type="checkbox" id="setting-col-modified" checked>
-                            Modified
-                        </label>
-                        <label class="listing-col-picker-option" role="menuitemcheckbox">
-                            <input type="checkbox" id="setting-col-perms" checked>
-                            Permissions
-                        </label>
+                <div class="listing-toolbar-start">
+                    <div class="listing-col-picker">
+                        <button type="button" class="listing-col-picker-btn" id="listing-col-picker-btn" aria-expanded="false" aria-haspopup="true" aria-controls="listing-col-picker-menu">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                            Columns
+                        </button>
+                        <div class="listing-col-picker-menu" id="listing-col-picker-menu" role="menu" hidden>
+                            <label class="listing-col-picker-option" role="menuitemcheckbox">
+                                <input type="checkbox" id="setting-col-size" checked>
+                                Size
+                            </label>
+                            <label class="listing-col-picker-option" role="menuitemcheckbox">
+                                <input type="checkbox" id="setting-col-modified" checked>
+                                Modified
+                            </label>
+                            <label class="listing-col-picker-option" role="menuitemcheckbox">
+                                <input type="checkbox" id="setting-col-perms" checked>
+                                Permissions
+                            </label>
+                        </div>
                     </div>
+                    <button type="button" class="listing-col-picker-btn" id="listing-sort-reset" hidden>
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        Reset sort
+                    </button>
                 </div>
                 <a class="btn-listing-tool" href="<?= h($currentDirNewTabUrl) ?>" target="_blank" rel="noopener noreferrer" title="Open this folder listing in a new tab" aria-label="Open this folder listing in a new tab">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
@@ -4218,7 +4229,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     New file
                 </button>
                 <?php endif; ?>
-                <button type="button" class="btn-listing-tool" id="listing-sort-reset" hidden>Reset sort</button>
             </div>
             <table id="listing-table">
                 <colgroup>
