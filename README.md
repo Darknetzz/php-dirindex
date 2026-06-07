@@ -14,6 +14,8 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **PDO SQLite available (recommended):** `.dirindex.sqlite` next to the script (upload settings, share links, and UI-managed options).
 - **No SQLite:** `.dirindex.json` in the same folder (upload and UI-managed options; share links require SQLite).
 
+Shipped `.htaccess` (Apache) denies direct HTTP access to `.dirindex.sqlite` (including `-wal` / `-shm` sidecars), `.dirindex.json`, and legacy `config.php`. PHP still reads them normally; only browser downloads are blocked. Nginx and `php -S` need equivalent rules if you use those instead.
+
 If you still have a legacy `config.php`, missing keys are imported into the active store on first request. You can delete `config.php` afterward.
 
 **Configurable options** (via the admin settings UI, or by editing `.dirindex.json` when SQLite is unavailable):
