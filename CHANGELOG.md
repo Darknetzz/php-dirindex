@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Display settings** — theme (follow system, light, or dark), five text sizes, and a custom breadcrumb separator; stored in the browser
 - **Settings → Reset** — signed-in admins can delete `.dirindex.sqlite` / `.dirindex.json` and return to first-run setup (confirmation required)
 - **`.htaccess`** — blocks direct HTTP access to `.dirindex.sqlite`, `.dirindex.json`, and legacy `config.php` on Apache
 - **Share file previews** — syntax highlighting (highlight.js) on shared text/code landing pages; wider layout and scrollable preview area for long or wide files
@@ -17,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Settings modal** — Display uses the same collapsible sections as server settings; wider layout (880px), more spacing between sections, and more padding inside each section body
+- **Settings modal** — Display uses the same collapsible sections as server settings; wider layout (880px), more spacing between sections, and more padding inside each section body; display toggles replaced with richer controls
 - **Shared links** — Revoke button uses a danger-outline style instead of a filled red button
 - **`path_whitelist` / `path_blacklist`** — replace `hidden_paths` with separate path whitelist and blacklist (same combined logic as IP access). Legacy `hidden_paths` values migrate to `path_blacklist` on load. Share links bypass path rules.
 - GitHub releases and annotated tags use the version's `CHANGELOG.md` section as the release description (via `scripts/changelog-section.sh`)

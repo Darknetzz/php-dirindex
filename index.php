@@ -2422,8 +2422,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --ft-symlink: #7c3aed;
             --hover: #f4f4f5;
         }
-        body.font-large { font-size: 17px; }
-        body.font-large .listing td, body.font-large .listing th { font-size: 0.95rem; }
+        body.font-xs { font-size: 13px; }
+        body.font-xs .listing td, body.font-xs .listing th { font-size: 0.88rem; }
+        body.font-sm { font-size: 14px; }
+        body.font-sm .listing td, body.font-sm .listing th { font-size: 0.9rem; }
+        body.font-lg { font-size: 17px; }
+        body.font-lg .listing td, body.font-lg .listing th { font-size: 0.95rem; }
+        body.font-xl { font-size: 19px; }
+        body.font-xl .listing td, body.font-xl .listing th { font-size: 0.98rem; }
 
         * { box-sizing: border-box; }
         body {
@@ -3476,7 +3482,66 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-top: 1px solid var(--border);
         }
         .settings-panel-body--display {
+            gap: 1rem;
+        }
+        .settings-display-field {
+            gap: 0.45rem;
+        }
+        .settings-display-label {
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .display-segmented {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+        .display-segmented--joined {
+            flex-wrap: nowrap;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--bg);
             gap: 0;
+        }
+        .display-segment {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 0.5rem 0.7rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--text-muted);
+            font: inherit;
+            font-size: 0.82rem;
+            line-height: 1.25;
+            cursor: pointer;
+            white-space: nowrap;
+            text-align: center;
+        }
+        .display-segmented--joined .display-segment {
+            border: none;
+            border-radius: 0;
+            border-right: 1px solid var(--border);
+        }
+        .display-segmented--joined .display-segment:last-child {
+            border-right: none;
+        }
+        .display-segment:hover {
+            color: var(--text);
+        }
+        .display-segment.is-active {
+            background: color-mix(in srgb, var(--accent) 18%, var(--bg-card));
+            border-color: var(--accent-dim);
+            color: var(--text);
+        }
+        .display-segmented--joined .display-segment.is-active {
+            border-color: transparent;
+            box-shadow: inset 0 0 0 1px var(--accent-dim);
+        }
+        .display-breadcrumb-input {
+            max-width: 8rem;
         }
         .settings-panel--danger {
             border-color: color-mix(in srgb, #f87171 35%, var(--border));
@@ -3716,6 +3781,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             }
         }
     </style>
+    <script>
+    (function() {
+        try {
+            var theme = localStorage.getItem('dirindex_theme') || 'dark';
+            var light = theme === 'light' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
+            if (light) document.documentElement.classList.add('theme-light');
+        } catch (e) {}
+    })();
+    </script>
 </head>
 <body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
@@ -4248,24 +4322,32 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <summary class="settings-panel-summary">
                         <span class="settings-panel-summary-main">
                             <span class="settings-panel-title" id="display-settings-title">Display</span>
-                            <span class="settings-panel-hint">Theme, text size, and breadcrumbs</span>
+                            <span class="settings-panel-hint">Theme, text size, and breadcrumb separator</span>
                         </span>
                     </summary>
                     <div class="settings-panel-body settings-panel-body--display">
-                        <div class="settings-row">
-                            <label for="setting-theme">Light mode</label>
-                            <input type="checkbox" id="setting-theme" class="settings-check" aria-describedby="setting-theme-desc">
-                            <span class="settings-toggle" id="setting-theme-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle light mode"></span>
+                        <div class="settings-field settings-display-field">
+                            <span class="settings-display-label" id="setting-theme-label">Theme</span>
+                            <div class="display-segmented display-segmented--joined" role="group" aria-labelledby="setting-theme-label">
+                                <button type="button" class="display-segment" data-theme-option="system">Follow system</button>
+                                <button type="button" class="display-segment" data-theme-option="light">Light</button>
+                                <button type="button" class="display-segment" data-theme-option="dark">Dark</button>
+                            </div>
                         </div>
-                        <div class="settings-row">
-                            <label for="setting-font">Large text</label>
-                            <input type="checkbox" id="setting-font" class="settings-check">
-                            <span class="settings-toggle" id="setting-font-toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle large text"></span>
+                        <div class="settings-field settings-display-field">
+                            <span class="settings-display-label" id="setting-font-label">Text size</span>
+                            <div class="display-segmented" role="group" aria-labelledby="setting-font-label">
+                                <button type="button" class="display-segment" data-font-option="xs">Extra small</button>
+                                <button type="button" class="display-segment" data-font-option="sm">Small</button>
+                                <button type="button" class="display-segment" data-font-option="md">Medium</button>
+                                <button type="button" class="display-segment" data-font-option="lg">Large</button>
+                                <button type="button" class="display-segment" data-font-option="xl">Extra large</button>
+                            </div>
                         </div>
-                        <div class="settings-row">
-                            <label for="setting-breadcrumb">Slash in breadcrumbs</label>
-                            <input type="checkbox" id="setting-breadcrumb" class="settings-check">
-                            <span class="settings-toggle" id="setting-breadcrumb-toggle" role="switch" aria-checked="false" tabindex="0" title="Use / instead of › in breadcrumbs"></span>
+                        <div class="settings-field settings-display-field">
+                            <label for="setting-breadcrumb-sep">Breadcrumb separator</label>
+                            <input type="text" id="setting-breadcrumb-sep" class="display-breadcrumb-input" maxlength="6" spellcheck="false" autocomplete="off" placeholder="›">
+                            <span class="settings-help">Shown between breadcrumb segments. Examples: ›, /, →, ::</span>
                         </div>
                     </div>
                 </details>
@@ -5659,15 +5741,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
     (function() {
         var STORAGE = { theme: 'dirindex_theme', font: 'dirindex_font', breadcrumb: 'dirindex_breadcrumb' };
+        var FONT_CLASSES = ['font-xs', 'font-sm', 'font-lg', 'font-xl'];
+        var FONT_OPTIONS = ['xs', 'sm', 'md', 'lg', 'xl'];
+        var THEME_OPTIONS = ['system', 'light', 'dark'];
+        var DEFAULT_BREADCRUMB = '\u203A';
         var settingsOverlay = document.getElementById('settings-modal');
         var btnSettings = document.getElementById('btn-settings');
         var settingsClose = document.getElementById('settings-close');
         var hljsTheme = document.getElementById('hljs-theme');
-        var pairs = [
-            { check: document.getElementById('setting-theme'), toggle: document.getElementById('setting-theme-toggle') },
-            { check: document.getElementById('setting-font'), toggle: document.getElementById('setting-font-toggle') },
-            { check: document.getElementById('setting-breadcrumb'), toggle: document.getElementById('setting-breadcrumb-toggle') }
-        ];
+        var themeButtons = Array.prototype.slice.call(document.querySelectorAll('[data-theme-option]'));
+        var fontButtons = Array.prototype.slice.call(document.querySelectorAll('[data-font-option]'));
+        var breadcrumbInput = document.getElementById('setting-breadcrumb-sep');
+        var systemThemeQuery = window.matchMedia('(prefers-color-scheme: light)');
 
         function getSetting(key, def) {
             try { return localStorage.getItem(key) || def; } catch (e) { return def; }
@@ -5676,7 +5761,32 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             try { localStorage.setItem(key, val); } catch (e) {}
         }
 
-        function applyTheme(light) {
+        function normalizeTheme(value) {
+            return THEME_OPTIONS.indexOf(value) !== -1 ? value : 'dark';
+        }
+        function normalizeFont(value) {
+            if (value === 'normal') return 'md';
+            if (value === 'large') return 'lg';
+            return FONT_OPTIONS.indexOf(value) !== -1 ? value : 'md';
+        }
+        function normalizeBreadcrumb(value) {
+            if (value === 'chevron') return DEFAULT_BREADCRUMB;
+            if (value === 'slash') return '/';
+            if (typeof value !== 'string') return DEFAULT_BREADCRUMB;
+            var trimmed = value.replace(/[\r\n\t]/g, '').trim();
+            return trimmed === '' ? DEFAULT_BREADCRUMB : trimmed.slice(0, 6);
+        }
+
+        function resolveTheme(mode) {
+            mode = normalizeTheme(mode);
+            if (mode === 'system') {
+                return systemThemeQuery.matches ? 'light' : 'dark';
+            }
+            return mode;
+        }
+
+        function applyTheme(mode) {
+            var light = resolveTheme(mode) === 'light';
             if (light) {
                 document.documentElement.classList.add('theme-light');
                 if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css';
@@ -5685,30 +5795,90 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
             }
         }
-        function applyFont(large) {
-            document.body.classList.toggle('font-large', large);
+        function applyFont(size) {
+            size = normalizeFont(size);
+            FONT_CLASSES.forEach(function(cls) { document.body.classList.remove(cls); });
+            if (size === 'xs') document.body.classList.add('font-xs');
+            else if (size === 'sm') document.body.classList.add('font-sm');
+            else if (size === 'lg') document.body.classList.add('font-lg');
+            else if (size === 'xl') document.body.classList.add('font-xl');
         }
-        function applyBreadcrumb(slash) {
-            var sep = slash ? '/' : '\u203A';
+        function applyBreadcrumb(sep) {
+            sep = normalizeBreadcrumb(sep);
             document.querySelectorAll('.breadcrumb-sep').forEach(function(el) { el.textContent = sep; });
         }
 
+        function syncThemeUi(mode) {
+            mode = normalizeTheme(mode);
+            themeButtons.forEach(function(btn) {
+                var active = btn.getAttribute('data-theme-option') === mode;
+                btn.classList.toggle('is-active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+        function syncFontUi(size) {
+            size = normalizeFont(size);
+            fontButtons.forEach(function(btn) {
+                var active = btn.getAttribute('data-font-option') === size;
+                btn.classList.toggle('is-active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+        function syncBreadcrumbUi(sep) {
+            if (!breadcrumbInput) return;
+            sep = normalizeBreadcrumb(sep);
+            breadcrumbInput.value = sep === DEFAULT_BREADCRUMB ? '' : sep;
+            breadcrumbInput.placeholder = DEFAULT_BREADCRUMB;
+        }
+
         function loadAndApply() {
-            var theme = getSetting(STORAGE.theme, 'dark');
-            var font = getSetting(STORAGE.font, 'normal');
-            var breadcrumb = getSetting(STORAGE.breadcrumb, 'chevron');
-            var light = (theme === 'light');
-            var large = (font === 'large');
-            var useSlash = (breadcrumb === 'slash');
-            applyTheme(light);
-            applyFont(large);
-            applyBreadcrumb(useSlash);
-            if (pairs[0].check) pairs[0].check.checked = light;
-            if (pairs[0].toggle) { pairs[0].toggle.classList.toggle('is-on', light); pairs[0].toggle.setAttribute('aria-checked', light); }
-            if (pairs[1].check) pairs[1].check.checked = large;
-            if (pairs[1].toggle) { pairs[1].toggle.classList.toggle('is-on', large); pairs[1].toggle.setAttribute('aria-checked', large); }
-            if (pairs[2].check) pairs[2].check.checked = useSlash;
-            if (pairs[2].toggle) { pairs[2].toggle.classList.toggle('is-on', useSlash); pairs[2].toggle.setAttribute('aria-checked', useSlash); }
+            var theme = normalizeTheme(getSetting(STORAGE.theme, 'dark'));
+            var font = normalizeFont(getSetting(STORAGE.font, 'md'));
+            var breadcrumb = normalizeBreadcrumb(getSetting(STORAGE.breadcrumb, DEFAULT_BREADCRUMB));
+            applyTheme(theme);
+            applyFont(font);
+            applyBreadcrumb(breadcrumb);
+            syncThemeUi(theme);
+            syncFontUi(font);
+            syncBreadcrumbUi(breadcrumb);
+        }
+
+        themeButtons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var mode = normalizeTheme(btn.getAttribute('data-theme-option'));
+                setSetting(STORAGE.theme, mode);
+                applyTheme(mode);
+                syncThemeUi(mode);
+            });
+        });
+        fontButtons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var size = normalizeFont(btn.getAttribute('data-font-option'));
+                setSetting(STORAGE.font, size);
+                applyFont(size);
+                syncFontUi(size);
+            });
+        });
+        if (breadcrumbInput) {
+            breadcrumbInput.addEventListener('input', function() {
+                var raw = breadcrumbInput.value.replace(/[\r\n\t]/g, '').slice(0, 6);
+                if (raw !== breadcrumbInput.value) breadcrumbInput.value = raw;
+                setSetting(STORAGE.breadcrumb, raw);
+                applyBreadcrumb(raw);
+            });
+        }
+        if (typeof systemThemeQuery.addEventListener === 'function') {
+            systemThemeQuery.addEventListener('change', function() {
+                if (normalizeTheme(getSetting(STORAGE.theme, 'dark')) === 'system') {
+                    applyTheme('system');
+                }
+            });
+        } else if (typeof systemThemeQuery.addListener === 'function') {
+            systemThemeQuery.addListener(function() {
+                if (normalizeTheme(getSetting(STORAGE.theme, 'dark')) === 'system') {
+                    applyTheme('system');
+                }
+            });
         }
 
         function openSettings() {
@@ -5754,27 +5924,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (document.body.getAttribute('data-open-settings') === '1') {
             openSettings();
         }
-
-        pairs.forEach(function(p, i) {
-            if (!p.toggle || !p.check) return;
-            function update() {
-                var on = p.check.checked;
-                p.toggle.classList.toggle('is-on', on);
-                p.toggle.setAttribute('aria-checked', on);
-                if (i === 0) { setSetting(STORAGE.theme, on ? 'light' : 'dark'); applyTheme(on); }
-                if (i === 1) { setSetting(STORAGE.font, on ? 'large' : 'normal'); applyFont(on); }
-                if (i === 2) { setSetting(STORAGE.breadcrumb, on ? 'slash' : 'chevron'); applyBreadcrumb(on); }
-            }
-            function toggle() {
-                p.check.checked = !p.check.checked;
-                update();
-            }
-            p.toggle.addEventListener('click', toggle);
-            p.toggle.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-            });
-            p.check.addEventListener('change', update);
-        });
 
         if (btnSettings) btnSettings.addEventListener('click', openSettings);
         if (settingsClose) settingsClose.addEventListener('click', closeSettings);
