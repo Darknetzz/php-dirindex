@@ -3467,6 +3467,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-panel--danger .settings-panel-title {
             color: #f87171;
         }
+        .settings-section + .settings-server-form {
+            margin-top: 0.35rem;
+        }
         .settings-server-form {
             display: grid;
             gap: 0.65rem;
@@ -5678,12 +5681,47 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
 
         function openSettings() {
+            if (!settingsOverlay) return;
             settingsOverlay.classList.add('is-open');
             settingsOverlay.setAttribute('aria-hidden', 'false');
         }
         function closeSettings() {
+            if (!settingsOverlay) return;
             settingsOverlay.classList.remove('is-open');
             settingsOverlay.setAttribute('aria-hidden', 'true');
+        }
+
+        var PANEL_STORAGE = 'dirindex_settings_panels';
+        function readPanelStates() {
+            try { return JSON.parse(localStorage.getItem(PANEL_STORAGE) || '{}'); } catch (e) { return {}; }
+        }
+        function writePanelState(panelId, isOpen) {
+            if (!panelId) return;
+            var saved = readPanelStates();
+            saved[panelId] = !!isOpen;
+            try { localStorage.setItem(PANEL_STORAGE, JSON.stringify(saved)); } catch (e) {}
+        }
+        function initSettingsPanels() {
+            if (!settingsOverlay) return;
+            var saved = readPanelStates();
+            settingsOverlay.querySelectorAll('.settings-panel[data-settings-panel]').forEach(function(panel) {
+                var id = panel.getAttribute('data-settings-panel');
+                if (id && Object.prototype.hasOwnProperty.call(saved, id)) {
+                    panel.open = !!saved[id];
+                }
+                panel.addEventListener('toggle', function() {
+                    writePanelState(id, panel.open);
+                });
+            });
+            var focusId = document.body.getAttribute('data-settings-panel');
+            if (focusId) {
+                var focusPanel = settingsOverlay.querySelector('[data-settings-panel="' + focusId + '"]');
+                if (focusPanel) focusPanel.open = true;
+            }
+        }
+        initSettingsPanels();
+        if (document.body.getAttribute('data-open-settings') === '1') {
+            openSettings();
         }
 
         pairs.forEach(function(p, i) {
@@ -5707,13 +5745,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             p.check.addEventListener('change', update);
         });
 
-        btnSettings.addEventListener('click', openSettings);
-        settingsClose.addEventListener('click', closeSettings);
-        settingsOverlay.addEventListener('click', function(e) {
-            if (e.target === settingsOverlay) closeSettings();
-        });
+        if (btnSettings) btnSettings.addEventListener('click', openSettings);
+        if (settingsClose) settingsClose.addEventListener('click', closeSettings);
+        if (settingsOverlay) {
+            settingsOverlay.addEventListener('click', function(e) {
+                if (e.target === settingsOverlay) closeSettings();
+            });
+        }
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && settingsOverlay.classList.contains('is-open')) {
+            if (e.key === 'Escape' && settingsOverlay && settingsOverlay.classList.contains('is-open')) {
                 closeSettings();
                 e.stopPropagation();
             }

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings → Reset** — signed-in admins can delete `.dirindex.sqlite` / `.dirindex.json` and return to first-run setup (confirmation required)
 - **`.htaccess`** — blocks direct HTTP access to `.dirindex.sqlite`, `.dirindex.json`, and legacy `config.php` on Apache
 - **Share file previews** — syntax highlighting (highlight.js) on shared text/code landing pages; wider layout and scrollable preview area for long or wide files
+- **Settings modal** — collapsible sections (Permissions, Filesystem, Path access, Network access, Reset); panel open state remembered in the browser; auto-opens on save errors
 - **About** — info button in the header and version link in the footer open a modal with project details, version, and repository links
 
 ### Changed
