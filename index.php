@@ -2873,6 +2873,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-color: var(--text-muted);
             background: var(--hover);
         }
+        a.btn-listing-tool {
+            text-decoration: none;
+        }
 
         .listing th {
             text-align: left;
@@ -4179,6 +4182,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <?php endif; ?>
 
         <div class="listing">
+            <?php $currentDirNewTabUrl = currentListingUrl($indexHref, $relativePath); ?>
             <div class="listing-toolbar">
                 <div class="listing-col-picker">
                     <button type="button" class="listing-col-picker-btn" id="listing-col-picker-btn" aria-expanded="false" aria-haspopup="true" aria-controls="listing-col-picker-menu">
@@ -4200,6 +4204,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </label>
                     </div>
                 </div>
+                <a class="btn-listing-tool" href="<?= h($currentDirNewTabUrl) ?>" target="_blank" rel="noopener noreferrer" title="Open this folder listing in a new tab" aria-label="Open this folder listing in a new tab">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                    Open in new tab
+                </a>
                 <?php if ($createEnabled && $authenticated && !$inShareMode): ?>
                 <button type="button" class="btn-listing-tool" id="btn-create-folder">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
