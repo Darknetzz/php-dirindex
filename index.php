@@ -2542,6 +2542,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .btn-share-sm svg { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
         .btn-share-sm:hover { background: var(--hover); }
+        .btn-share-sm.btn-share-sm-danger {
+            border-color: color-mix(in srgb, #f87171 55%, var(--accent-dim));
+            background: color-mix(in srgb, #f87171 88%, var(--accent-dim));
+            color: #fff;
+        }
+        .btn-share-sm.btn-share-sm-danger:hover { filter: brightness(1.08); background: color-mix(in srgb, #f87171 88%, var(--accent-dim)); }
         .share-badge {
             display: inline-block;
             font-size: 0.75rem;
@@ -4267,7 +4273,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                         <input type="hidden" name="action" value="share_revoke">
                                         <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
                                         <input type="hidden" name="share_token" value="<?= h($shareRow['token']) ?>">
-                                        <button type="submit" class="btn-share-sm">
+                                        <button type="submit" class="btn-share-sm btn-share-sm-danger">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                             <span>Revoke</span>
                                         </button>
