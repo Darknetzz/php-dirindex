@@ -3,7 +3,7 @@
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
 - **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
-- **Lists** the current directory with name, size, modified date, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
+- **Lists** the current directory with name, size, modified date, owner, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
 - **Display** (gear icon → Settings → Display): theme (follow system, light, or dark), text size (extra small through extra large), and a custom breadcrumb separator — all saved in the browser.
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
 - **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Display settings** — theme (follow system, light, or dark), five text sizes (scales all UI via root `rem`), and a custom breadcrumb separator; stored in the browser
 - **`web_root_url`** — configurable public URL base for “Open in new tab” file links; auto-detected and saved during setup
-- **Listing** — toolbar and folder rows include “Open in new tab” (current or subfolder index listing); files open at the configured web root URL
+- **Listing** — toolbar and folder rows include “Open in new tab” (current or subfolder index listing); files open at the configured web root URL; optional **Owner** column (POSIX username, or numeric UID when name lookup is unavailable)
 - **Settings → Reset** — signed-in admins can delete `.dirindex.sqlite` / `.dirindex.json` and return to first-run setup (confirmation required)
 - **`.htaccess`** — blocks direct HTTP access to `.dirindex.sqlite`, `.dirindex.json`, and legacy `config.php` on Apache
 - **Share file previews** — syntax highlighting (highlight.js) on shared text/code landing pages; wider layout and scrollable preview area for long or wide files

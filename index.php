@@ -2146,6 +2146,7 @@ if ($handle) {
             'mtime'      => $mtime,
             'perms'      => $entryPerms !== false ? (int) $entryPerms : null,
             'permsLabel' => formatEntryPermissions($full),
+            'ownerLabel' => formatEntryOwner($full),
             'isText'     => $isText,
             'ext'        => $ext,
         ];
@@ -2356,6 +2357,20 @@ function formatEntryPermissions($path) {
     $info .= ($perms & 0x0002) ? 'w' : '-';
     $info .= ($perms & 0x0001) ? (($perms & 0x0200) ? 't' : 'x') : (($perms & 0x0200) ? 'T' : '-');
     return $info;
+}
+
+function formatEntryOwner($path) {
+    $uid = @fileowner($path);
+    if ($uid === false) {
+        return null;
+    }
+    if (function_exists('posix_getpwuid')) {
+        $account = @posix_getpwuid($uid);
+        if (is_array($account) && !empty($account['name'])) {
+            return (string) $account['name'];
+        }
+    }
+    return (string) (int) $uid;
 }
 
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
@@ -2904,6 +2919,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .listing th.size { text-align: right; }
         .listing th.modified { text-align: right; }
+        .listing th.owner { text-align: right; }
         .listing th.perms { text-align: right; }
         .listing-sort-btn {
             display: flex;
@@ -2922,7 +2938,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .listing th.size .listing-sort-btn,
         .listing th.modified .listing-sort-btn,
-        .listing th.perms .listing-sort-btn {
+        .listing th.perms .listing-sort-btn,
+        .listing th.owner .listing-sort-btn {
             justify-content: flex-end;
         }
         .listing-sort-btn:hover,
@@ -2940,6 +2957,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing table.listing-hide-size td.size,
         .listing table.listing-hide-modified th.modified,
         .listing table.listing-hide-modified td.modified,
+        .listing table.listing-hide-owner th.owner,
+        .listing table.listing-hide-owner td.owner,
         .listing table.listing-hide-perms th.perms,
         .listing table.listing-hide-perms td.perms {
             display: none;
@@ -3133,7 +3152,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .btn-download { display: inline-block; background: var(--accent-dim); color: #fff; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; }
         .btn-download:hover { background: var(--accent); color: #fff; }
 
-        .listing .size, .listing .modified, .listing .perms {
+        .listing .size, .listing .modified, .listing .owner, .listing .perms {
             color: var(--text-muted);
             font-size: 0.85rem;
         }
@@ -3142,6 +3161,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing td.size, .listing th.size { white-space: nowrap; }
         .listing .col-modified { min-width: 10rem; }
         .listing td.modified, .listing th.modified { white-space: nowrap; }
+        .listing .owner { text-align: right; }
+        .listing .col-owner { min-width: 5.5rem; }
+        .listing td.owner, .listing th.owner { white-space: nowrap; }
         .listing .col-perms { min-width: 6.5rem; }
         .listing td.perms, .listing th.perms { white-space: nowrap; }
 
@@ -4214,6 +4236,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 Modified
                             </label>
                             <label class="listing-col-picker-option" role="menuitemcheckbox">
+                                <input type="checkbox" id="setting-col-owner" checked>
+                                Owner
+                            </label>
+                            <label class="listing-col-picker-option" role="menuitemcheckbox">
                                 <input type="checkbox" id="setting-col-perms" checked>
                                 Permissions
                             </label>
@@ -4244,6 +4270,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <col class="col-name">
                     <col class="col-size">
                     <col class="col-modified">
+                    <col class="col-owner">
                     <col class="col-perms">
                 </colgroup>
                 <thead>
@@ -4261,6 +4288,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <th scope="col" class="modified" data-sort-col="modified">
                             <button type="button" class="listing-sort-btn" data-sort-col="modified">
                                 Modified <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col" class="owner" data-sort-col="owner">
+                            <button type="button" class="listing-sort-btn" data-sort-col="owner">
+                                Owner <span class="listing-sort-indicator" aria-hidden="true"></span>
                             </button>
                         </th>
                         <th scope="col" class="perms" data-sort-col="perms">
@@ -4292,6 +4324,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </td>
                         <td class="size">&#8212;</td>
                         <td class="modified">&#8212;</td>
+                        <td class="owner">&#8212;</td>
                         <td class="perms">&#8212;</td>
                     </tr>
                     <?php endif; ?>
@@ -4343,7 +4376,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
                         $entryTypeClass = listingEntryTypeClass($item);
                     ?>
-                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
+                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-owner="<?= h(strtolower($item['ownerLabel'] ?? '')) ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
                         <td class="name <?= trim($nameClass) ?> <?= h($entryTypeClass) ?>">
                             <div class="name-content">
                                 <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
@@ -4382,7 +4415,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             } else {
                                 echo '&#8212;';
                             }
-                        ?></td>
+                        ?>                        </td>
+                        <td class="owner"><?= !empty($item['ownerLabel']) ? h($item['ownerLabel']) : '&#8212;' ?></td>
                         <td class="perms"><?= !empty($item['permsLabel']) ? h($item['permsLabel']) : '&#8212;' ?></td>
                     </tr>
                     <?php endforeach; ?>
@@ -5769,6 +5803,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var STORAGE_SORT = 'dirindex_list_sort';
         var STORAGE_COL_SIZE = 'dirindex_col_size';
         var STORAGE_COL_MODIFIED = 'dirindex_col_modified';
+        var STORAGE_COL_OWNER = 'dirindex_col_owner';
         var STORAGE_COL_PERMS = 'dirindex_col_perms';
 
         function getSetting(key, def) {
@@ -5786,7 +5821,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (!raw) return null;
                 var parsed = JSON.parse(raw);
                 if (!parsed || !parsed.col) return null;
-                if (['name', 'size', 'modified', 'perms'].indexOf(parsed.col) === -1) return null;
+                if (['name', 'size', 'modified', 'owner', 'perms'].indexOf(parsed.col) === -1) return null;
                 return { col: parsed.col, dir: parsed.dir === 'desc' ? 'desc' : 'asc' };
             } catch (e) {
                 return null;
@@ -5821,6 +5856,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             } else if (col === 'modified') {
                 va = parseInt(a.getAttribute('data-sort-mtime') || '0', 10);
                 vb = parseInt(b.getAttribute('data-sort-mtime') || '0', 10);
+            } else if (col === 'owner') {
+                va = (a.getAttribute('data-sort-owner') || '').toLowerCase();
+                vb = (b.getAttribute('data-sort-owner') || '').toLowerCase();
+                if (va < vb) return -1 * mul;
+                if (va > vb) return 1 * mul;
+                var ownerTieA = (a.getAttribute('data-sort-name') || '').toLowerCase();
+                var ownerTieB = (b.getAttribute('data-sort-name') || '').toLowerCase();
+                if (ownerTieA < ownerTieB) return -1;
+                if (ownerTieA > ownerTieB) return 1;
+                return 0;
             } else {
                 va = parseInt(a.getAttribute('data-sort-perms') || '0', 10);
                 vb = parseInt(b.getAttribute('data-sort-perms') || '0', 10);
@@ -5857,12 +5902,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         function applyColumns() {
             var showSize = getSetting(STORAGE_COL_SIZE, '1') !== '0';
             var showModified = getSetting(STORAGE_COL_MODIFIED, '1') !== '0';
+            var showOwner = getSetting(STORAGE_COL_OWNER, '1') !== '0';
             var showPerms = getSetting(STORAGE_COL_PERMS, '1') !== '0';
             table.classList.toggle('listing-hide-size', !showSize);
             table.classList.toggle('listing-hide-modified', !showModified);
+            table.classList.toggle('listing-hide-owner', !showOwner);
             table.classList.toggle('listing-hide-perms', !showPerms);
             var sizeCheck = document.getElementById('setting-col-size');
             var modCheck = document.getElementById('setting-col-modified');
+            var ownerCheck = document.getElementById('setting-col-owner');
             var permsCheck = document.getElementById('setting-col-perms');
             if (sizeCheck) {
                 sizeCheck.checked = showSize;
@@ -5871,6 +5919,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (modCheck) {
                 modCheck.checked = showModified;
                 modCheck.setAttribute('aria-checked', showModified ? 'true' : 'false');
+            }
+            if (ownerCheck) {
+                ownerCheck.checked = showOwner;
+                ownerCheck.setAttribute('aria-checked', showOwner ? 'true' : 'false');
             }
             if (permsCheck) {
                 permsCheck.checked = showPerms;
@@ -5931,6 +5983,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         wireColumnCheckbox(document.getElementById('setting-col-size'), STORAGE_COL_SIZE);
         wireColumnCheckbox(document.getElementById('setting-col-modified'), STORAGE_COL_MODIFIED);
+        wireColumnCheckbox(document.getElementById('setting-col-owner'), STORAGE_COL_OWNER);
         wireColumnCheckbox(document.getElementById('setting-col-perms'), STORAGE_COL_PERMS);
         wireColumnPicker();
 
