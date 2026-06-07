@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Display settings** — theme (follow system, light, or dark), five text sizes, and a custom breadcrumb separator; stored in the browser
+- **Display settings** — theme (follow system, light, or dark), five text sizes (scales all UI via root `rem`), and a custom breadcrumb separator; stored in the browser
 - **Settings → Reset** — signed-in admins can delete `.dirindex.sqlite` / `.dirindex.json` and return to first-run setup (confirmation required)
 - **`.htaccess`** — blocks direct HTTP access to `.dirindex.sqlite`, `.dirindex.json`, and legacy `config.php` on Apache
 - **Share file previews** — syntax highlighting (highlight.js) on shared text/code landing pages; wider layout and scrollable preview area for long or wide files

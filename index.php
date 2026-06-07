@@ -2422,14 +2422,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --ft-symlink: #7c3aed;
             --hover: #f4f4f5;
         }
-        body.font-xs { font-size: 13px; }
-        body.font-xs .listing td, body.font-xs .listing th { font-size: 0.88rem; }
-        body.font-sm { font-size: 14px; }
-        body.font-sm .listing td, body.font-sm .listing th { font-size: 0.9rem; }
-        body.font-lg { font-size: 17px; }
-        body.font-lg .listing td, body.font-lg .listing th { font-size: 0.95rem; }
-        body.font-xl { font-size: 19px; }
-        body.font-xl .listing td, body.font-xl .listing th { font-size: 0.98rem; }
+        html {
+            font-size: 15px;
+        }
+        html.font-xs { font-size: 13px; }
+        html.font-sm { font-size: 14px; }
+        html.font-lg { font-size: 17px; }
+        html.font-xl { font-size: 19px; }
 
         * { box-sizing: border-box; }
         body {
@@ -2438,7 +2437,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: var(--bg);
             color: var(--text);
             font-family: 'Outfit', system-ui, sans-serif;
-            font-size: 15px;
+            font-size: 1rem;
             line-height: 1.5;
         }
 
@@ -3787,6 +3786,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var theme = localStorage.getItem('dirindex_theme') || 'dark';
             var light = theme === 'light' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
             if (light) document.documentElement.classList.add('theme-light');
+            var font = localStorage.getItem('dirindex_font') || 'md';
+            if (font === 'normal') font = 'md';
+            if (font === 'large') font = 'lg';
+            if (font === 'xs' || font === 'sm' || font === 'lg' || font === 'xl') {
+                document.documentElement.classList.add('font-' + font);
+            }
         } catch (e) {}
     })();
     </script>
@@ -5797,11 +5802,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         function applyFont(size) {
             size = normalizeFont(size);
-            FONT_CLASSES.forEach(function(cls) { document.body.classList.remove(cls); });
-            if (size === 'xs') document.body.classList.add('font-xs');
-            else if (size === 'sm') document.body.classList.add('font-sm');
-            else if (size === 'lg') document.body.classList.add('font-lg');
-            else if (size === 'xl') document.body.classList.add('font-xl');
+            FONT_CLASSES.forEach(function(cls) { document.documentElement.classList.remove(cls); });
+            if (size === 'xs') document.documentElement.classList.add('font-xs');
+            else if (size === 'sm') document.documentElement.classList.add('font-sm');
+            else if (size === 'lg') document.documentElement.classList.add('font-lg');
+            else if (size === 'xl') document.documentElement.classList.add('font-xl');
         }
         function applyBreadcrumb(sep) {
             sep = normalizeBreadcrumb(sep);
