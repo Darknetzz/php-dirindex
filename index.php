@@ -3079,6 +3079,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-overlay.is-open { display: flex; }
         .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+        .settings-modal .modal-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
         .settings-modal .modal-title { font-size: 1rem; font-weight: 600; }
         .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
         .settings-main-panel { max-width: 880px; }
@@ -3214,6 +3221,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             text-decoration: none;
             display: inline-flex;
             align-items: center;
+        }
+        .btn-auth svg {
+            width: 1rem;
+            height: 1rem;
+            flex-shrink: 0;
+        }
+        .btn-auth.btn-auth-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
         }
         .btn-auth:hover {
             filter: brightness(1.08);
@@ -3480,9 +3497,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-server-form {
             display: grid;
             gap: 0.65rem;
-        }
-        .settings-form-footer {
-            padding-top: 0.15rem;
         }
         .settings-form {
             display: grid;
@@ -4387,10 +4401,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <?php endif; ?>
                         </div>
                     </details>
-
-                    <div class="settings-form-footer">
-                        <button type="submit" class="btn-auth">Save server settings</button>
-                    </div>
                 </form>
 
                 <details class="settings-panel settings-panel--danger" id="settings-panel-reset" data-settings-panel="reset">
@@ -4411,6 +4421,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </details>
                 <?php endif; ?>
             </div>
+            <?php if ($authenticated && !$inShareMode): ?>
+            <div class="modal-footer">
+                <button type="submit" form="settings-server-form" class="btn-auth btn-auth-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span>Save server settings</span>
+                </button>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
