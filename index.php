@@ -4217,9 +4217,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <dd><?= h(PHP_VERSION) ?></dd>
                 </dl>
                 <div class="about-links">
-                    <a href="<?= h($dirindexRepoUrl) ?>" target="_blank" rel="noopener noreferrer">Repository</a>
-                    <a href="<?= h($dirindexRepoUrl . '/releases') ?>" target="_blank" rel="noopener noreferrer">Releases</a>
-                    <a href="<?= h($dirindexRepoUrl . '/blob/main/CHANGELOG.md') ?>" target="_blank" rel="noopener noreferrer">Changelog</a>
+                    <a href="<?= h($dirindexRepoUrl) ?>" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v12"/><circle cx="6" cy="18" r="3"/><path d="M18 3v6"/><circle cx="18" cy="9" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                        <span>Repository</span>
+                    </a>
+                    <a href="<?= h($dirindexRepoUrl . '/releases') ?>" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                        <span>Releases</span>
+                    </a>
+                    <a href="<?= h($dirindexRepoUrl . '/blob/main/CHANGELOG.md') ?>" target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                        <span>Changelog</span>
+                    </a>
                 </div>
             </div>
         </div>
