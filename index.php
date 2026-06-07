@@ -1373,6 +1373,40 @@ function fileTypeIconHtml($ext, $isDir = false, $compact = false) {
         . '</span>';
 }
 
+function dirindexHljsClassForLang($lang) {
+    $lang = (string) $lang;
+    if ($lang === '' || $lang === 'plaintext') {
+        return '';
+    }
+    if ($lang === 'markup') {
+        return 'language-html';
+    }
+    return 'language-' . $lang;
+}
+
+function dirindexHljsScriptForLang($lang) {
+    static $map = [
+        'markdown' => 'markdown',
+        'markup' => 'xml',
+        'css' => 'css',
+        'scss' => 'scss',
+        'sass' => 'scss',
+        'less' => 'less',
+        'json' => 'json',
+        'xml' => 'xml',
+        'yaml' => 'yaml',
+        'php' => 'php',
+        'python' => 'python',
+        'ruby' => 'ruby',
+        'bash' => 'bash',
+        'sql' => 'sql',
+        'ini' => 'ini',
+        'typescript' => 'typescript',
+        'javascript' => 'javascript',
+    ];
+    return $map[(string) $lang] ?? null;
+}
+
 function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $isText, $size, $mtime, array $previewExts, $ext) {
     $name = basename($relativePath);
     $downloadParams = ['download' => '1'];
@@ -1382,6 +1416,8 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     $downloadUrl = shareUrl($indexHref, $share['token'], $downloadParams);
     $mtimeFormatted = ($mtime !== null && $mtime >= 0 && $mtime <= 2147483647) ? @date('Y-m-d H:i', (int) $mtime) : '—';
     $previewHtml = '';
+    $previewLang = null;
+    $isCodePreview = false;
     if ($isText) {
         $raw = @file_get_contents($absolutePath);
         if ($raw !== false) {
@@ -1393,8 +1429,12 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
                 if ($ext === 'md' || $ext === 'markdown') {
                     $previewHtml = '<div class="preview-md">' . markdownToHtml($raw) . '</div>';
                 } else {
+                    $previewLang = $lang;
+                    $isCodePreview = true;
+                    $hlClass = dirindexHljsClassForLang($lang);
+                    $codeAttrs = $hlClass !== '' ? ' class="' . h($hlClass) . '"' : '';
                     $escaped = htmlspecialchars($raw, ENT_QUOTES, 'UTF-8');
-                    $previewHtml = '<pre class="preview-code"><code>' . $escaped . '</code></pre>';
+                    $previewHtml = '<pre class="preview-code hljs"><code' . $codeAttrs . '>' . $escaped . '</code></pre>';
                 }
             }
         }
@@ -1402,9 +1442,10 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     $css = '
     :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; --accent-dim: #7c3aed; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: 2rem; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: clamp(1rem, 3vw, 2rem); }
     .page { max-width: 720px; margin: 0 auto; }
-    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; }
+    .page--wide { max-width: min(1100px, calc(100vw - 2rem)); }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
     .file-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
     .file-header-text { min-width: 0; }
     h1 { margin: 0 0 0.5rem; font-size: 1.5rem; word-break: break-word; }
@@ -1429,9 +1470,16 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .preview { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); }
     .preview h2 { font-size: 1rem; color: var(--text-muted); margin: 0 0 1rem; font-weight: 500; }
     .preview-md h1, .preview-md h2, .preview-md h3 { margin-top: 1.25em; }
-    .preview-code { background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
+    .preview-code { margin: 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
+    .preview-code code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: pre; }
     ';
-    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="card">';
+    $hljsCdn = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/';
+    $headExtra = '';
+    if ($isCodePreview) {
+        $headExtra = '<link rel="stylesheet" href="' . h($hljsCdn) . 'styles/atom-one-dark.min.css">';
+    }
+    $pageClass = $isCodePreview ? 'page page--wide' : 'page';
+    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . $headExtra . '<style>' . $css . '</style></head><body><div class="' . $pageClass . '"><div class="card">';
     $html .= '<div class="file-header">';
     $html .= fileTypeIconHtml($ext, false);
     $html .= '<div class="file-header-text"><h1>' . h($name) . '</h1>';
@@ -1440,7 +1488,18 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     if ($previewHtml !== '') {
         $html .= '<div class="preview"><h2>Preview</h2>' . $previewHtml . '</div>';
     }
-    $html .= '</div></div></body></html>';
+    $html .= '</div></div>';
+    if ($isCodePreview) {
+        $html .= '<script src="' . h($hljsCdn) . 'highlight.min.js"></script>';
+        if ($previewLang !== null && $previewLang !== 'plaintext') {
+            $scriptLang = dirindexHljsScriptForLang($previewLang);
+            if ($scriptLang !== null) {
+                $html .= '<script src="' . h($hljsCdn) . 'languages/' . h($scriptLang) . '.min.js"></script>';
+            }
+        }
+        $html .= '<script>var el=document.querySelector(".preview-code code");if(el&&window.hljs)hljs.highlightElement(el);</script>';
+    }
+    $html .= '</body></html>';
     return $html;
 }
 
