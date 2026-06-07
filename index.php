@@ -6,6 +6,11 @@
 
 header('X-Content-Type-Options: nosniff');
 
+/** Semver; updated by scripts/release.sh when tagging a release. */
+$dirindexVersion = '1.0.0';
+$dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
+$dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';
+
 // Listing root: prefer document root, but when the script is the index of a subfolder (or symlinked from it),
 // use that folder's parent so ?path=dokuwiki etc. list siblings.
 $baseDir = __DIR__;
@@ -2118,6 +2123,22 @@ $openLoginModal = $hasUploadCredentials && !$authenticated && !$inShareMode && (
 $openAccountModal = $authenticated && !$inShareMode && (
     isset($_GET['msg']) && in_array((string) $_GET['msg'], ['account_mismatch', 'account_missing', 'account_saved', 'account_short_password'], true)
 );
+$settingsPanelFocus = null;
+$openSettingsModal = $authenticated && !$inShareMode && isset($_GET['msg']) && in_array((string) $_GET['msg'], [
+    'settings_saved',
+    'settings_write_failed',
+    'ip_access_invalid',
+    'ip_header_invalid',
+    'path_access_invalid',
+], true);
+if ($openSettingsModal) {
+    $settingsMsg = (string) $_GET['msg'];
+    if (in_array($settingsMsg, ['ip_access_invalid', 'ip_header_invalid'], true)) {
+        $settingsPanelFocus = 'network';
+    } elseif ($settingsMsg === 'path_access_invalid') {
+        $settingsPanelFocus = 'path';
+    }
+}
 $existingNames = [];
 foreach ($items as $item) {
     $existingNames[] = $item['name'];
@@ -2995,6 +3016,56 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-size: 0.8rem;
             color: var(--text-muted);
         }
+        .footer-about-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            font-size: inherit;
+            color: inherit;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-color: transparent;
+            transition: color 0.15s ease, text-decoration-color 0.15s ease;
+        }
+        .footer-about-link:hover,
+        .footer-about-link:focus-visible {
+            color: var(--accent);
+            text-decoration-color: currentColor;
+        }
+        .about-intro {
+            margin: 0 0 1rem;
+            line-height: 1.55;
+            color: var(--text);
+        }
+        .about-meta {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.35rem 1rem;
+            margin: 0 0 1.25rem;
+            font-size: 0.9rem;
+        }
+        .about-meta dt {
+            margin: 0;
+            color: var(--text-muted);
+        }
+        .about-meta dd {
+            margin: 0;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.85rem;
+            word-break: break-word;
+        }
+        .about-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 0.75rem;
+        }
+        .about-links a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .about-links a:hover { text-decoration: underline; }
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
@@ -3004,7 +3075,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .settings-modal .modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0; }
         .login-modal-panel,
         .account-modal-panel,
-        .share-modal-panel { max-width: 440px; }
+        .share-modal-panel,
+        .about-modal-panel { max-width: 440px; }
         .shares-list-panel { max-width: 1100px; }
         .share-item-display {
             padding: 0.55rem 0.65rem;
@@ -3333,6 +3405,75 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             font-size: 0.95rem;
         }
+        .settings-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--bg) 88%, var(--bg-card));
+        }
+        .settings-panel + .settings-panel,
+        .settings-server-form + .settings-panel {
+            margin-top: 0.65rem;
+        }
+        .settings-panel-summary {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+        .settings-panel-summary::-webkit-details-marker { display: none; }
+        .settings-panel-summary::before {
+            content: '';
+            width: 0.45rem;
+            height: 0.45rem;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: rotate(-45deg);
+            transition: transform 0.15s ease;
+            flex-shrink: 0;
+        }
+        .settings-panel[open] > .settings-panel-summary::before {
+            transform: rotate(45deg);
+        }
+        .settings-panel-summary-main {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            min-width: 0;
+            flex: 1;
+        }
+        .settings-panel-title {
+            color: var(--text);
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+        .settings-panel-hint {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 400;
+            line-height: 1.35;
+        }
+        .settings-panel-body {
+            display: grid;
+            gap: 0.8rem;
+            padding: 0 1rem 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .settings-panel--danger {
+            border-color: color-mix(in srgb, #f87171 35%, var(--border));
+        }
+        .settings-panel--danger .settings-panel-title {
+            color: #f87171;
+        }
+        .settings-server-form {
+            display: grid;
+            gap: 0.65rem;
+        }
+        .settings-form-footer {
+            padding-top: 0.15rem;
+        }
         .settings-form {
             display: grid;
             gap: 0.8rem;
@@ -3562,7 +3703,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
     </style>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -3701,6 +3842,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </button>
                 <?php endif; ?>
+                <button type="button" class="btn-settings" id="btn-about" aria-label="About" title="About" aria-haspopup="dialog" aria-controls="about-modal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
                 <button type="button" class="btn-settings" id="btn-settings" aria-label="Settings" title="Settings" aria-haspopup="dialog" aria-controls="settings-modal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                 </button>
@@ -3973,7 +4117,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
 
         <footer>
-            <?= count($items) + ($hasParent ? 1 : 0) ?> item(s) &nbsp;·&nbsp; PHP directory index
+            <?= count($items) + ($hasParent ? 1 : 0) ?> item(s) &nbsp;·&nbsp;
+            <button type="button" class="footer-about-link" id="footer-about">php-dirindex v<?= h($dirindexVersion) ?></button>
         </footer>
     </div>
 
@@ -4042,6 +4187,33 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     </div>
     <?php endif; ?>
 
+    <div id="about-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal about-modal-panel" role="dialog" aria-modal="true" aria-labelledby="about-title">
+            <div class="modal-header">
+                <span class="modal-title" id="about-title">About</span>
+                <button type="button" class="modal-close" id="about-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="about-intro">A single-file PHP directory index with navigation, in-browser previews, optional uploads, and share links. Drop <code>index.php</code> into any folder and open it in a browser.</p>
+                <dl class="about-meta">
+                    <dt>Project</dt>
+                    <dd>php-dirindex</dd>
+                    <dt>Version</dt>
+                    <dd><?= h($dirindexVersion) ?></dd>
+                    <dt>Build</dt>
+                    <dd><?= h($dirindexBuildLabel) ?></dd>
+                    <dt>PHP</dt>
+                    <dd><?= h(PHP_VERSION) ?></dd>
+                </dl>
+                <div class="about-links">
+                    <a href="<?= h($dirindexRepoUrl) ?>" target="_blank" rel="noopener noreferrer">Repository</a>
+                    <a href="<?= h($dirindexRepoUrl . '/releases') ?>" target="_blank" rel="noopener noreferrer">Releases</a>
+                    <a href="<?= h($dirindexRepoUrl . '/blob/main/CHANGELOG.md') ?>" target="_blank" rel="noopener noreferrer">Changelog</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="settings-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
             <div class="modal-header">
@@ -4069,103 +4241,155 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </section>
 
                 <?php if ($authenticated && !$inShareMode): ?>
-                <section class="settings-section" aria-labelledby="server-settings-title">
-                    <h3 id="server-settings-title">Server settings</h3>
-                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
-                        <input type="hidden" name="action" value="settings">
-                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="upload_enabled" value="1" <?= $uploadEnabled ? 'checked' : '' ?>>
-                            <span>Enable uploads</span>
-                        </label>
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="create_enabled" value="1" <?= $createEnabled ? 'checked' : '' ?>>
-                            <span>Allow creating folders and files</span>
-                        </label>
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="delete_enabled" value="1" <?= $deleteEnabled ? 'checked' : '' ?>>
-                            <span>Allow deleting folders and files</span>
-                        </label>
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="browse_requires_auth" value="1" <?= !empty($dirindexConfig['browse_requires_auth']) ? 'checked' : '' ?>>
-                            <span>Require sign-in to browse files</span>
-                        </label>
-                        <p class="settings-help">When enabled, visitors must sign in to view listings or open files. Valid share links still work without signing in.</p>
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
-                            <span>Show symlinks in listings</span>
-                        </label>
-                        <label class="settings-check-row">
-                            <input type="checkbox" name="allow_open_symlinks_outside" value="1" <?= !empty($dirindexConfig['allow_open_symlinks_outside']) ? 'checked' : '' ?>>
-                            <span>Allow opening symlinks outside the listing root</span>
-                        </label>
-                        <div class="settings-field">
-                            <label for="admin-upload-max">Upload limit in bytes</label>
-                            <input type="number" id="admin-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" value="<?= h((string) ((int) ($dirindexConfig['upload_max_bytes'] ?? 0))) ?>">
-                            <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
+                <form class="settings-form settings-server-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="settings-server-form">
+                    <input type="hidden" name="action" value="settings">
+                    <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+
+                    <details class="settings-panel" id="settings-panel-permissions" data-settings-panel="permissions" open>
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Permissions &amp; uploads</span>
+                                <span class="settings-panel-hint">Upload, create, delete, and browse sign-in</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="upload_enabled" value="1" <?= $uploadEnabled ? 'checked' : '' ?>>
+                                <span>Enable uploads</span>
+                            </label>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="create_enabled" value="1" <?= $createEnabled ? 'checked' : '' ?>>
+                                <span>Allow creating folders and files</span>
+                            </label>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="delete_enabled" value="1" <?= $deleteEnabled ? 'checked' : '' ?>>
+                                <span>Allow deleting folders and files</span>
+                            </label>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="browse_requires_auth" value="1" <?= !empty($dirindexConfig['browse_requires_auth']) ? 'checked' : '' ?>>
+                                <span>Require sign-in to browse files</span>
+                            </label>
+                            <p class="settings-help">When enabled, visitors must sign in to view listings or open files. Valid share links still work without signing in.</p>
+                            <div class="settings-field">
+                                <label for="admin-upload-max">Upload limit in bytes</label>
+                                <input type="number" id="admin-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" value="<?= h((string) ((int) ($dirindexConfig['upload_max_bytes'] ?? 0))) ?>">
+                                <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
+                            </div>
                         </div>
-                        <div class="settings-field">
-                            <label for="admin-path-whitelist">Path whitelist</label>
-                            <textarea id="admin-path-whitelist" name="path_whitelist" rows="4" spellcheck="false" placeholder="public/&#10;docs"><?= h(formatPathAccessListForInput($pathWhitelist)) ?></textarea>
-                            <span class="settings-help">One path per line, relative to the index root. When non-empty, only these paths (and parent folders needed to reach them) are visible. Use a trailing slash or a slash in the path (e.g. <code>public/</code>) for a folder tree; a name without a slash (e.g. <code>README.md</code>) matches that basename anywhere. Share links bypass path rules.</span>
+                    </details>
+
+                    <details class="settings-panel" id="settings-panel-filesystem" data-settings-panel="filesystem">
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Filesystem</span>
+                                <span class="settings-panel-hint">Symlink visibility and follow rules</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="show_symlinks" value="1" <?= !empty($dirindexConfig['show_symlinks']) ? 'checked' : '' ?>>
+                                <span>Show symlinks in listings</span>
+                            </label>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="allow_open_symlinks_outside" value="1" <?= !empty($dirindexConfig['allow_open_symlinks_outside']) ? 'checked' : '' ?>>
+                                <span>Allow opening symlinks outside the listing root</span>
+                            </label>
                         </div>
-                        <div class="settings-field">
-                            <label for="admin-path-blacklist">Path blacklist</label>
-                            <textarea id="admin-path-blacklist" name="path_blacklist" rows="4" spellcheck="false" placeholder="private/&#10;backups/old&#10;.git&#10;node_modules"><?= h(formatPathAccessListForInput($pathBlacklist)) ?></textarea>
-                            <span class="settings-help">One path per line. Same rule syntax as the whitelist. Matching paths are omitted from listings and blocked unless opened via a valid share link.</span>
+                    </details>
+
+                    <details class="settings-panel" id="settings-panel-path" data-settings-panel="path">
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Path access</span>
+                                <span class="settings-panel-hint">Whitelist and blacklist paths in this index</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <div class="settings-field">
+                                <label for="admin-path-whitelist">Path whitelist</label>
+                                <textarea id="admin-path-whitelist" name="path_whitelist" rows="4" spellcheck="false" placeholder="public/&#10;docs"><?= h(formatPathAccessListForInput($pathWhitelist)) ?></textarea>
+                                <span class="settings-help">One path per line, relative to the index root. When non-empty, only these paths (and parent folders needed to reach them) are visible. Use a trailing slash or a slash in the path (e.g. <code>public/</code>) for a folder tree; a name without a slash (e.g. <code>README.md</code>) matches that basename anywhere. Share links bypass path rules.</span>
+                            </div>
+                            <div class="settings-field">
+                                <label for="admin-path-blacklist">Path blacklist</label>
+                                <textarea id="admin-path-blacklist" name="path_blacklist" rows="4" spellcheck="false" placeholder="private/&#10;backups/old&#10;.git&#10;node_modules"><?= h(formatPathAccessListForInput($pathBlacklist)) ?></textarea>
+                                <span class="settings-help">One path per line. Same rule syntax as the whitelist. Matching paths are omitted from listings and blocked unless opened via a valid share link.</span>
+                            </div>
                         </div>
-                        <div class="settings-field">
-                            <label for="admin-ip-whitelist">IP whitelist</label>
-                            <textarea id="admin-ip-whitelist" name="ip_whitelist" rows="4" spellcheck="false" placeholder="192.168.1.0/24&#10;10.0.0.0/8"><?= h(formatIpAccessListForInput($ipWhitelist)) ?></textarea>
-                            <span class="settings-help">One IP or CIDR per line. When non-empty, only these addresses can browse the index (loopback and share links are always allowed).</span>
+                    </details>
+
+                    <details class="settings-panel" id="settings-panel-network" data-settings-panel="network">
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Network access</span>
+                                <span class="settings-panel-hint">IP whitelist, blacklist, and reverse proxy header</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <div class="settings-field">
+                                <label for="admin-ip-whitelist">IP whitelist</label>
+                                <textarea id="admin-ip-whitelist" name="ip_whitelist" rows="4" spellcheck="false" placeholder="192.168.1.0/24&#10;10.0.0.0/8"><?= h(formatIpAccessListForInput($ipWhitelist)) ?></textarea>
+                                <span class="settings-help">One IP or CIDR per line. When non-empty, only these addresses can browse the index (loopback and share links are always allowed).</span>
+                            </div>
+                            <div class="settings-field">
+                                <label for="admin-ip-blacklist">IP blacklist</label>
+                                <textarea id="admin-ip-blacklist" name="ip_blacklist" rows="4" spellcheck="false" placeholder="203.0.113.50"><?= h(formatIpAccessListForInput($ipBlacklist)) ?></textarea>
+                                <span class="settings-help">One IP or CIDR per line. Matching addresses are always denied unless they have a valid share link.</span>
+                            </div>
+                            <div class="settings-field">
+                                <label for="admin-ip-header">Client IP header (reverse proxy)</label>
+                                <?php
+                                $ipHeaderCurrent = (string) ($dirindexConfig['ip_header'] ?? '');
+                                $ipHeaderPresets = [
+                                    '' => 'REMOTE_ADDR (direct connection)',
+                                    'HTTP_X_FORWARDED_FOR' => 'X-Forwarded-For',
+                                    'HTTP_X_REAL_IP' => 'X-Real-IP',
+                                    'HTTP_CF_CONNECTING_IP' => 'CF-Connecting-IP (Cloudflare)',
+                                ];
+                                ?>
+                                <select id="admin-ip-header" name="ip_header">
+                                    <?php foreach ($ipHeaderPresets as $value => $label): ?>
+                                    <option value="<?= h($value) ?>"<?= $ipHeaderCurrent === $value ? ' selected' : '' ?>><?= h($label) ?></option>
+                                    <?php endforeach; ?>
+                                    <?php if ($ipHeaderCurrent !== '' && !isset($ipHeaderPresets[$ipHeaderCurrent])): ?>
+                                    <option value="<?= h($ipHeaderCurrent) ?>" selected><?= h($ipHeaderCurrent) ?> (custom)</option>
+                                    <?php endif; ?>
+                                </select>
+                                <span class="settings-help">Use when behind a reverse proxy so whitelist/blacklist see the real client IP. If left on REMOTE_ADDR but requests come from a private proxy address, X-Real-IP / X-Forwarded-For are used automatically.</span>
+                            </div>
+                            <?php if ($clientIp !== ''): ?>
+                            <p class="settings-detected-ip settings-help">Your detected IP: <code id="detected-client-ip"><?= h($clientIp) ?></code> (from <?= h(clientIpSourceLabel($clientIpSource)) ?><?php if ($clientIpProxy !== ''): ?>, via proxy <?= h($clientIpProxy) ?><?php endif; ?>)</p>
+                            <?php if ($clientIpProxy !== '' && trim((string) ($dirindexConfig['ip_header'] ?? '')) === ''): ?>
+                            <p class="settings-help">Requests reach PHP through a reverse proxy. Consider setting Client IP header to X-Forwarded-For so detection stays explicit.</p>
+                            <?php endif; ?>
+                            <div class="settings-inline-actions">
+                                <button type="button" class="btn-auth btn-auth-secondary" id="btn-add-current-ip">Add my IP to whitelist</button>
+                            </div>
+                            <?php endif; ?>
                         </div>
-                        <div class="settings-field">
-                            <label for="admin-ip-blacklist">IP blacklist</label>
-                            <textarea id="admin-ip-blacklist" name="ip_blacklist" rows="4" spellcheck="false" placeholder="203.0.113.50"><?= h(formatIpAccessListForInput($ipBlacklist)) ?></textarea>
-                            <span class="settings-help">One IP or CIDR per line. Matching addresses are always denied unless they have a valid share link.</span>
-                        </div>
-                        <div class="settings-field">
-                            <label for="admin-ip-header">Client IP header (reverse proxy)</label>
-                            <?php
-                            $ipHeaderCurrent = (string) ($dirindexConfig['ip_header'] ?? '');
-                            $ipHeaderPresets = [
-                                '' => 'REMOTE_ADDR (direct connection)',
-                                'HTTP_X_FORWARDED_FOR' => 'X-Forwarded-For',
-                                'HTTP_X_REAL_IP' => 'X-Real-IP',
-                                'HTTP_CF_CONNECTING_IP' => 'CF-Connecting-IP (Cloudflare)',
-                            ];
-                            ?>
-                            <select id="admin-ip-header" name="ip_header">
-                                <?php foreach ($ipHeaderPresets as $value => $label): ?>
-                                <option value="<?= h($value) ?>"<?= $ipHeaderCurrent === $value ? ' selected' : '' ?>><?= h($label) ?></option>
-                                <?php endforeach; ?>
-                                <?php if ($ipHeaderCurrent !== '' && !isset($ipHeaderPresets[$ipHeaderCurrent])): ?>
-                                <option value="<?= h($ipHeaderCurrent) ?>" selected><?= h($ipHeaderCurrent) ?> (custom)</option>
-                                <?php endif; ?>
-                            </select>
-                            <span class="settings-help">Use when behind a reverse proxy so whitelist/blacklist see the real client IP. If left on REMOTE_ADDR but requests come from a private proxy address, X-Real-IP / X-Forwarded-For are used automatically.</span>
-                        </div>
-                        <?php if ($clientIp !== ''): ?>
-                        <p class="settings-detected-ip settings-help">Your detected IP: <code id="detected-client-ip"><?= h($clientIp) ?></code> (from <?= h(clientIpSourceLabel($clientIpSource)) ?><?php if ($clientIpProxy !== ''): ?>, via proxy <?= h($clientIpProxy) ?><?php endif; ?>)</p>
-                        <?php if ($clientIpProxy !== '' && trim((string) ($dirindexConfig['ip_header'] ?? '')) === ''): ?>
-                        <p class="settings-help">Requests reach PHP through a reverse proxy. Consider setting Client IP header to X-Forwarded-For so detection stays explicit.</p>
-                        <?php endif; ?>
-                        <div class="settings-inline-actions">
-                            <button type="button" class="btn-auth btn-auth-secondary" id="btn-add-current-ip">Add my IP to whitelist</button>
-                        </div>
-                        <?php endif; ?>
+                    </details>
+
+                    <div class="settings-form-footer">
                         <button type="submit" class="btn-auth">Save server settings</button>
-                    </form>
-                </section>
-                <section class="settings-section" aria-labelledby="reset-settings-title">
-                    <h3 id="reset-settings-title">Reset</h3>
-                    <p class="settings-help">Delete <?= h(basename(dirindexStoragePath(__DIR__))) ?> and return to first-run setup. This removes the admin account, server settings, and share links. Files in the directory are not deleted.</p>
-                    <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="reset-settings-form">
-                        <input type="hidden" name="action" value="reset">
-                        <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
-                        <button type="button" class="btn-auth btn-auth-danger" id="btn-reset-settings">Reset all settings</button>
-                    </form>
-                </section>
+                    </div>
+                </form>
+
+                <details class="settings-panel settings-panel--danger" id="settings-panel-reset" data-settings-panel="reset">
+                    <summary class="settings-panel-summary">
+                        <span class="settings-panel-summary-main">
+                            <span class="settings-panel-title">Reset</span>
+                            <span class="settings-panel-hint">Delete settings storage and return to setup</span>
+                        </span>
+                    </summary>
+                    <div class="settings-panel-body">
+                        <p class="settings-help">Delete <?= h(basename(dirindexStoragePath(__DIR__))) ?> and return to first-run setup. This removes the admin account, server settings, and share links. Files in the directory are not deleted.</p>
+                        <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="reset-settings-form">
+                            <input type="hidden" name="action" value="reset">
+                            <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                            <button type="button" class="btn-auth btn-auth-danger" id="btn-reset-settings">Reset all settings</button>
+                        </form>
+                    </div>
+                </details>
                 <?php endif; ?>
             </div>
         </div>
@@ -4847,6 +5071,40 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 }
             }
             uploadForm.requestSubmit();
+        });
+    })();
+
+    (function() {
+        var aboutOverlay = document.getElementById('about-modal');
+        var btnAbout = document.getElementById('btn-about');
+        var footerAbout = document.getElementById('footer-about');
+        var aboutClose = document.getElementById('about-close');
+        if (!aboutOverlay || !aboutClose) return;
+
+        var aboutTrigger = btnAbout || footerAbout;
+
+        function openAbout() {
+            aboutOverlay.classList.add('is-open');
+            aboutOverlay.setAttribute('aria-hidden', 'false');
+            window.setTimeout(function() { aboutClose.focus(); }, 0);
+        }
+        function closeAbout() {
+            aboutOverlay.classList.remove('is-open');
+            aboutOverlay.setAttribute('aria-hidden', 'true');
+            if (aboutTrigger) aboutTrigger.focus();
+        }
+
+        if (btnAbout) btnAbout.addEventListener('click', openAbout);
+        if (footerAbout) footerAbout.addEventListener('click', openAbout);
+        aboutClose.addEventListener('click', closeAbout);
+        aboutOverlay.addEventListener('click', function(e) {
+            if (e.target === aboutOverlay) closeAbout();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && aboutOverlay.classList.contains('is-open')) {
+                closeAbout();
+                e.stopPropagation();
+            }
         });
     })();
 

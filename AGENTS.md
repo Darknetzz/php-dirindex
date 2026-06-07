@@ -13,6 +13,7 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | File | Purpose |
 |------|---------|
 | `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
+| `$dirindexVersion` in `index.php` | Semver shown in the About modal; bumped by `scripts/release.sh` when tagging |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
 | `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, and pushes to `origin` + `github` |
 | `scripts/changelog-section.sh` | Prints one version's section from `CHANGELOG.md` (used by release script and GitHub Actions) |

@@ -115,6 +115,32 @@ finalize_changelog() {
     mv "$tmp" "$CHANGELOG"
 }
 
+update_index_version() {
+    local tag="$1"
+    local version="${tag#v}"
+    local file="$ROOT/index.php"
+
+    if [[ ! -f "$file" ]]; then
+        echo "Missing index.php" >&2
+        exit 1
+    fi
+
+    if ! grep -q "^\$dirindexVersion = '" "$file"; then
+        echo "index.php must define \$dirindexVersion for release tagging" >&2
+        exit 1
+    fi
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "dry-run: would set \$dirindexVersion to ${version} in index.php"
+        return
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    sed "s/^\(\$dirindexVersion = '\)[^']*';/\1${version}';/" "$file" > "$tmp"
+    mv "$tmp" "$file"
+}
+
 prompt_for_tag() {
     local latest default
     latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname 2>/dev/null | head -1)"
@@ -203,6 +229,9 @@ run() {
 echo "==> Finalizing CHANGELOG.md"
 finalize_changelog "$TAG"
 
+echo "==> Updating index.php version"
+update_index_version "$TAG"
+
 if [[ "$MESSAGE_EXPLICIT" -eq 0 ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
         echo "dry-run: annotated tag message and GitHub release body would use the CHANGELOG section for $TAG"
@@ -217,8 +246,8 @@ if [[ "$MESSAGE_EXPLICIT" -eq 0 ]]; then
 fi
 
 if [[ "$DRY_RUN" -ne 1 ]]; then
-    if ! git diff --quiet CHANGELOG.md; then
-        run git add CHANGELOG.md
+    if ! git diff --quiet CHANGELOG.md index.php; then
+        run git add CHANGELOG.md index.php
         run git commit -m "Prepare release $TAG"
     fi
 fi
