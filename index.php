@@ -4218,7 +4218,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <?php endif; ?>
 
         <div class="listing">
-            <?php $currentDirNewTabUrl = currentListingUrl($indexHref, $relativePath); ?>
+            <?php $currentDirNewTabUrl = $inShareMode ? currentListingUrl($indexHref, $relativePath) : directEntryUrl($relativePath, true); ?>
             <div class="listing-toolbar">
                 <div class="listing-toolbar-start">
                     <div class="listing-col-picker">
@@ -4250,7 +4250,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         Reset sort
                     </button>
                 </div>
-                <a class="btn-listing-tool" href="<?= h($currentDirNewTabUrl) ?>" target="_blank" rel="noopener noreferrer" title="Open this folder listing in a new tab" aria-label="Open this folder listing in a new tab">
+                <a class="btn-listing-tool" href="<?= h($currentDirNewTabUrl) ?>" target="_blank" rel="noopener noreferrer" title="Open this folder at the web root URL in a new tab" aria-label="Open this folder at the web root URL in a new tab">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                     Open in new tab
                 </a>
@@ -4308,7 +4308,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <td class="name dir ft-type--dir">
                             <?php
                             $parentUrl = currentListingUrl($indexHref, $parentRel);
-                            $parentNewTabUrl = currentListingUrl($indexHref, $parentRel);
+                            $parentNewTabUrl = $inShareMode ? $parentUrl : directEntryUrl($parentRel, true);
                             ?>
                             <div class="name-content">
                                 <a href="<?= h($parentUrl) ?>">
@@ -4333,7 +4333,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     foreach ($items as $item):
                         if ($item['isDir']) {
                             $url = currentListingUrl($indexHref, $item['path']);
-                            $newTabUrl = $url;
+                            $newTabUrl = $inShareMode ? $url : directEntryUrl($item['path'], true);
                             $linkAttrs = '';
                         } else {
                             if ($inShareMode) {
@@ -4399,7 +4399,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 </button>
                                 <?php endif; ?>
                                 <?php if (!$inShareMode || $item['isDir']): ?>
-                                <a class="entry-open-new" href="<?= h($newTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?><?= $item['isDir'] ? ' folder listing' : '' ?> in new tab" title="Open in new tab">
+                                <a class="entry-open-new" href="<?= h($newTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
                                 <?php endif; ?>

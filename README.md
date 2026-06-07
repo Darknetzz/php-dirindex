@@ -34,7 +34,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `upload_max_bytes` | `0` | Per-file upload limit in bytes; `0` uses PHP/web-server limits. |
 | `path_whitelist` | `[]` | When non-empty, only matching paths are visible/browsable (see below). |
 | `path_blacklist` | `[]` | Matching paths hidden from listings and blocked from index access (see below). |
-| `web_root_url` | *(auto)* | Public URL base for **Open in new tab** links (absolute URL or path from the site root). Saved during setup from the current request; leave empty in Settings to keep auto-detecting from the index script path. |
+| `web_root_url` | *(auto)* | Public URL base for **Open in new tab** links to files and folders (absolute URL or path from the site root). Saved during setup from the current request; leave empty in Settings to keep auto-detecting from the index script path. |
 
 **Path access** (Settings → Server settings when signed in as admin):
 
