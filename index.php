@@ -98,9 +98,9 @@ function formatIpAccessListForInput(array $list) {
 }
 
 /**
- * Parse newline- or comma-separated hidden path rules from settings input.
+ * Parse newline- or comma-separated path access rules from settings input.
  */
-function parseHiddenPathsInput($text) {
+function parsePathAccessListInput($text) {
     $text = str_replace([',', ';'], "\n", (string) $text);
     $entries = [];
     foreach (preg_split('/\R/', $text) as $line) {
@@ -112,7 +112,7 @@ function parseHiddenPathsInput($text) {
     return $entries;
 }
 
-function formatHiddenPathsForInput(array $list) {
+function formatPathAccessListForInput(array $list) {
     return implode("\n", array_map('strval', $list));
 }
 
@@ -250,7 +250,7 @@ function suggestSafeEntryName($name) {
     return $candidate;
 }
 
-function normalizeRelativePathForHidden($path) {
+function normalizeRelativePathForAccess($path) {
     $path = trim(str_replace('\\', '/', (string) $path), '/');
     if ($path === '' || relativePathHasTraversal($path) || str_contains($path, "\0")) {
         return null;
@@ -258,7 +258,7 @@ function normalizeRelativePathForHidden($path) {
     return $path;
 }
 
-function normalizeHiddenPathRule($entry) {
+function normalizePathAccessRule($entry) {
     $entry = trim(str_replace('\\', '/', (string) $entry));
     $entry = trim($entry, '/');
     if ($entry === '' || relativePathHasTraversal($entry) || str_contains($entry, "\0")) {
@@ -267,13 +267,13 @@ function normalizeHiddenPathRule($entry) {
     return $entry;
 }
 
-function isValidHiddenPathEntry($entry) {
-    return normalizeHiddenPathRule($entry) !== null;
+function isValidPathAccessEntry($entry) {
+    return normalizePathAccessRule($entry) !== null;
 }
 
-function validateHiddenPathsList(array $entries, &$invalidEntry = null) {
+function validatePathAccessList(array $entries, &$invalidEntry = null) {
     foreach ($entries as $entry) {
-        if (!isValidHiddenPathEntry($entry)) {
+        if (!isValidPathAccessEntry($entry)) {
             $invalidEntry = $entry;
             return false;
         }
@@ -282,18 +282,18 @@ function validateHiddenPathsList(array $entries, &$invalidEntry = null) {
 }
 
 /**
- * Whether a relative path (from index root) matches a hidden-path rule.
+ * Whether a relative path (from index root) matches a path access rule.
  * Rules without a slash match any path segment or basename; rules with a slash
  * match that path and anything beneath it.
  */
-function pathMatchesHiddenRule($relativePath, $entry) {
-    $relativePath = normalizeRelativePathForHidden($relativePath);
+function pathMatchesAccessRule($relativePath, $entry) {
+    $relativePath = normalizeRelativePathForAccess($relativePath);
     $entryRaw = trim(str_replace('\\', '/', (string) $entry));
     if ($relativePath === null || $entryRaw === '') {
         return false;
     }
     $rootPathRule = str_contains($entryRaw, '/') || str_ends_with($entryRaw, '/');
-    $rule = normalizeHiddenPathRule($entry);
+    $rule = normalizePathAccessRule($entry);
     if ($rule === null) {
         return false;
     }
@@ -311,21 +311,56 @@ function pathMatchesHiddenRule($relativePath, $entry) {
     return false;
 }
 
-function isHiddenRelativePath($relativePath, array $hiddenPaths) {
-    $relativePath = normalizeRelativePathForHidden($relativePath);
+function pathMatchesAccessList($relativePath, array $entries) {
+    $relativePath = normalizeRelativePathForAccess($relativePath);
     if ($relativePath === null) {
         return false;
     }
-    foreach ($hiddenPaths as $entry) {
-        if (pathMatchesHiddenRule($relativePath, $entry)) {
+    foreach ($entries as $entry) {
+        if (pathMatchesAccessRule($relativePath, $entry)) {
             return true;
         }
     }
     return false;
 }
 
-function denyHiddenRelativePathAccess($relativePath, array $hiddenPaths) {
-    if (!isHiddenRelativePath($relativePath, $hiddenPaths)) {
+function pathAllowedByWhitelist($relativePath, array $pathWhitelist) {
+    $trimmed = trim(str_replace('\\', '/', (string) $relativePath), '/');
+    if ($trimmed === '' || relativePathHasTraversal($trimmed) || str_contains($trimmed, "\0")) {
+        return $trimmed === '' && $pathWhitelist !== [];
+    }
+    if (pathMatchesAccessList($relativePath, $pathWhitelist)) {
+        return true;
+    }
+    foreach ($pathWhitelist as $entry) {
+        $rule = normalizePathAccessRule($entry);
+        if ($rule === null) {
+            continue;
+        }
+        $entryRaw = trim(str_replace('\\', '/', (string) $entry));
+        $rootPathRule = str_contains($entryRaw, '/') || str_ends_with($entryRaw, '/');
+        if ($rootPathRule && str_starts_with($rule, $trimmed . '/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isPathAccessDenied($relativePath, array $pathWhitelist, array $pathBlacklist, $inShareMode = false) {
+    if ($inShareMode) {
+        return false;
+    }
+    if (pathMatchesAccessList($relativePath, $pathBlacklist)) {
+        return true;
+    }
+    if ($pathWhitelist !== [] && !pathAllowedByWhitelist($relativePath, $pathWhitelist)) {
+        return true;
+    }
+    return false;
+}
+
+function denyPathAccessIfNeeded($relativePath, array $pathWhitelist, array $pathBlacklist, $inShareMode = false) {
+    if (!isPathAccessDenied($relativePath, $pathWhitelist, $pathBlacklist, $inShareMode)) {
         return false;
     }
     header('HTTP/1.1 404 Not Found');
@@ -570,13 +605,13 @@ function deleteFilesystemEntry($absolutePath) {
     return false;
 }
 
-function resolveDeletableEntry($relativePath, $baseDir, $realBase, $allowOutside, array $hiddenPaths) {
+function resolveDeletableEntry($relativePath, $baseDir, $realBase, $allowOutside, array $pathWhitelist, array $pathBlacklist, $inShareMode = false) {
     $relativePath = trim(str_replace('\\', '/', (string) $relativePath), '/');
     if ($relativePath === '' || relativePathHasTraversal($relativePath) || str_contains($relativePath, "\0")) {
         return ['ok' => false, 'error' => 'delete_invalid'];
     }
-    if (isHiddenRelativePath($relativePath, $hiddenPaths)) {
-        return ['ok' => false, 'error' => 'path_hidden'];
+    if (isPathAccessDenied($relativePath, $pathWhitelist, $pathBlacklist, $inShareMode)) {
+        return ['ok' => false, 'error' => 'path_denied'];
     }
     if (dirindexIsHiddenListingEntry(basename($relativePath))) {
         return ['ok' => false, 'error' => 'delete_blocked'];
@@ -681,12 +716,13 @@ function dirindexStoredConfigKeys() {
         'auth_username',
         'auth_password_hash',
         'upload_max_bytes',
-        'hidden_paths',
+        'path_whitelist',
+        'path_blacklist',
     ];
 }
 
 function dirindexArraySettingKeys() {
-    return ['ip_whitelist', 'ip_blacklist', 'hidden_paths'];
+    return ['ip_whitelist', 'ip_blacklist', 'path_whitelist', 'path_blacklist'];
 }
 
 function dirindexEncodeStoredValue($key, $value) {
@@ -1134,7 +1170,8 @@ $dirindexConfig = [
     'auth_username'             => '',
     'auth_password_hash'        => '',
     'upload_max_bytes'          => 0,
-    'hidden_paths'              => [],
+    'path_whitelist'            => [],
+    'path_blacklist'            => [],
     'session_name'              => 'dirindex_upload',
 ];
 $dirindexStorage = [];
@@ -1143,7 +1180,14 @@ $storedConfig = dirindexImportLegacyConfigIfNeeded(__DIR__, $storedConfig);
 if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
 }
-$hiddenPaths = isset($dirindexConfig['hidden_paths']) && is_array($dirindexConfig['hidden_paths']) ? array_values($dirindexConfig['hidden_paths']) : [];
+$pathWhitelist = isset($dirindexConfig['path_whitelist']) && is_array($dirindexConfig['path_whitelist']) ? array_values($dirindexConfig['path_whitelist']) : [];
+$pathBlacklist = isset($dirindexConfig['path_blacklist']) && is_array($dirindexConfig['path_blacklist']) ? array_values($dirindexConfig['path_blacklist']) : [];
+if ($pathBlacklist === [] && isset($dirindexConfig['hidden_paths']) && is_array($dirindexConfig['hidden_paths'])) {
+    $legacyHiddenPaths = array_values($dirindexConfig['hidden_paths']);
+    if ($legacyHiddenPaths !== []) {
+        $pathBlacklist = $legacyHiddenPaths;
+    }
+}
 $allowOutside = !empty($dirindexConfig['allow_open_symlinks_outside']);
 $hasUploadCredentials = hasUploadCredentials($dirindexConfig);
 $setupNeeded = !$hasUploadCredentials;
@@ -1185,11 +1229,6 @@ if ($shareRequestToken !== '') {
     }
     $inShareMode = true;
     $shareTokenActive = $shareContext['token'];
-    if (isHiddenRelativePath(trim($shareContext['path'], '/'), $hiddenPaths)) {
-        header('HTTP/1.1 404 Not Found');
-        header('Content-Type: text/plain; charset=UTF-8');
-        exit('Not found.');
-    }
 }
 
 // IP access check (whitelist / blacklist with CIDR support)
@@ -1416,7 +1455,7 @@ if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
 }
 
 if ($relativePath !== '') {
-    denyHiddenRelativePathAccess($relativePath, $hiddenPaths);
+    denyPathAccessIfNeeded($relativePath, $pathWhitelist, $pathBlacklist, $inShareMode);
     $requestedPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
     $requestedReal = realpath($requestedPath);
     if ($inShareMode && isset($_GET['download']) && is_file($requestedPath) && $requestedReal !== false && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
@@ -1584,14 +1623,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $maxBytesInt = ($maxBytes !== '' && ctype_digit($maxBytes)) ? (int) $maxBytes : 0;
         $ipWhitelistEntries = parseIpAccessListInput($_POST['ip_whitelist'] ?? '');
         $ipBlacklistEntries = parseIpAccessListInput($_POST['ip_blacklist'] ?? '');
-        $hiddenPathsEntries = parseHiddenPathsInput($_POST['hidden_paths'] ?? '');
+        $pathWhitelistEntries = parsePathAccessListInput($_POST['path_whitelist'] ?? '');
+        $pathBlacklistEntries = parsePathAccessListInput($_POST['path_blacklist'] ?? '');
         $invalidIpEntry = null;
-        $invalidHiddenEntry = null;
+        $invalidPathEntry = null;
         if (!validateIpAccessList($ipWhitelistEntries, $invalidIpEntry) || !validateIpAccessList($ipBlacklistEntries, $invalidIpEntry)) {
             redirectToCurrentListing($indexHref, $relativePath, 'ip_access_invalid');
         }
-        if (!validateHiddenPathsList($hiddenPathsEntries, $invalidHiddenEntry)) {
-            redirectToCurrentListing($indexHref, $relativePath, 'hidden_paths_invalid');
+        if (!validatePathAccessList($pathWhitelistEntries, $invalidPathEntry) || !validatePathAccessList($pathBlacklistEntries, $invalidPathEntry)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'path_access_invalid');
         }
         $ipHeader = normalizeIpHeaderInput($_POST['ip_header'] ?? '');
         if ($ipHeader === null) {
@@ -1608,7 +1648,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
-            'hidden_paths' => $hiddenPathsEntries,
+            'path_whitelist' => $pathWhitelistEntries,
+            'path_blacklist' => $pathBlacklistEntries,
             'ip_header' => $ipHeader,
         ], $saveError);
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'settings_saved' : 'settings_write_failed');
@@ -1671,8 +1712,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         $uploadRelativePath = $relativePath !== '' ? $relativePath . '/' . $name : $name;
-        if (isHiddenRelativePath($uploadRelativePath, $hiddenPaths)) {
-            redirectToCurrentListing($indexHref, $relativePath, 'path_hidden');
+        if (isPathAccessDenied($uploadRelativePath, $pathWhitelist, $pathBlacklist)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'path_denied');
         }
         $maxBytes = isset($dirindexConfig['upload_max_bytes']) ? (int) $dirindexConfig['upload_max_bytes'] : 0;
         $size = isset($file['size']) ? (int) $file['size'] : 0;
@@ -1713,8 +1754,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, 'create_bad_name');
         }
         $createRelativePath = $relativePath !== '' ? $relativePath . '/' . $name : $name;
-        if (isHiddenRelativePath($createRelativePath, $hiddenPaths)) {
-            redirectToCurrentListing($indexHref, $relativePath, 'path_hidden');
+        if (isPathAccessDenied($createRelativePath, $pathWhitelist, $pathBlacklist)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'path_denied');
         }
         $entryType = (string) ($_POST['entry_type'] ?? '');
         $destination = $currentPath . DIRECTORY_SEPARATOR . $name;
@@ -1747,7 +1788,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, $deleteEnabled ? 'auth_required' : 'delete_disabled');
         }
         $entryPath = trim(str_replace('\\', '/', (string) ($_POST['entry_path'] ?? '')), '/');
-        $resolved = resolveDeletableEntry($entryPath, $baseDir, $realBase, $allowOutside, $hiddenPaths);
+        $resolved = resolveDeletableEntry($entryPath, $baseDir, $realBase, $allowOutside, $pathWhitelist, $pathBlacklist);
         if (!$resolved['ok']) {
             redirectToCurrentListing($indexHref, $relativePath, $resolved['error']);
         }
@@ -1779,8 +1820,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($sharePath === '' || relativePathHasTraversal($sharePath) || str_contains($sharePath, "\0")) {
             redirectToCurrentListing($indexHref, $relativePath, 'share_failed');
         }
-        if (isHiddenRelativePath($sharePath, $hiddenPaths)) {
-            redirectToCurrentListing($indexHref, $relativePath, 'path_hidden');
+        if (isPathAccessDenied($sharePath, $pathWhitelist, $pathBlacklist)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'path_denied');
         }
         $shareAbs = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $sharePath);
         $shareResolved = resolveShareableEntry($shareAbs, $realBase, $allowOutside);
@@ -1857,7 +1898,7 @@ if ($handle) {
         if ($entry === '.' || $entry === '..') continue;
         if (dirindexIsHiddenListingEntry($entry)) continue;
         $entryRelativePath = $relativePath !== '' ? $relativePath . '/' . $entry : $entry;
-        if (isHiddenRelativePath($entryRelativePath, $hiddenPaths)) continue;
+        if (isPathAccessDenied($entryRelativePath, $pathWhitelist, $pathBlacklist, $inShareMode)) continue;
         $full = $currentPath . DIRECTORY_SEPARATOR . $entry;
         clearstatcache(false, $full);
         $isLink = is_link($full);
@@ -1925,8 +1966,8 @@ $messageMap = [
     'settings_write_failed' => ['error', 'Could not save settings. Check file permissions.'],
     'ip_access_invalid' => ['error', 'Access list contains an invalid IP address or CIDR range.'],
     'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
-    'hidden_paths_invalid' => ['error', 'Hidden paths list contains an invalid entry. Use relative paths without ..'],
-    'path_hidden' => ['error', 'That path is hidden and cannot be accessed.'],
+    'path_access_invalid' => ['error', 'Path access list contains an invalid entry. Use relative paths without ..'],
+    'path_denied' => ['error', 'That path is not allowed.'],
     'upload_bad_name' => ['error', 'Upload filename is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
     'upload_exists' => ['error', 'A file with that name already exists. Confirm overwrite and try again.'],
     'upload_failed' => ['error', 'Upload failed.'],
@@ -1985,7 +2026,7 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
     $openParam = trim((string) $_GET['open'], '/');
     if ($openParam !== '' && isSafeEntryName($openParam)) {
         $openFilePath = $relativePath !== '' ? $relativePath . '/' . $openParam : $openParam;
-        if (isHiddenRelativePath($openFilePath, $hiddenPaths)) {
+        if (isPathAccessDenied($openFilePath, $pathWhitelist, $pathBlacklist, $inShareMode)) {
             $blockedMessage = 'This path is not available.';
         } else {
         $openAbsPath = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $openFilePath);
@@ -3951,9 +3992,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
                         </div>
                         <div class="settings-field">
-                            <label for="admin-hidden-paths">Hidden paths</label>
-                            <textarea id="admin-hidden-paths" name="hidden_paths" rows="5" spellcheck="false" placeholder="private/&#10;backups/old&#10;.git&#10;node_modules"><?= h(formatHiddenPathsForInput($hiddenPaths)) ?></textarea>
-                            <span class="settings-help">One path per line, relative to the index root. Use a trailing slash or a slash in the path (e.g. <code>private/</code> or <code>backups/old</code>) to hide that folder and everything inside it. A name without a slash (e.g. <code>.git</code>) hides any file or folder with that name anywhere. Hidden items are omitted from listings and cannot be opened, downloaded, uploaded to, or shared through the index.</span>
+                            <label for="admin-path-whitelist">Path whitelist</label>
+                            <textarea id="admin-path-whitelist" name="path_whitelist" rows="4" spellcheck="false" placeholder="public/&#10;docs"><?= h(formatPathAccessListForInput($pathWhitelist)) ?></textarea>
+                            <span class="settings-help">One path per line, relative to the index root. When non-empty, only these paths (and parent folders needed to reach them) are visible. Use a trailing slash or a slash in the path (e.g. <code>public/</code>) for a folder tree; a name without a slash (e.g. <code>README.md</code>) matches that basename anywhere. Share links bypass path rules.</span>
+                        </div>
+                        <div class="settings-field">
+                            <label for="admin-path-blacklist">Path blacklist</label>
+                            <textarea id="admin-path-blacklist" name="path_blacklist" rows="4" spellcheck="false" placeholder="private/&#10;backups/old&#10;.git&#10;node_modules"><?= h(formatPathAccessListForInput($pathBlacklist)) ?></textarea>
+                            <span class="settings-help">One path per line. Same rule syntax as the whitelist. Matching paths are omitted from listings and blocked unless opened via a valid share link.</span>
                         </div>
                         <div class="settings-field">
                             <label for="admin-ip-whitelist">IP whitelist</label>

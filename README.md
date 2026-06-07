@@ -29,14 +29,18 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `auth_username` | — | Admin login username. |
 | `auth_password_hash` | — | Password hash from `password_hash()` (not plain text). |
 | `upload_max_bytes` | `0` | Per-file upload limit in bytes; `0` uses PHP/web-server limits. |
-| `hidden_paths` | `[]` | Paths hidden from listings and blocked from index access (see below). |
+| `path_whitelist` | `[]` | When non-empty, only matching paths are visible/browsable (see below). |
+| `path_blacklist` | `[]` | Matching paths hidden from listings and blocked from index access (see below). |
 
-**Hidden paths** (Settings → Server settings when signed in as admin):
+**Path access** (Settings → Server settings when signed in as admin):
 
 - One relative path per line (from the index root). Lines starting with `#` are ignored.
-- **Folder path** (trailing slash or contains `/`, e.g. `private/` or `backups/old`): hides that path from the index root and everything beneath it.
-- **Name rule** (no slash, e.g. `.git` or `.env`): hides any file or folder with that name anywhere in the tree.
-- Hidden items are omitted from listings and cannot be opened, previewed, downloaded, uploaded to, or shared through the index. Share links to hidden paths return 404. This applies to the directory index only; protect sensitive files at the web-server level if they must not be reachable by direct URL.
+- **Folder path** (trailing slash or contains `/`, e.g. `public/` or `backups/old`): matches that path and everything beneath it.
+- **Name rule** (no slash, e.g. `.git` or `.env`): matches any file or folder with that name anywhere in the tree.
+- **Path blacklist** — matching paths are omitted from listings and cannot be opened, previewed, downloaded, uploaded to, or shared through the index (unless opened via a valid share link).
+- **Path whitelist** — when non-empty, only whitelisted paths (and parent folders needed to reach them) are visible and browsable; everything else is hidden/blocked. When empty, no whitelist restriction applies (blacklist still applies).
+- Legacy `hidden_paths` values are treated as `path_blacklist` until settings are saved again.
+- This applies to the directory index only; protect sensitive files at the web-server level if they must not be reachable by direct URL.
 
 **Access control** (Settings → Server settings when signed in as admin):
 
@@ -46,7 +50,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 
 These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if needed.
 
-**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
+**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP and path whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 
 Example URLs:
 

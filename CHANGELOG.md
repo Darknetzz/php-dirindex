@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`path_whitelist` / `path_blacklist`** — replace `hidden_paths` with separate path whitelist and blacklist (same combined logic as IP access). Legacy `hidden_paths` values migrate to `path_blacklist` on load. Share links bypass path rules.
 - GitHub releases and annotated tags use the version's `CHANGELOG.md` section as the release description (via `scripts/changelog-section.sh`)
 
 ### Fixed

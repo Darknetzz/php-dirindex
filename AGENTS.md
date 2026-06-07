@@ -31,8 +31,8 @@ Generated (not in git): `index.min.php` — deploy artifact from `scripts/build-
 - **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in `.dirindex.sqlite` (or `.dirindex.json` without SQLite). CSRF tokens protect all POST actions.
 - **Create entries** — Signed-in admins can create empty folders (`mkdir`) and files in the current listing directory via `create_entry` POST when `create_enabled` is true (default). Uses `cleanUploadFilename()` and blocks hidden storage names (`.dirindex.sqlite`, etc.). Independent of `upload_enabled`; toggle in Settings → Server settings.
-- **Access control** — Optional IP whitelist/blacklist with CIDR support; optional `ip_header` for reverse proxies.
-- **Share links** — Token-based public links stored in `.dirindex.sqlite` (`shares` table). Valid `?share=TOKEN` requests bypass IP checks. File shares render a download landing page; directory shares scope listing navigation to the shared folder. Create/revoke requires admin session + CSRF; viewing is read-only (POST blocked in share mode).
+- **Access control** — Optional IP whitelist/blacklist with CIDR support; optional path whitelist/blacklist with folder-prefix and basename rules; optional `ip_header` for reverse proxies.
+- **Share links** — Token-based public links stored in `.dirindex.sqlite` (`shares` table). Valid `?share=TOKEN` requests bypass IP and path access checks. File shares render a download landing page; directory shares scope listing navigation to the shared folder. Create/revoke requires admin session + CSRF; viewing is read-only (POST blocked in share mode).
 
 ## Development and testing
 
@@ -71,7 +71,7 @@ Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `i
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 
-No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP restrictions, and share links (create, copy, browse, download, expiry/revoke, IP bypass).
+No automated test suite exists. Verify changes manually in a browser: listing, `?path=` navigation, file preview modal, upload flow (if enabled), create folder/file when signed in, symlink/IP/path restrictions, and share links (create, copy, browse, download, expiry/revoke, IP and path bypass).
 
 ## Code conventions
 
