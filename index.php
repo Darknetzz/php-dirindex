@@ -3484,8 +3484,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .settings-panel-body {
             display: grid;
-            gap: 0.8rem;
-            padding: 0 1rem 1rem;
+            gap: 1rem;
+            padding: 1rem 1rem 1.25rem;
             border-top: 1px solid var(--border);
         }
         .settings-panel--danger {
