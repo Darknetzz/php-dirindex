@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **File checksums** — expanding checksums on a broken symbolic link shows an error instead of hanging indefinitely
+- **Broken symlinks** — detect unresolved symlinks when the link does not resolve to a readable file or directory (not only when `realpath()` fails)
 
 ## [1.2.4] - 2026-06-11
 

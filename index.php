@@ -684,7 +684,10 @@ function pathLogicalUnderBase($absolutePath, $realBase) {
 }
 
 function isBrokenSymbolicLink($path) {
-    return is_link($path) && realpath($path) === false;
+    if (!is_link($path)) {
+        return false;
+    }
+    return !is_file($path) && !is_dir($path);
 }
 
 function metaRequestAllowed($requestedPath, $requestedReal, $realBase, $allowOutside) {
@@ -2611,7 +2614,7 @@ if ($handle) {
             continue;
         }
         $isFile = is_file($full);
-        $isBrokenLink = $isLink && realpath($full) === false;
+        $isBrokenLink = isBrokenSymbolicLink($full);
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
         $previewKind = $isFile ? filePreviewKind($full, $ext, $previewExts, $previewBlocklist, $imagePreviewEnabled) : false;
         $entryPerms = @fileperms($full);
@@ -3716,6 +3719,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             align-items: center;
             gap: 0.5rem;
             min-width: 0;
+            flex-wrap: wrap;
         }
         .listing .name a:hover { filter: brightness(1.12); }
         .listing .name.ft-type--dir a { color: var(--ft-dir); }
@@ -3735,7 +3739,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing .name.ft-type--symlink-broken .entry-name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ft-symlink-broken) 55%, transparent); }
         .entry-broken-badge {
             display: inline-block;
-            margin-left: 0.35rem;
+            flex-shrink: 0;
+            margin-left: 0.15rem;
             padding: 0.05rem 0.35rem;
             font-size: 0.65rem;
             font-weight: 600;
@@ -3746,6 +3751,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-radius: 4px;
             vertical-align: middle;
             line-height: 1.3;
+            white-space: nowrap;
         }
         .listing .name a.file-preview,
         .listing .name a.file-binary { cursor: pointer; }
