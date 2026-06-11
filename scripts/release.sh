@@ -318,7 +318,7 @@ else
         exit 1
     fi
 
-    REPO_ARGS=( "$(gh_release_repo_args)" )
+    mapfile -t REPO_ARGS < <(gh_release_repo_flag)
     if gh release view "$TAG" "${REPO_ARGS[@]}" >/dev/null 2>&1; then
         gh release upload "$TAG" "${REPO_ARGS[@]}" \
             "$DIST/index.php" "$DIST/index.min.php" "$ROOT/$ZIP_NAME" --clobber

@@ -6,7 +6,7 @@ gh_repo_slug() {
         echo "Remote 'github' is not configured." >&2
         return 1
     fi
-    git remote get-url github | sed -E 's#.*github.com[:/]([^/]+/[^/]+?)(\.git)?$#\1#'
+    git remote get-url github | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##'
 }
 
 require_gh() {
@@ -24,8 +24,8 @@ require_gh() {
     fi
 }
 
-gh_release_repo_args() {
+gh_release_repo_flag() {
     local repo
     repo="$(gh_repo_slug)" || return 1
-    printf '%s' "--repo" "$repo"
+    printf '%s\n%s' --repo "$repo"
 }

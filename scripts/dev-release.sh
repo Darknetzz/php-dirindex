@@ -50,7 +50,7 @@ require_gh
 
 SHA="$(git rev-parse HEAD)"
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-REPO_ARGS=( "$(gh_release_repo_args)" )
+mapfile -t REPO_ARGS < <(gh_release_repo_flag)
 
 restore_index_php() {
     if [[ -f index.php.bak.dev-release ]]; then
