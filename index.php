@@ -11,38 +11,6 @@ $dirindexVersion = '1.1.0';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
 $dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';
 
-// Listing root: prefer document root, but when the script is the index of a subfolder (or symlinked from it),
-// use that folder's parent so ?path=dokuwiki etc. list siblings.
-$baseDir = __DIR__;
-if (!empty($_SERVER['DOCUMENT_ROOT'])) {
-    $docRootReal = realpath($_SERVER['DOCUMENT_ROOT']);
-    $scriptDir = realpath($baseDir);
-    if ($docRootReal) {
-        $scriptInDocRoot = ($scriptDir === $docRootReal || strpos($scriptDir, $docRootReal . DIRECTORY_SEPARATOR) === 0);
-        if (!$scriptInDocRoot) {
-            // Script is symlinked from doc root (e.g. /var/www/html/php-dirindex/index.php -> project): list doc root's parent
-            $parent = dirname($docRootReal);
-            if ($parent && $parent !== $docRootReal) {
-                $baseDir = $parent;
-            }
-        } elseif ($scriptDir === $docRootReal) {
-            // Script is inside doc root; doc root is a subfolder (e.g. php-dirindex): list its parent
-            $parent = dirname($docRootReal);
-            if ($parent && $parent !== $docRootReal) {
-                $baseDir = $parent;
-            }
-        } else {
-            $baseDir = $docRootReal;
-        }
-    }
-}
-$realBase = realpath($baseDir);
-if ($realBase === false) {
-    header('Content-Type: text/plain; charset=UTF-8');
-    header('HTTP/1.1 500 Internal Server Error');
-    exit('Base directory is not accessible.');
-}
-
 /**
  * Check if an IP matches a single entry (exact address or CIDR, e.g. 192.168.1.0/24).
  */
@@ -516,6 +484,40 @@ function clientIpSourceLabel($source) {
 }
 
 /**
+ * Resolve the directory used as the listing root.
+ * Default: folder containing this script. Optional legacy mode uses DOCUMENT_ROOT heuristics.
+ */
+function resolveListingBaseDir($scriptDir, $fromDocumentRoot) {
+    $baseDir = $scriptDir;
+    if (!$fromDocumentRoot || empty($_SERVER['DOCUMENT_ROOT'])) {
+        return $baseDir;
+    }
+    $docRootReal = realpath($_SERVER['DOCUMENT_ROOT']);
+    $scriptDirReal = realpath($scriptDir);
+    if (!$docRootReal || !$scriptDirReal) {
+        return $baseDir;
+    }
+    $scriptInDocRoot = ($scriptDirReal === $docRootReal || strpos($scriptDirReal, $docRootReal . DIRECTORY_SEPARATOR) === 0);
+    if (!$scriptInDocRoot) {
+        // Script is symlinked from doc root: list doc root's parent
+        $parent = dirname($docRootReal);
+        if ($parent && $parent !== $docRootReal) {
+            return $parent;
+        }
+        return $baseDir;
+    }
+    if ($scriptDirReal === $docRootReal) {
+        // Script is the doc root index: list doc root's parent
+        $parent = dirname($docRootReal);
+        if ($parent && $parent !== $docRootReal) {
+            return $parent;
+        }
+        return $baseDir;
+    }
+    return $docRootReal;
+}
+
+/**
  * Ensure a resolved path is under the base directory (prevents symlink escape).
  */
 function pathUnderBase($resolved, $realBase) {
@@ -724,6 +726,7 @@ function dirindexStoredConfigKeys() {
         'path_whitelist',
         'path_blacklist',
         'web_root_url',
+        'listing_from_document_root',
     ];
 }
 
@@ -767,7 +770,7 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
@@ -1294,6 +1297,7 @@ $dirindexConfig = [
     'path_whitelist'            => [],
     'path_blacklist'            => [],
     'web_root_url'              => '',
+    'listing_from_document_root' => false,
     'session_name'              => 'dirindex_upload',
 ];
 $dirindexStorage = [];
@@ -1301,6 +1305,13 @@ $storedConfig = loadDirindexStoredConfig(__DIR__, $dirindexStorage);
 $storedConfig = dirindexImportLegacyConfigIfNeeded(__DIR__, $storedConfig);
 if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
+}
+$baseDir = resolveListingBaseDir(__DIR__, !empty($dirindexConfig['listing_from_document_root']));
+$realBase = realpath($baseDir);
+if ($realBase === false) {
+    header('Content-Type: text/plain; charset=UTF-8');
+    header('HTTP/1.1 500 Internal Server Error');
+    exit('Base directory is not accessible.');
 }
 $effectiveWebRootUrl = effectiveWebRootUrl($dirindexConfig, $indexHref);
 $webRootUrlConfigured = trim((string) ($dirindexConfig['web_root_url'] ?? ''));
@@ -1839,6 +1850,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $saveError = null;
         $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
+            'listing_from_document_root' => isset($_POST['listing_from_document_root']) ? '1' : '0',
             'allow_open_symlinks_outside' => isset($_POST['allow_open_symlinks_outside']) ? '1' : '0',
             'upload_enabled' => isset($_POST['upload_enabled']) ? '1' : '0',
             'create_enabled' => isset($_POST['create_enabled']) ? '1' : '0',
@@ -4628,6 +4640,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             </span>
                         </summary>
                         <div class="settings-panel-body">
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="listing_from_document_root" value="1" <?= !empty($dirindexConfig['listing_from_document_root']) ? 'checked' : '' ?>>
+                                <span>Use document root as listing base</span>
+                            </label>
+                            <p class="settings-help">When enabled, listings start at the web server document root (or its parent when the script sits in or above the doc root). When disabled, listings start in the folder that contains this script.</p>
                             <div class="settings-field">
                                 <label for="admin-web-root-url">Web root URL</label>
                                 <input type="text" id="admin-web-root-url" name="web_root_url" value="<?= h($webRootUrlConfigured) ?>" spellcheck="false" autocomplete="off" placeholder="<?= h($webRootUrlDetected) ?>">

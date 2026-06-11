@@ -8,7 +8,7 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
 - **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.
 - **Create** empty folders and files in the current directory when signed in as admin (toolbar buttons in the listing). Same naming rules as uploads.
-- **Requires** PHP and a web server. Works when the script is symlinked or in a subdirectory; it uses `DOCUMENT_ROOT` when available so the index can show the server root.
+- **Requires** PHP and a web server. By default the index lists the folder where the script lives. Enable **Use document root as listing base** in Settings → Filesystem to list from the web server root instead (legacy behavior for symlinked or nested installs).
 
 **Settings storage:** Drop in a single PHP file (`index.php` or `index.min.php`). On first run, the setup wizard saves upload credentials and other settings locally in the same folder. You can optionally enable **private-network browsing** during setup (RFC1918, link-local, and IPv6 private ranges). If you complete setup from a public IP, your current address is added to the whitelist automatically so you are not locked out.
 
@@ -35,6 +35,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `path_whitelist` | `[]` | When non-empty, only matching paths are visible/browsable (see below). |
 | `path_blacklist` | `[]` | Matching paths hidden from listings and blocked from index access (see below). |
 | `web_root_url` | *(auto)* | Public URL base for **Open in new tab** links to files and folders (absolute URL or path from the site root). Saved during setup from the current request; leave empty in Settings to keep auto-detecting from the index script path. |
+| `listing_from_document_root` | `false` | When `true`, the listing root follows `DOCUMENT_ROOT` heuristics (web root, or its parent when the script is in or symlinked from the doc root). When `false`, the listing root is the folder containing `index.php`. |
 
 **Path access** (Settings → Server settings when signed in as admin):
 

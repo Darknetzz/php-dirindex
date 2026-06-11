@@ -27,7 +27,7 @@ Generated (not in git): `index.min.php` — deploy artifact from `scripts/build-
 
 ## How it works
 
-- **Listing root** — Resolves a base directory from `__DIR__` and `DOCUMENT_ROOT`, including symlink/subfolder cases so sibling directories can be listed.
+- **Listing root** — Defaults to `__DIR__` (the script folder). Optional `listing_from_document_root` uses `resolveListingBaseDir()` with `DOCUMENT_ROOT` heuristics (web root, or its parent for symlink/subfolder cases) so sibling directories can be listed.
 - **Navigation** — Subfolders use `?path=subfolder`. Breadcrumbs and a `..` row go up. Path traversal (`..`, null bytes) is rejected; resolved paths must stay under the base unless `allow_open_symlinks_outside` is enabled.
 - **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in `.dirindex.sqlite` (or `.dirindex.json` without SQLite). CSRF tokens protect all POST actions.
