@@ -1296,6 +1296,7 @@ function dirindexHttpRequest($url, $accept = '*/*', $timeoutSec = 15) {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT => $timeoutSec,
+            CURLOPT_ENCODING => '',
             CURLOPT_HTTPHEADER => ['User-Agent: ' . $userAgent, 'Accept: ' . $accept],
         ]);
         $body = curl_exec($ch);
@@ -1413,10 +1414,15 @@ function dirindexFetchRelease($repoUrl, $channel = 'stable') {
     $assets = [];
     if (!empty($data['assets']) && is_array($data['assets'])) {
         foreach ($data['assets'] as $asset) {
-            if (!is_array($asset) || empty($asset['name']) || empty($asset['browser_download_url'])) {
+            if (!is_array($asset) || empty($asset['name'])) {
                 continue;
             }
-            $assets[(string) $asset['name']] = (string) $asset['browser_download_url'];
+            $name = (string) $asset['name'];
+            if (!empty($asset['id'])) {
+                $assets[$name] = $apiBase . '/releases/assets/' . (int) $asset['id'];
+            } elseif (!empty($asset['browser_download_url'])) {
+                $assets[$name] = (string) $asset['browser_download_url'];
+            }
         }
     }
     $version = ltrim($tag, 'vV');
@@ -1444,10 +1450,15 @@ function validateDirindexPhpSource($content, $expectedVersion = null, $expectedB
         return 'Downloaded file is invalid.';
     }
     $len = strlen($content);
-    if ($len < 100000 || $len > 800000) {
-        return 'Downloaded file size is unexpected.';
+    $minLen = 50000;
+    if ($len < $minLen || $len > 800000) {
+        return 'Downloaded file size is unexpected (' . $len . ' bytes).';
     }
-    if (!preg_match('/^\xEF\xBB\xBF?<\?php/', $content)) {
+    $trimmed = ltrim($content);
+    if (preg_match('/^<!DOCTYPE html\b/i', $trimmed) || preg_match('/^<html\b/i', $trimmed)) {
+        return 'Could not download the update (GitHub returned HTML instead of the release file).';
+    }
+    if (!preg_match('/^\xEF\xBB\xBF?<\?php\b/', $trimmed)) {
         return 'Downloaded file is not a PHP script.';
     }
     if (!str_contains($content, '$dirindexVersion')) {
