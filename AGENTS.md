@@ -15,10 +15,13 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | `index.php` | The entire application (listing, preview, auth, uploads, UI); **source of truth** |
 | `$dirindexVersion` in `index.php` | Semver shown in the About modal; bumped by `scripts/release.sh` when tagging |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
-| `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, and pushes to `origin` + `github` |
-| `scripts/changelog-section.sh` | Prints one version's section from `CHANGELOG.md` (used by release script and GitHub Actions) |
+| `scripts/ci.sh` | Local CI: build min, syntax check, staleness check (replaces GitHub Actions) |
+| `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, pushes to `origin` + `github`, publishes stable release via `gh` |
+| `scripts/dev-release.sh` | Publishes/updates the rolling `dev` GitHub prerelease locally via `gh` |
+| `scripts/gh-release-common.sh` | Shared `gh` CLI helpers for release scripts |
+| `scripts/changelog-section.sh` | Prints one version's section from `CHANGELOG.md` (used by release script) |
 | `scripts/dev-release-notes.sh` | Release notes for the rolling `dev` GitHub prerelease |
-| `$dirindexBuildRef` in `index.php` | Short git ref; empty in source, set by dev-release CI before building artifacts |
+| `$dirindexBuildRef` in `index.php` | Short git ref; empty in source, embedded in dev release artifacts by `scripts/dev-release.sh` |
 | `CHANGELOG.md` | Keep a Changelog format; user-facing history of releases |
 | `README.md` | User-facing setup and configuration guide |
 | `.gitignore` | Ignores runtime files and generated `index.min.php` |
@@ -48,10 +51,13 @@ php -S localhost:8080
 # Build index.min.php for release (CSS/JS/HTML/comment minification)
 php scripts/build-min.php
 
-# Fail if index.min.php is missing or out of date (for CI)
-php scripts/build-min.php --check
+# Local CI (build, syntax, staleness)
+./scripts/ci.sh
 
-# Tag and push a release (prompts for version if omitted; build check; push to origin + github)
+# Publish rolling dev release to GitHub (after pushing dev)
+./scripts/dev-release.sh
+
+# Tag, push, and publish a stable release (prompts for version if omitted)
 ./scripts/release.sh
 
 # Generate a password hash for manual config
@@ -70,9 +76,9 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Default branch is **`dev`** (rolling dev releases and day-to-day work). Use `./scripts/release.sh v1.0.0` from `dev` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets and sets the GitHub release description from the version's CHANGELOG section via `scripts/changelog-section.sh`.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Default branch is **`dev`**. Releases are published **locally** with the `gh` CLI (`scripts/release.sh`, `scripts/dev-release.sh`) — there are no GitHub Actions workflows.
 
-**Dev channel:** Pushes to the `dev` branch on GitHub run `.github/workflows/dev-release.yml`, which embeds a short commit ref in `$dirindexBuildRef`, builds `index.min.php`, and updates the rolling prerelease at tag `dev`. The About modal **Dev** channel fetches that release (`/releases/tags/dev`) and compares build refs for update availability.
+**Dev channel:** After pushing `dev`, run `./scripts/dev-release.sh` to embed a short commit ref in `$dirindexBuildRef`, build `index.min.php`, and update the rolling prerelease at tag `dev`. The About modal **Dev** channel fetches that release (`/releases/tags/dev`) and compares build refs for update availability.
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 

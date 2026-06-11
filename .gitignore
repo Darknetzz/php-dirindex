@@ -2,3 +2,9 @@
 .dirindex.json
 config.php
 index.min.php
+dist/
+dist-dev/
+php-dirindex-*.zip
+dev-release-notes.md
+release-notes.md
+index.php.bak.*

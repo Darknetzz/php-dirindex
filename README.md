@@ -128,7 +128,24 @@ Or push both at once:
 git push origin dev && git push github dev
 ```
 
-**Publish a release** (script builds locally, tags, pushes to both remotes; GitHub Actions attaches release files):
+**Local checks** (replaces GitHub Actions CI — no Actions minutes used):
+
+```sh
+./scripts/ci.sh
+```
+
+Requires PHP only. Run before pushing when you want the same build + syntax checks the old workflow ran.
+
+**Rolling dev release** (About → Dev channel; requires [gh](https://cli.github.com/) authenticated):
+
+```sh
+git push origin dev && git push github dev
+./scripts/dev-release.sh
+```
+
+Embeds the current commit ref in release artifacts, builds `index.min.php`, and publishes/updates the `dev` prerelease on GitHub.
+
+**Stable release** (tags + GitHub Release assets; requires `gh`):
 
 ```sh
 ./scripts/release.sh                    # prompt; defaults to last tag + 1 patch (v1.0.0 → v1.0.1)
@@ -137,6 +154,6 @@ git push origin dev && git push github dev
 ./scripts/release.sh --dry-run          # preview only
 ```
 
-The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `dev` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page, with the release description taken from the same CHANGELOG section. Run it from the `dev` branch.
+The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `dev` if needed, pushes the tag to GitLab and GitHub, then publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page via `gh`. Run it from the `dev` branch.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md). Add bullets under `## [Unreleased]` as you make changes.

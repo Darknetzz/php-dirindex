@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Create a version tag and push it to GitLab + GitHub.
-# GitHub Actions (.github/workflows/release.yml) builds release assets when the tag lands on github.
+# Create a version tag, push to GitLab + GitHub, and publish release assets via gh CLI.
 #
 # Usage (from repo root):
 #   ./scripts/release.sh                  # prompt; default bumps last version segment
@@ -295,17 +294,50 @@ echo "==> Pushing tag to origin and github"
 run git push origin "$TAG"
 run git push github "$TAG"
 
+echo "==> Packaging release assets"
+DIST="$ROOT/dist"
+ZIP_NAME="php-dirindex-${TAG}.zip"
+NOTES_FILE="$ROOT/release-notes.md"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "dry-run: package dist/ and ${ZIP_NAME}"
+    echo "dry-run: scripts/changelog-section.sh ${TAG} > release-notes.md"
+    echo "dry-run: gh release create ${TAG} with assets"
+else
+    # shellcheck source=gh-release-common.sh
+    source "$ROOT/scripts/gh-release-common.sh"
+    require_gh
+
+    rm -rf "$DIST"
+    mkdir -p "$DIST"
+    cp index.php index.min.php README.md CHANGELOG.md "$DIST/"
+    (cd "$DIST" && zip -r "../${ZIP_NAME}" .)
+
+    "$ROOT/scripts/changelog-section.sh" "$TAG" > "$NOTES_FILE"
+    if [[ ! -s "$NOTES_FILE" ]]; then
+        echo "No CHANGELOG section for $TAG" >&2
+        exit 1
+    fi
+
+    REPO_ARGS=( "$(gh_release_repo_args)" )
+    if gh release view "$TAG" "${REPO_ARGS[@]}" >/dev/null 2>&1; then
+        gh release upload "$TAG" "${REPO_ARGS[@]}" \
+            "$DIST/index.php" "$DIST/index.min.php" "$ROOT/$ZIP_NAME" --clobber
+        gh release edit "$TAG" "${REPO_ARGS[@]}" --title "$TAG" --notes-file "$NOTES_FILE"
+    else
+        gh release create "$TAG" "${REPO_ARGS[@]}" \
+            --title "$TAG" --notes-file "$NOTES_FILE" \
+            "$DIST/index.php" "$DIST/index.min.php" "$ROOT/$ZIP_NAME"
+    fi
+fi
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "Dry run complete. No tag was created."
     exit 0
 fi
 
+REPO="$(git remote get-url github | sed -E 's#.*github.com[:/](.+)(\.git)?$#\1#')"
 cat <<EOF
 
-Release tag $TAG pushed.
-
-GitHub Actions will build index.php, index.min.php, and a zip, then publish:
-  https://github.com/$(git remote get-url github | sed -E 's#.*github.com[:/](.+)(\.git)?$#\1#')/releases/tag/$TAG
-
-Track the workflow under Actions on GitHub if it does not appear within a minute.
+Release $TAG published:
+  https://github.com/${REPO}/releases/tag/${TAG}
 EOF

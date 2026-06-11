@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/dev-release-notes.sh > dev-release-notes.md
 #
-# Expects GITHUB_SHA when run in CI; reads version/build ref from index.php.
+# Uses GITHUB_SHA when set; otherwise uses git HEAD. Reads version/build ref from index.php.
 
 set -euo pipefail
 
@@ -14,7 +14,7 @@ CHANGELOG="$ROOT/CHANGELOG.md"
 
 VERSION="$(grep -m1 '^\$dirindexVersion' "$INDEX" | sed -n "s/.*= '\([^']*\)'.*/\1/p")"
 BUILD_REF="$(grep -m1 '^\$dirindexBuildRef' "$INDEX" | sed -n "s/.*= '\([^']*\)'.*/\1/p")"
-SHA="${GITHUB_SHA:-unknown}"
+SHA="${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)}"
 SHORT_SHA="${SHA:0:7}"
 REF="${BUILD_REF:-$SHORT_SHA}"
 DATE="$(date -u +%Y-%m-%d)"

@@ -8,7 +8,7 @@ header('X-Content-Type-Options: nosniff');
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
 $dirindexVersion = '1.2.4';
-/** Short git ref; set by .github/workflows/dev-release.yml on rolling dev builds. */
+/** Short git ref; embedded in rolling dev release artifacts by scripts/dev-release.sh. */
 $dirindexBuildRef = '';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
 $dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';
