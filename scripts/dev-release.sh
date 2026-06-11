@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Publish or refresh the rolling dev GitHub prerelease locally.
-# Replaces .github/workflows/dev-release.yml — run after pushing dev when you
-# want About → Dev updates to see new artifacts.
+# Normally run automatically by scripts/git-push.sh after each push on dev
+# (install with scripts/install-hooks.sh).
 #
 # Usage (from repo root):
 #   ./scripts/dev-release.sh

@@ -115,6 +115,12 @@ git remote add github git@github.com:Darknetzz/php-dirindex.git
 git push -u github dev
 ```
 
+**One-time hook** (publish rolling dev release after each push on `dev`; requires `gh`):
+
+```sh
+./scripts/install-hooks.sh
+```
+
 **Day-to-day** (default branch is `dev`):
 
 ```sh
@@ -122,11 +128,7 @@ git push origin dev
 git push github dev
 ```
 
-Or push both at once:
-
-```sh
-git push origin dev && git push github dev
-```
+With hooks installed, a successful `git push` on `dev` also runs `./scripts/dev-release.sh` (updates the GitHub `dev` prerelease). Skip once: `SKIP_DEV_RELEASE=1 git push …`. Use plain git push: `git -c alias.push= push …`.
 
 **Local checks** (replaces GitHub Actions CI — no Actions minutes used):
 
@@ -136,14 +138,13 @@ git push origin dev && git push github dev
 
 Requires PHP only. Run before pushing when you want the same build + syntax checks the old workflow ran.
 
-**Rolling dev release** (About → Dev channel; requires [gh](https://cli.github.com/) authenticated):
+**Rolling dev release** (About → Dev channel): automatic after each `git push` on `dev` when hooks are installed, or run manually:
 
 ```sh
-git push origin dev && git push github dev
 ./scripts/dev-release.sh
 ```
 
-Embeds the current commit ref in release artifacts, builds `index.min.php`, and publishes/updates the `dev` prerelease on GitHub.
+Embeds the current commit ref in release artifacts, builds `index.min.php`, and publishes/updates the `dev` prerelease on GitHub via `gh`.
 
 **Stable release** (tags + GitHub Release assets; requires `gh`):
 

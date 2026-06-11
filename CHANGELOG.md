@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dev releases** — `./scripts/install-hooks.sh` wraps `git push` so each successful push on `dev` publishes the rolling prerelease locally (no GitHub Actions)
 - **Releases** — GitHub Actions removed; use local scripts instead: `./scripts/ci.sh` (checks), `./scripts/dev-release.sh` (rolling dev prerelease), `./scripts/release.sh` (stable tags + GitHub Release via `gh` CLI)
 - **Repository** — default branch is now `dev` (GitHub, GitLab, release script, and docs)
 - **File checksums** — binary and image files load metadata immediately; checksums are computed only when the **Checksums** panel is expanded (`?meta=1&hashes=1`)
