@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Release script** — after updating `CHANGELOG.md` and `index.php`, restores web-server read access (`chmod go+r` and `setfacl u:www-data:r` when available) so `mv`-via-`/tmp` does not bypass directory default ACLs
+- **Settings saved toast** — success feedback appears as a fixed toast at the bottom of the screen instead of overlapping the modal title
 
 ### Fixed
 

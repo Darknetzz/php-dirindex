@@ -3758,7 +3758,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
-        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); position: relative; }
+        .settings-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
         .settings-modal-message {
             margin: 0;
             font-size: 0.875rem;
@@ -3768,12 +3768,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             margin: 0 0 0.85rem;
         }
         .settings-modal-message--toast {
-            position: absolute;
-            top: 0.85rem;
+            position: fixed;
+            bottom: 1.75rem;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 2;
-            width: calc(100% - 2.5rem);
+            z-index: 1002;
+            width: min(420px, calc(100vw - 2rem));
             margin: 0;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
             pointer-events: none;
@@ -3783,12 +3783,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             animation: settingsToastOut 0.25s ease forwards;
         }
         @keyframes settingsToastIn {
-            from { opacity: 0; transform: translateX(-50%) translateY(-0.35rem); }
+            from { opacity: 0; transform: translateX(-50%) translateY(0.5rem); }
             to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
         @keyframes settingsToastOut {
             from { opacity: 1; transform: translateX(-50%) translateY(0); }
-            to { opacity: 0; transform: translateX(-50%) translateY(-0.35rem); }
+            to { opacity: 0; transform: translateX(-50%) translateY(0.5rem); }
         }
         .settings-modal .modal-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
         .settings-modal .modal-footer {
@@ -5067,11 +5067,6 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
     <div id="settings-modal" class="settings-overlay" aria-hidden="true">
         <div class="settings-modal settings-main-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <?php if ($settingsModalMessage && $settingsModalMessage[0] === 'success'): ?>
-            <div id="settings-modal-message" class="settings-modal-message blocked-msg message-success settings-modal-message--toast" role="status" aria-live="polite">
-                <?= h($settingsModalMessage[1]) ?>
-            </div>
-            <?php endif; ?>
             <div class="modal-header">
                 <span class="modal-title" id="settings-title">Settings</span>
                 <button type="button" class="modal-close" id="settings-close" aria-label="Close">&times;</button>
@@ -5304,6 +5299,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             </div>
             <?php endif; ?>
         </div>
+        <?php if ($settingsModalMessage && $settingsModalMessage[0] === 'success'): ?>
+        <div id="settings-modal-message" class="settings-modal-message blocked-msg message-success settings-modal-message--toast" role="status" aria-live="polite">
+            <?= h($settingsModalMessage[1]) ?>
+        </div>
+        <?php endif; ?>
     </div>
 
     <?php if ($authenticated && !$inShareMode): ?>
