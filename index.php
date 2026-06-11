@@ -2816,6 +2816,25 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                     'share_path'   => $openFilePath,
                 ];
             }
+        } elseif (is_link($openAbsPath) && isBrokenSymbolicLink($openAbsPath) && metaRequestAllowed($openAbsPath, $openReal, $realBase, $allowOutside)) {
+            $openName = basename($openFilePath);
+            $openLinkTarget = @readlink($openAbsPath);
+            $openMtime = @filemtime($openAbsPath);
+            $openMtimeFormatted = ($openMtime !== false && $openMtime >= 0 && $openMtime <= 2147483647) ? (@date('Y-m-d H:i', (int) $openMtime) ?: '—') : '—';
+            $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
+            $openFileForModal = [
+                'binary'       => true,
+                'broken_link'  => true,
+                'link_target'  => ($openLinkTarget !== false && $openLinkTarget !== '') ? $openLinkTarget : null,
+                'meta_url'     => currentListingUrl($indexHref, $openFilePath, ['meta' => '1']),
+                'name'         => $openName,
+                'size'         => '—',
+                'mtime'        => $openMtimeFormatted,
+                'perms'        => formatEntryPermissions($openAbsPath) ?? '',
+                'type'         => $openExt !== '' ? '.' . $openExt : '',
+                'icon_html'    => fileTypeIconHtml($openExt, false),
+                'share_path'   => $openFilePath,
+            ];
         } elseif (!$allowOutside && !$blockedMessage && $openReal !== false && is_file($openReal) && !pathUnderBase($openReal, $realBase)) {
             $blockedMessage = 'That link points outside the index and cannot be opened.';
         }
@@ -4835,7 +4854,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
     </script>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?><?php if (!empty($openFileForModal['broken_link'])): ?> data-open-broken-link="1"<?php endif; ?><?php if (!empty($openFileForModal['link_target'])): ?> data-open-link-target="<?= h($openFileForModal['link_target']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -5191,6 +5210,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <?php
                     foreach ($items as $item):
                         $brokenLinkAttr = !empty($item['isBrokenLink']) ? ' data-broken-link="1"' : '';
+                        $symlinkAttr = !empty($item['isLink']) ? ' data-is-symlink="1"' : '';
                         $linkTargetAttr = ($item['isLink'] && !empty($item['linkTarget'])) ? ' data-link-target="' . h($item['linkTarget']) . '"' : '';
                         $linkTitle = listingEntryLinkTitle($item);
                         if ($linkTitle === '' && !$item['isDir'] && empty($item['previewKind']) && empty($item['isLink'])) {
@@ -5200,7 +5220,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         if ($item['isDir']) {
                             $url = currentListingUrl($indexHref, $item['path']);
                             $newTabUrl = $inShareMode ? $url : directEntryUrl($item['path'], true);
-                            $linkAttrs = $linkTargetAttr;
+                            $linkAttrs = $symlinkAttr . $linkTargetAttr . $brokenLinkAttr;
                         } else {
                             if ($inShareMode) {
                                 $directUrl = currentListingUrl($indexHref, $item['path'], ['download' => '1']);
@@ -5231,6 +5251,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"'
                                     . $brokenLinkAttr
+                                    . $symlinkAttr
                                     . $linkTargetAttr;
                             } elseif ($item['previewKind'] === 'image') {
                                 $url = '#';
@@ -5244,6 +5265,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"'
                                     . $brokenLinkAttr
+                                    . $symlinkAttr
                                     . $linkTargetAttr;
                             } else {
                                 $url = '#';
@@ -5259,6 +5281,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-icon-html="' . h(fileTypeIconHtml($item['ext'], false)) . '"'
                                     . ' data-share-path="' . h($item['path']) . '"'
                                     . $brokenLinkAttr
+                                    . $symlinkAttr
                                     . $linkTargetAttr;
                             }
                         }
@@ -6630,16 +6653,36 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalBrokenBadge = document.getElementById('modal-broken-badge');
         var modalBrokenNotice = document.getElementById('modal-broken-notice');
 
+        function isEmptyMetaValue(value) {
+            var text = (value || '').trim();
+            return text === '' || text === '\u2014' || text === '-' || text === '\u002d';
+        }
+        function listingLinkIsBroken(el) {
+            if (!el) return false;
+            if (el.getAttribute('data-broken-link') === '1') return true;
+            if (el.getAttribute('data-is-symlink') !== '1') return false;
+            if (!el.getAttribute('data-link-target')) return false;
+            return isEmptyMetaValue(el.getAttribute('data-size'));
+        }
         function sharePathFromContentUrl(contentUrl, fileName) {
             if (!contentUrl) return fileName || '';
             var pathMatch = contentUrl.match(/[?&]path=([^&]+)/);
             if (!pathMatch) return fileName || '';
             return decodeURIComponent(pathMatch[1].replace(/\+/g, ' '));
         }
+        function resetModalActionLinks() {
+            setModalDownloadLink('');
+            setModalOpenLink('');
+            if (modalBinaryDownload) {
+                modalBinaryDownload.hidden = true;
+                modalBinaryDownload.removeAttribute('href');
+            }
+            if (shareBtn) shareBtn.hidden = true;
+        }
         function setModalSharePath(path) {
             currentSharePath = path || '';
             if (!shareBtn) return;
-            shareBtn.hidden = !currentSharePath;
+            shareBtn.hidden = modalBrokenLink || !currentSharePath;
             if (currentSharePath) shareBtn.setAttribute('data-share-path', currentSharePath);
             else shareBtn.removeAttribute('data-share-path');
         }
@@ -6860,8 +6903,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         modalHashesError = data.error;
                         modalMetaFallback.hashesError = data.error;
                     }
-                    if (data && data.broken_link) {
-                        setModalBrokenLinkState(true, data.link_target || modalMetaFallback.linkTarget || '');
+                    var metaBroken = !!(data && (data.broken_link || (data.link_target && isEmptyMetaValue(data.size_formatted))));
+                    if (metaBroken) {
+                        setModalBrokenLinkState(true, (data && data.link_target) || modalMetaFallback.linkTarget || '');
                     }
                     if (modalMetaHasHashValues(modalMetaFallback)) {
                         modalHashesLoaded = true;
@@ -6931,6 +6975,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 modalPanel.classList.remove('is-image');
                 modalPanel.classList.remove('is-markdown');
             }
+            resetModalActionLinks();
             setModalBrokenLinkState(false, '');
             clearModalMeta();
         }
@@ -7084,18 +7129,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var name = previewLink.getAttribute('data-name') || '';
                 var imageUrl = previewLink.getAttribute('data-image-url');
                 var openUrl = previewLink.getAttribute('data-open-url') || '';
-                var downloadUrl = previewLink.getAttribute('data-download-url') || '';
+                var broken = listingLinkIsBroken(previewLink);
+                var downloadUrl = broken ? '' : (previewLink.getAttribute('data-download-url') || '');
                 var sharePath = previewLink.getAttribute('data-share-path') || '';
+                var linkTarget = previewLink.getAttribute('data-link-target') || '';
                 if (imageUrl) {
                     var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
-                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl, previewLink.getAttribute('data-broken-link') === '1', previewLink.getAttribute('data-link-target') || '');
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl, broken, linkTarget);
                     return;
                 }
                 var contentUrl = previewLink.getAttribute('data-content-url');
                 if (!contentUrl) return;
                 sharePath = sharePath || sharePathFromContentUrl(contentUrl, name);
                 var listingUrl = buildListingUrlWithOpen(contentUrl, name, sharePath);
-                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink), downloadUrl, previewLink.getAttribute('data-broken-link') === '1');
+                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink), downloadUrl, broken);
                 return;
             }
             var binaryLink = e.target.closest('a.file-binary');
@@ -7103,7 +7150,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             e.preventDefault();
             var binaryName = binaryLink.getAttribute('data-name') || '';
             if (!binaryName) return;
-            var downloadUrl = binaryLink.getAttribute('data-download-url') || '';
+            var broken = listingLinkIsBroken(binaryLink);
+            var downloadUrl = broken ? '' : (binaryLink.getAttribute('data-download-url') || '');
             var binarySharePath = binaryLink.getAttribute('data-share-path') || '';
             var listingUrl = buildListingUrlWithOpen('', binaryName, binarySharePath);
             openBinaryModal(
@@ -7116,7 +7164,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 listingUrl,
                 metaFromElement(binaryLink),
                 binaryLink.getAttribute('data-meta-url') || '',
-                binaryLink.getAttribute('data-broken-link') === '1',
+                broken,
                 binaryLink.getAttribute('data-link-target') || ''
             );
         });
