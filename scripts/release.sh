@@ -53,6 +53,23 @@ suggest_next_tag() {
 
 CHANGELOG="$ROOT/CHANGELOG.md"
 
+# Files written via mktemp + mv do not inherit directory default ACLs; restore
+# www-data read for PHP-FPM deployments (best-effort when setfacl/www-data exist).
+ensure_web_server_readable() {
+    local file
+    for file in "$@"; do
+        [[ -f "$file" ]] || continue
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            echo "dry-run: would ensure web-server read access on ${file#"$ROOT"/}"
+            continue
+        fi
+        chmod go+r "$file" 2>/dev/null || true
+        if command -v setfacl >/dev/null 2>&1 && getent passwd www-data >/dev/null 2>&1; then
+            setfacl -m "u:www-data:r" "$file" 2>/dev/null || true
+        fi
+    done
+}
+
 changelog_has_unreleased_entries() {
     awk '
         /^## \[Unreleased\]/ { in_unreleased = 1; next }
@@ -232,6 +249,8 @@ finalize_changelog "$TAG"
 echo "==> Updating index.php version"
 update_index_version "$TAG"
 
+ensure_web_server_readable "$CHANGELOG" "$ROOT/index.php"
+
 if [[ "$MESSAGE_EXPLICIT" -eq 0 ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
         echo "dry-run: annotated tag message and GitHub release body would use the CHANGELOG section for $TAG"
@@ -254,6 +273,7 @@ fi
 
 echo "==> Verifying minified build"
 run php scripts/build-min.php
+ensure_web_server_readable "$ROOT/index.min.php"
 run php -l index.php
 run php -l index.min.php
 
