@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Markdown preview contrast** — code blocks use a theme-matched background (light in light mode, dark in dark mode) so highlight.js token colors stay readable; improved contrast for inline code, blockquotes, and table headers
 
 ## [1.2.1] - 2026-06-11
 

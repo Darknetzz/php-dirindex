@@ -1779,7 +1779,7 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
         $previewHtml = '<div class="preview-image"><img src="' . h($inlineUrl) . '" alt="' . h($name) . '"></div>';
     }
     $css = '
-    :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; --accent-dim: #7c3aed; }
+    :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; --accent-dim: #7c3aed; --md-pre-bg: #282c34; --md-code-bg: rgba(255,255,255,0.08); --md-quote: #a1a1aa; --md-th-bg: rgba(0,0,0,0.25); }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: clamp(1rem, 3vw, 2rem); }
     .page { max-width: 720px; margin: 0 auto; }
@@ -1808,14 +1808,16 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .btn-download:hover { background: var(--accent); }
     .preview { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); }
     .preview h2 { font-size: 1rem; color: var(--text-muted); margin: 0 0 1rem; font-weight: 500; }
-    .preview-md h1, .preview-md h2, .preview-md h3, .preview-md h4, .preview-md h5, .preview-md h6 { margin-top: 1.25em; margin-bottom: 0.5em; }
+    .preview-md { color: var(--text); }
+    .preview-md h1, .preview-md h2, .preview-md h3, .preview-md h4, .preview-md h5, .preview-md h6 { margin-top: 1.25em; margin-bottom: 0.5em; color: var(--text); }
     .preview-md p { margin: 0.5em 0; }
     .preview-md a { color: var(--accent); text-decoration: none; }
     .preview-md a:hover { text-decoration: underline; }
-    .preview-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.9em; background: rgba(0,0,0,0.25); padding: 0.15em 0.35em; border-radius: 4px; }
-    .preview-md pre { margin: 0.75em 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
+    .preview-md :not(pre) > code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.9em; background: var(--md-code-bg); color: var(--text); padding: 0.15em 0.35em; border-radius: 4px; }
+    .preview-md pre,
+    .preview-md pre.hljs { margin: 0.75em 0; background: var(--md-pre-bg) !important; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
     .preview-md pre code { display: block; background: none; padding: 0; white-space: pre; }
-    .preview-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--text-muted); }
+    .preview-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--md-quote); }
     .preview-md hr { border: none; border-top: 1px solid var(--border); margin: 1.25em 0; }
     .preview-md img { max-width: 100%; height: auto; border-radius: 8px; }
     .preview-md ul, .preview-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
@@ -1824,8 +1826,8 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .preview-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
     .preview-md .md-table-wrap { overflow-x: auto; margin: 0.75em 0; }
     .preview-md table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    .preview-md th, .preview-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
-    .preview-md th { background: rgba(0,0,0,0.2); font-weight: 600; }
+    .preview-md th, .preview-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; color: var(--text); }
+    .preview-md th { background: var(--md-th-bg); font-weight: 600; }
     .preview-code { margin: 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
     .preview-code code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: pre; }
     .preview-image { text-align: center; }
@@ -2976,6 +2978,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --ft-file: #a1a1aa;
             --ft-symlink: #a78bfa;
             --hover: #27272a;
+            --md-pre-bg: #282c34;
+            --md-code-bg: color-mix(in srgb, var(--text) 8%, var(--bg-card));
+            --md-quote: color-mix(in srgb, var(--text) 70%, var(--text-muted));
+            --md-th-bg: color-mix(in srgb, var(--bg) 40%, var(--bg-card));
         }
         html.theme-light {
             --bg: #fafafa;
@@ -2983,6 +2989,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --border: #e4e4e7;
             --text: #18181b;
             --text-muted: #71717a;
+            --md-pre-bg: #f6f8fa;
+            --md-code-bg: color-mix(in srgb, var(--text) 7%, var(--bg-card));
+            --md-quote: color-mix(in srgb, var(--text) 78%, var(--text-muted));
+            --md-th-bg: color-mix(in srgb, var(--text) 6%, var(--bg-card));
             --accent: #7c3aed;
             --accent-dim: #5b21b6;
             --dir-color: #0891b2;
@@ -3525,17 +3535,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body { overflow: auto; padding: 1rem; flex: 1; min-height: 0; }
         .modal-body pre { margin: 0; font-size: 0.85rem; }
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
-        .modal-body .modal-md { display: none; }
+        .modal-body .modal-md { display: none; color: var(--text); }
         .modal-body .modal-md.is-visible { display: block; }
         .modal-body .modal-md h1, .modal-body .modal-md h2, .modal-body .modal-md h3,
-        .modal-body .modal-md h4, .modal-body .modal-md h5, .modal-body .modal-md h6 { margin-top: 1em; margin-bottom: 0.5em; line-height: 1.3; }
+        .modal-body .modal-md h4, .modal-body .modal-md h5, .modal-body .modal-md h6 { margin-top: 1em; margin-bottom: 0.5em; line-height: 1.3; color: var(--text); }
         .modal-body .modal-md p { margin: 0.5em 0; line-height: 1.6; }
         .modal-body .modal-md a { color: var(--accent); text-decoration: none; }
         .modal-body .modal-md a:hover { text-decoration: underline; }
-        .modal-body .modal-md code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: color-mix(in srgb, var(--bg-card) 80%, transparent); padding: 0.15em 0.35em; border-radius: 4px; }
-        .modal-body .modal-md pre { background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75em 0; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(60vh, 720px); }
+        .modal-body .modal-md :not(pre) > code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: var(--md-code-bg); color: var(--text); padding: 0.15em 0.35em; border-radius: 4px; }
+        .modal-body .modal-md pre,
+        .modal-body .modal-md pre.hljs { background: var(--md-pre-bg) !important; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75em 0; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(60vh, 720px); }
         .modal-body .modal-md pre code { display: block; background: none; padding: 0; white-space: pre; }
-        .modal-body .modal-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--text-muted); }
+        .modal-body .modal-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--md-quote); }
         .modal-body .modal-md hr { border: none; border-top: 1px solid var(--border); margin: 1.25em 0; }
         .modal-body .modal-md img { max-width: 100%; height: auto; border-radius: 8px; }
         .modal-body .modal-md ul, .modal-body .modal-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
@@ -3544,8 +3555,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body .modal-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
         .modal-body .modal-md .md-table-wrap { overflow-x: auto; margin: 0.75em 0; }
         .modal-body .modal-md table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .modal-body .modal-md th, .modal-body .modal-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
-        .modal-body .modal-md th { background: color-mix(in srgb, var(--bg-card) 80%, transparent); font-weight: 600; }
+        .modal-body .modal-md th, .modal-body .modal-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; color: var(--text); }
+        .modal-body .modal-md th { background: var(--md-th-bg); font-weight: 600; }
         .modal-file-meta {
             display: flex;
             flex-direction: column;
