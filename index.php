@@ -4188,6 +4188,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
+        #modal-broken-badge[hidden],
+        #modal-broken-notice[hidden] {
+            display: none !important;
+        }
         .modal-broken-notice {
             margin: 0 0 1rem;
             padding: 0.65rem 0.85rem;
@@ -7017,6 +7021,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalHashesError = '';
         var modalBrokenLink = false;
         var modalBrokenLinkTarget = '';
+        var modalMetaRequestId = 0;
         var modalBrokenBadge = document.getElementById('modal-broken-badge');
         var modalBrokenNotice = document.getElementById('modal-broken-notice');
 
@@ -7263,16 +7268,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalHashesError = modalMetaFallback.hashesError || '';
             setModalMeta(modalMetaFallback);
             if (!metaUrl) return;
+            var requestId = ++modalMetaRequestId;
             fetch(metaUrl).then(function(r) {
                 return r.json().then(function(data) {
+                    if (requestId !== modalMetaRequestId) return;
                     modalMetaFallback = mergeModalMeta(metaFromApi(data), fallbackMeta || {});
                     if (data && data.error) {
                         modalHashesError = data.error;
                         modalMetaFallback.hashesError = data.error;
                     }
-                    var metaBroken = !!(data && (data.broken_link || (data.link_target && isEmptyMetaValue(data.size_formatted))));
+                    var metaBroken = !!(data && data.broken_link);
                     if (metaBroken) {
                         setModalBrokenLinkState(true, (data && data.link_target) || modalMetaFallback.linkTarget || '');
+                    } else if (!brokenLink) {
+                        setModalBrokenLinkState(false, '');
                     }
                     if (modalMetaHasHashValues(modalMetaFallback)) {
                         modalHashesLoaded = true;

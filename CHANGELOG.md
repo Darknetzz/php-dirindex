@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Broken symlinks** — file modal broken badge and notice hide correctly for normal files (`.entry-broken-badge` no longer overrides the `hidden` attribute)
 - **File checksums** — expanding checksums on a broken symbolic link shows an error instead of hanging indefinitely
 - **Broken symlinks** — detect unresolved symlinks when the link does not resolve to a readable file or directory (not only when `realpath()` fails)
 - **Broken symlinks** — file modal clears stale download/open actions between previews; infers broken symlinks from listing metadata when needed; `?open=` works for broken links
