@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **File preview modal** — Download button in the header for text and image previews (blocklisted types still open the binary file-info dialog with its own download button)
+- **File preview modal** — Download button in the header for previewable text and image files when download is allowed
 
 ### Changed
 
 ### Fixed
+
+- **File preview modal** — Download is hidden for preview-blocklisted extensions (e.g. `php`), since direct file URLs are executed by the web server instead of downloading
 
 
 ## [1.2.3] - 2026-06-11

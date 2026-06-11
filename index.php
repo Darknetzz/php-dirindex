@@ -1608,6 +1608,16 @@ function isPreviewExtensionBlocked($ext, array $blocklist) {
     return $ext !== '' && in_array($ext, $blocklist, true);
 }
 
+function listingEntryDownloadUrl($relativePath, $ext, $inShareMode, $indexHref, array $previewBlocklist) {
+    if (isPreviewExtensionBlocked($ext, $previewBlocklist)) {
+        return null;
+    }
+    if ($inShareMode) {
+        return currentListingUrl($indexHref, $relativePath, ['download' => '1']);
+    }
+    return directEntryUrl($relativePath);
+}
+
 /**
  * Whether a file can open in the preview modal: 'text', 'image', or false.
  */
@@ -1737,7 +1747,7 @@ function dirindexHljsScriptForLang($lang) {
     return $map[(string) $lang] ?? null;
 }
 
-function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $previewKind, $size, $mtime, array $previewExts, $ext) {
+function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $previewKind, $size, $mtime, array $previewExts, $ext, array $previewBlocklist) {
     $name = basename($relativePath);
     $downloadParams = ['download' => '1'];
     if ($share['type'] === 'dir') {
@@ -1844,7 +1854,9 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     $html .= fileTypeIconHtml($ext, false);
     $html .= '<div class="file-header-text"><h1>' . h($name) . '</h1>';
     $html .= '<p class="meta">' . h(formatSize($size)) . ' · Modified ' . h($mtimeFormatted) . '</p></div></div>';
-    $html .= '<a class="btn-download" href="' . h($downloadUrl) . '">Download</a>';
+    if (!isPreviewExtensionBlocked($ext, $previewBlocklist)) {
+        $html .= '<a class="btn-download" href="' . h($downloadUrl) . '">Download</a>';
+    }
     if ($previewHtml !== '') {
         $html .= '<div class="preview"><h2>Preview</h2>' . $previewHtml . '</div>';
     }
@@ -1904,7 +1916,7 @@ if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
         $sharePreviewKind = filePreviewKind($shareFileReal, $shareExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $shareMtime = @filemtime($shareFileReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $sharePreviewKind, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt);
+        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $sharePreviewKind, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt, $previewBlocklist);
         exit;
     }
     $relativePath = $effectivePath;
@@ -1926,7 +1938,7 @@ if ($relativePath !== '') {
         $filePreviewKind = filePreviewKind($requestedReal, $fileExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $fileMtime = @filemtime($requestedReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $filePreviewKind, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt);
+        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $filePreviewKind, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt, $previewBlocklist);
         exit;
     }
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
@@ -2566,7 +2578,8 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
             $openName = basename($openFilePath);
             $openMtime = @filemtime($openReal);
             $openMtimeFormatted = ($openMtime !== false && $openMtime >= 0 && $openMtime <= 2147483647) ? (@date('Y-m-d H:i', (int) $openMtime) ?: '—') : '—';
-            $openDownloadUrl = $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath);
+            $openDownloadUrl = listingEntryDownloadUrl($openFilePath, $openExt, $inShareMode, $indexHref, $previewBlocklist);
+            $openDirectUrl = $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath);
             $openPerms = formatEntryPermissions($openReal) ?? '';
             $openType = $openExt !== '' ? '.' . $openExt : '';
             $openMetaUrl = currentListingUrl($indexHref, $openFilePath, ['meta' => '1']);
@@ -2574,7 +2587,8 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                 $openFileForModal = [
                     'content_url' => currentListingUrl($indexHref, $openFilePath, ['content' => '1']),
                     'name'        => $openName,
-                    'open_url'    => $openDownloadUrl,
+                    'open_url'    => $openDirectUrl,
+                    'download_url' => $openDownloadUrl,
                     'share_path'  => $openFilePath,
                     'size'        => formatSize(filesize($openReal)),
                     'mtime'       => $openMtimeFormatted,
@@ -2587,7 +2601,8 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                     'image_url'   => previewImageUrl($indexHref, $openFilePath, $inShareMode),
                     'meta_url'    => $openMetaUrl,
                     'name'        => $openName,
-                    'open_url'    => $openDownloadUrl,
+                    'open_url'    => $openDirectUrl,
+                    'download_url' => $openDownloadUrl,
                     'share_path'  => $openFilePath,
                     'size'        => formatSize(filesize($openReal)),
                     'mtime'       => $openMtimeFormatted,
@@ -3664,6 +3679,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal.is-image { width: min(900px, 95vw); }
         .modal.is-markdown { width: min(800px, 95vw); }
         .modal-binary[hidden] { display: none !important; }
+        #modal-binary-download[hidden] { display: none !important; }
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
@@ -4539,7 +4555,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
     </script>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -4905,12 +4921,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             $sizeFormatted = formatSize($item['size']);
                             $permsLabel = !empty($item['permsLabel']) ? $item['permsLabel'] : '';
                             $typeLabel = $item['ext'] !== '' ? '.' . $item['ext'] : '';
+                            $entryDownloadUrl = listingEntryDownloadUrl($item['path'], $item['ext'], $inShareMode, $indexHref, $previewBlocklist);
+                            $downloadAttr = ($entryDownloadUrl !== null) ? (' data-download-url="' . h($entryDownloadUrl) . '"') : '';
                             if ($item['previewKind'] === 'text') {
                                 $url = '#';
                                 $contentUrl = currentListingUrl($indexHref, $item['path'], ['content' => '1']);
                                 $openUrl = $directUrl;
                                 $previewClass = 'file-preview' . (isMarkdownExtension($item['ext']) ? ' file-preview-md' : '');
                                 $linkAttrs = ' class="' . $previewClass . '" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                    . $downloadAttr
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
@@ -4921,6 +4940,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 $metaUrl = currentListingUrl($indexHref, $item['path'], ['meta' => '1']);
                                 $openUrl = $directUrl;
                                 $linkAttrs = ' class="file-preview file-preview-image" data-image-url="' . h($imageUrl) . '" data-meta-url="' . h($metaUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                    . $downloadAttr
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
@@ -4931,7 +4951,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 $linkAttrs = ' class="file-binary" title="View file info"'
                                     . ' data-name="' . h($item['name']) . '"'
                                     . ' data-meta-url="' . h($metaUrl) . '"'
-                                    . ' data-download-url="' . h($directUrl) . '"'
+                                    . $downloadAttr
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
@@ -6365,12 +6385,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 hljs.highlightElement(el);
             });
         }
-        function openModal(name, content, lang, html, openUrl, sharePath, meta) {
+        function openModal(name, content, lang, html, openUrl, sharePath, meta, downloadUrl) {
             hidePreviewPanels();
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
             setModalMeta(meta || {});
-            setModalDownloadLink(openUrl || '', name);
+            setModalDownloadLink(downloadUrl || '', name);
             setModalOpenLink(openUrl || '');
             if (html != null) {
                 modalMd.innerHTML = html;
@@ -6399,7 +6419,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             loadModalMeta(metaUrl || '', fileMeta);
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
-            modalBinaryDownload.href = downloadUrl || '#';
+            if (downloadUrl) {
+                modalBinaryDownload.href = downloadUrl;
+                modalBinaryDownload.hidden = false;
+            } else {
+                modalBinaryDownload.hidden = true;
+                modalBinaryDownload.removeAttribute('href');
+            }
             setModalDownloadLink('');
             setModalOpenLink(downloadUrl || '');
             modalBinary.hidden = false;
@@ -6408,13 +6434,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'false');
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
-        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl) {
+        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl, downloadUrl) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-image');
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
             loadModalMeta(metaUrl || '', meta || {});
-            setModalDownloadLink(openUrl || '', name);
+            setModalDownloadLink(downloadUrl || '', name);
             setModalOpenLink(openUrl || '');
             if (modalImageEl) {
                 modalImageEl.src = imageUrl;
@@ -6429,13 +6455,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
 
-        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta) {
+        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta, downloadUrl) {
             var fallbackMeta = meta || {};
             fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
                 var path = sharePath || sharePathFromContentUrl(contentUrl, data.name || name);
                 var mergedMeta = mergeModalMeta(metaFromApi(data), fallbackMeta);
                 var renderHtml = Object.prototype.hasOwnProperty.call(data, 'html') ? data.html : null;
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', renderHtml, openUrl, path, mergedMeta);
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', renderHtml, openUrl, path, mergedMeta, downloadUrl);
                 if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
             }).catch(function() {
                 if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
@@ -6449,25 +6475,26 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var name = previewLink.getAttribute('data-name') || '';
                 var imageUrl = previewLink.getAttribute('data-image-url');
                 var openUrl = previewLink.getAttribute('data-open-url') || '';
+                var downloadUrl = previewLink.getAttribute('data-download-url') || '';
                 var sharePath = previewLink.getAttribute('data-share-path') || '';
                 if (imageUrl) {
                     var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
-                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '');
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl);
                     return;
                 }
                 var contentUrl = previewLink.getAttribute('data-content-url');
                 if (!contentUrl) return;
                 sharePath = sharePath || sharePathFromContentUrl(contentUrl, name);
                 var listingUrl = buildListingUrlWithOpen(contentUrl, name, sharePath);
-                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink));
+                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink), downloadUrl);
                 return;
             }
             var binaryLink = e.target.closest('a.file-binary');
             if (!binaryLink) return;
             e.preventDefault();
             var binaryName = binaryLink.getAttribute('data-name') || '';
+            if (!binaryName) return;
             var downloadUrl = binaryLink.getAttribute('data-download-url') || '';
-            if (!binaryName || !downloadUrl) return;
             var binarySharePath = binaryLink.getAttribute('data-share-path') || '';
             var listingUrl = buildListingUrlWithOpen('', binaryName, binarySharePath);
             openBinaryModal(
@@ -6515,15 +6542,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-share-path') || '',
                 undefined,
                 metaFromElement(body),
-                body.getAttribute('data-open-meta-url') || ''
+                body.getAttribute('data-open-meta-url') || '',
+                body.getAttribute('data-open-download-url') || ''
             );
         } else {
             var initialContentUrl = body.getAttribute('data-open-content-url');
             if (initialContentUrl) {
                 var initialName = body.getAttribute('data-open-name') || '';
                 var initialOpenUrl = body.getAttribute('data-open-url') || '';
+                var initialDownloadUrl = body.getAttribute('data-open-download-url') || '';
                 var initialSharePath = body.getAttribute('data-open-share-path') || sharePathFromContentUrl(initialContentUrl, initialName);
-                openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl, initialSharePath, undefined, metaFromElement(body));
+                openModalFromContentUrl(initialContentUrl, initialName, initialOpenUrl, initialSharePath, undefined, metaFromElement(body), initialDownloadUrl);
             }
         }
     })();
