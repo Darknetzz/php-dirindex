@@ -2669,6 +2669,7 @@ function fileMtimeFormatted($mtime) {
 
 function fileContentHashes($data) {
     return [
+        'crc32'  => hash('crc32b', $data),
         'md5'    => md5($data),
         'sha1'   => sha1($data),
         'sha256' => hash('sha256', $data),
@@ -2677,7 +2678,9 @@ function fileContentHashes($data) {
 }
 
 function filePathHashes($absolutePath) {
-    $hashes = [];
+    $hashes = ['crc32' => null];
+    $crc = @hash_file('crc32b', $absolutePath);
+    $hashes['crc32'] = ($crc !== false) ? $crc : null;
     foreach (['md5', 'sha1', 'sha256', 'sha512'] as $algo) {
         $h = @hash_file($algo, $absolutePath);
         $hashes[$algo] = ($h !== false) ? $h : null;
@@ -6081,6 +6084,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         function metaHashesFromApi(data) {
             var hashes = (data && data.hashes && typeof data.hashes === 'object') ? data.hashes : {};
             return {
+                crc32: hashes.crc32 || '',
                 md5: hashes.md5 || '',
                 sha1: hashes.sha1 || '',
                 sha256: hashes.sha256 || '',
@@ -6102,6 +6106,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 size: primary.size || fallback.size || '',
                 mtime: primary.mtime || fallback.mtime || '',
                 perms: primary.perms || fallback.perms || '',
+                crc32: primary.crc32 || fallback.crc32 || '',
                 md5: primary.md5 || fallback.md5 || '',
                 sha1: primary.sha1 || fallback.sha1 || '',
                 sha256: primary.sha256 || fallback.sha256 || '',
@@ -6115,6 +6120,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 { label: 'Size', value: meta.size || '' },
                 { label: 'Modified', value: meta.mtime || '' },
                 { label: 'Permissions', value: meta.perms || '' },
+                { label: 'CRC32', value: meta.crc32 || '', wide: true },
                 { label: 'MD5', value: meta.md5 || '', wide: true },
                 { label: 'SHA-1', value: meta.sha1 || '', wide: true },
                 { label: 'SHA-256', value: meta.sha256 || '', wide: true },

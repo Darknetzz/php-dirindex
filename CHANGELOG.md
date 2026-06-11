@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **File hashes** — the file info modal shows MD5, SHA-1, SHA-256, and SHA-512 checksums (text previews via `?content=1`; binary and image files via `?meta=1`)
+- **File hashes** — the file info modal shows CRC32, MD5, SHA-1, SHA-256, and SHA-512 checksums (text previews via `?content=1`; binary and image files via `?meta=1`)
 
 ### Changed
 
