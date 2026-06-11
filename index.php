@@ -3548,14 +3548,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body .modal-md th { background: color-mix(in srgb, var(--bg-card) 80%, transparent); font-weight: 600; }
         .modal-file-meta {
             display: flex;
-            flex-wrap: wrap;
-            gap: 1rem 1.75rem;
+            flex-direction: column;
+            gap: 0.75rem;
             padding: 1rem 1.25rem;
             border-top: 1px solid var(--border);
             background: color-mix(in srgb, var(--bg) 50%, transparent);
             flex-shrink: 0;
         }
         .modal-file-meta[hidden] { display: none !important; }
+        .modal-file-meta-primary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem 1.75rem;
+        }
         .modal-file-meta-item { display: flex; flex-direction: column; gap: 0.2rem; min-width: 4.5rem; }
         .modal-file-meta-label {
             font-size: 0.68rem;
@@ -3570,7 +3575,43 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             word-break: break-word;
         }
-        .modal-file-meta-item--wide { flex: 1 1 100%; min-width: 0; }
+        .modal-file-meta-hashes { width: 100%; min-width: 0; }
+        .modal-file-meta-hashes-summary {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+            font-size: 0.68rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .modal-file-meta-hashes-summary::-webkit-details-marker { display: none; }
+        .modal-file-meta-hashes-summary::before {
+            content: '';
+            width: 0.4rem;
+            height: 0.4rem;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: rotate(-45deg);
+            transition: transform 0.15s ease;
+            flex-shrink: 0;
+        }
+        .modal-file-meta-hashes[open] > .modal-file-meta-hashes-summary::before {
+            transform: rotate(45deg);
+        }
+        .modal-file-meta-hashes-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            margin-top: 0.65rem;
+            padding-top: 0.65rem;
+            border-top: 1px solid var(--border);
+        }
+        .modal-file-meta-item--wide { width: 100%; min-width: 0; }
         .modal-file-meta-item--wide .modal-file-meta-value { font-size: 0.75rem; word-break: break-all; }
         .modal.is-binary { width: min(520px, 95vw); }
         .modal.is-image { width: min(900px, 95vw); }
@@ -6057,6 +6098,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var closeBtn = document.getElementById('modal-close');
         var shareBtn = document.getElementById('modal-share-btn');
         var currentSharePath = '';
+        var modalHashesOpen = false;
 
         function sharePathFromContentUrl(contentUrl, fileName) {
             if (!contentUrl) return fileName || '';
@@ -6113,36 +6155,65 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 sha512: primary.sha512 || fallback.sha512 || ''
             };
         }
+        function appendModalMetaItem(parent, label, value, wide) {
+            var item = document.createElement('div');
+            item.className = 'modal-file-meta-item' + (wide ? ' modal-file-meta-item--wide' : '');
+            var labelEl = document.createElement('span');
+            labelEl.className = 'modal-file-meta-label';
+            labelEl.textContent = label;
+            var valueEl = document.createElement('span');
+            valueEl.className = 'modal-file-meta-value';
+            valueEl.textContent = value;
+            item.appendChild(labelEl);
+            item.appendChild(valueEl);
+            parent.appendChild(item);
+        }
         function setModalMeta(meta) {
             if (!modalFileMeta) return;
-            var fields = [
+            var existingHashes = modalFileMeta.querySelector('.modal-file-meta-hashes');
+            if (existingHashes) modalHashesOpen = existingHashes.open;
+            var basicFields = [
                 { label: 'Type', value: meta.type || '' },
                 { label: 'Size', value: meta.size || '' },
                 { label: 'Modified', value: meta.mtime || '' },
-                { label: 'Permissions', value: meta.perms || '' },
-                { label: 'CRC32', value: meta.crc32 || '', wide: true },
-                { label: 'MD5', value: meta.md5 || '', wide: true },
-                { label: 'SHA-1', value: meta.sha1 || '', wide: true },
-                { label: 'SHA-256', value: meta.sha256 || '', wide: true },
-                { label: 'SHA-512', value: meta.sha512 || '', wide: true }
+                { label: 'Permissions', value: meta.perms || '' }
+            ];
+            var hashFields = [
+                { label: 'CRC32', value: meta.crc32 || '' },
+                { label: 'MD5', value: meta.md5 || '' },
+                { label: 'SHA-1', value: meta.sha1 || '' },
+                { label: 'SHA-256', value: meta.sha256 || '' },
+                { label: 'SHA-512', value: meta.sha512 || '' }
             ];
             modalFileMeta.innerHTML = '';
             var hasValue = false;
-            fields.forEach(function(field) {
+            var primary = document.createElement('div');
+            primary.className = 'modal-file-meta-primary';
+            basicFields.forEach(function(field) {
                 if (!field.value) return;
                 hasValue = true;
-                var item = document.createElement('div');
-                item.className = 'modal-file-meta-item' + (field.wide ? ' modal-file-meta-item--wide' : '');
-                var label = document.createElement('span');
-                label.className = 'modal-file-meta-label';
-                label.textContent = field.label;
-                var value = document.createElement('span');
-                value.className = 'modal-file-meta-value';
-                value.textContent = field.value;
-                item.appendChild(label);
-                item.appendChild(value);
-                modalFileMeta.appendChild(item);
+                appendModalMetaItem(primary, field.label, field.value, false);
             });
+            if (primary.childNodes.length) modalFileMeta.appendChild(primary);
+            var hashCount = hashFields.filter(function(field) { return !!field.value; }).length;
+            if (hashCount) {
+                hasValue = true;
+                var hashesPanel = document.createElement('details');
+                hashesPanel.className = 'modal-file-meta-hashes';
+                if (modalHashesOpen) hashesPanel.open = true;
+                var summary = document.createElement('summary');
+                summary.className = 'modal-file-meta-hashes-summary';
+                summary.textContent = 'Checksums (' + hashCount + ')';
+                hashesPanel.appendChild(summary);
+                var hashesBody = document.createElement('div');
+                hashesBody.className = 'modal-file-meta-hashes-body';
+                hashFields.forEach(function(field) {
+                    if (!field.value) return;
+                    appendModalMetaItem(hashesBody, field.label, field.value, true);
+                });
+                hashesPanel.appendChild(hashesBody);
+                modalFileMeta.appendChild(hashesPanel);
+            }
             modalFileMeta.hidden = !hasValue;
         }
         function loadModalMeta(metaUrl, fallbackMeta) {
@@ -6153,6 +6224,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             }).catch(function() {});
         }
         function clearModalMeta() {
+            modalHashesOpen = false;
             setModalMeta({});
         }
 

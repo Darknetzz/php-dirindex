@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **File hashes** — checksums in the file info modal are grouped in a collapsible **Checksums** section (collapsed by default)
+
 ### Fixed
 
 - **Markdown tables** — GFM pipe tables render as HTML in the preview modal and on share landing pages
