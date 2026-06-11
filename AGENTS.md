@@ -29,7 +29,7 @@ Generated (not in git): `index.min.php` — deploy artifact from `scripts/build-
 
 - **Listing root** — Defaults to `__DIR__` (the script folder). Optional `listing_from_document_root` uses `resolveListingBaseDir()` with `DOCUMENT_ROOT` heuristics (web root, or its parent for symlink/subfolder cases) so sibling directories can be listed.
 - **Navigation** — Subfolders use `?path=subfolder`. Breadcrumbs and a `..` row go up. Path traversal (`..`, null bytes) is rejected; resolved paths must stay under the base unless `allow_open_symlinks_outside` is enabled.
-- **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`) can render as a full HTML page. highlight.js provides syntax highlighting.
+- **Preview** — Text-like files open in a modal via `?content=1` (JSON API). Markdown (`.md`, `.markdown`) is rendered to HTML in the modal (and on share landing pages). highlight.js provides syntax highlighting.
 - **Uploads** — Optional, session-authenticated. First visit can run a setup wizard that stores credentials in `.dirindex.sqlite` (or `.dirindex.json` without SQLite). CSRF tokens protect all POST actions.
 - **Create entries** — Signed-in admins can create empty folders (`mkdir`) and files in the current listing directory via `create_entry` POST when `create_enabled` is true (default). Uses `cleanUploadFilename()` and blocks hidden storage names (`.dirindex.sqlite`, etc.). Independent of `upload_enabled`; toggle in Settings → Server settings.
 - **Access control** — Optional IP whitelist/blacklist with CIDR support; optional path whitelist/blacklist with folder-prefix and basename rules; optional `ip_header` for reverse proxies.

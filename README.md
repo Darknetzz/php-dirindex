@@ -36,12 +36,15 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `path_blacklist` | `[]` | Matching paths hidden from listings and blocked from index access (see below). |
 | `web_root_url` | *(auto)* | Public URL base for **Open in new tab** links to files and folders (absolute URL or path from the site root). Saved during setup from the current request; leave empty in Settings to keep auto-detecting from the index script path. |
 | `listing_from_document_root` | `false` | When `true`, the listing root follows `DOCUMENT_ROOT` heuristics (web root, or its parent when the script is in or symlinked from the doc root). When `false`, the listing root is the folder containing `index.php`. |
+| `image_preview_enabled` | `true` | When `false`, image files open in the binary download dialog instead of the preview modal. |
+| `preview_blocklist` | `["php"]` | File extensions (without dots) that must not be previewed in the modal or on share landing pages; matching files open as binary instead. |
 
 **Path access** (Settings → Server settings when signed in as admin):
 
 - One relative path per line (from the index root). Lines starting with `#` are ignored.
 - **Folder path** (trailing slash or contains `/`, e.g. `public/` or `backups/old`): matches that path and everything beneath it.
 - **Name rule** (no slash, e.g. `.git` or `.env`): matches any file or folder with that name anywhere in the tree.
+- **Wildcards** — `*` (within one path segment), `?` (one character), `[…]` (character class), and `**` (match across `/`, e.g. `logs/**` or `backups/**/cache`). Examples: `*.log`, `*.tmp`, `public/*.html`, `src/**/test_*.php`.
 - **Path blacklist** — matching paths are omitted from listings and cannot be opened, previewed, downloaded, uploaded to, or shared through the index (unless opened via a valid share link).
 - **Path whitelist** — when non-empty, only whitelisted paths (and parent folders needed to reach them) are visible and browsable; everything else is hidden/blocked. When empty, no whitelist restriction applies (blacklist still applies).
 - Legacy `hidden_paths` values are treated as `path_blacklist` until settings are saved again.
@@ -57,7 +60,7 @@ These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if neede
 
 **Reset:** Signed-in admins can use **Settings → Reset** to delete the settings file and return to first-run setup (admin account, access rules, and share links are removed; indexed files are not deleted).
 
-**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP and path whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text files may also show a preview). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
+**Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP and path whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text and image files may also show a preview when enabled). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 
 Example URLs:
 

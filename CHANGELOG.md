@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Image preview modal** — common image types (jpg, png, gif, webp, svg, and similar) open in the file preview modal; share landing pages show inline image previews when enabled
+- **`image_preview_enabled`** — Settings → Previews toggle to disable image modal preview
+- **`preview_blocklist`** — Settings → Previews list of extensions (e.g. `php`) that are never previewed in the modal or on share pages; default includes `php`
+- **Path access wildcards** — path whitelist and blacklist rules support `*`, `?`, `[…]`, and `**` glob patterns (e.g. `*.log`, `public/*.html`, `backups/**`)
+
 ### Changed
+
+- **Markdown preview** — `.md` / `.markdown` files render as HTML in the preview modal (headings, lists, links, images, blockquotes, fenced code with highlight.js) instead of a separate full-page view; direct `?path=…/file.md` links redirect to the listing with the modal open
 
 ### Fixed
 

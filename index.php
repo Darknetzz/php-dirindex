@@ -90,6 +90,49 @@ function formatPathAccessListForInput(array $list) {
 }
 
 /**
+ * Parse newline- or comma-separated file extensions from preview blocklist settings input.
+ */
+function parsePreviewBlocklistInput($text) {
+    $text = str_replace([',', ';'], "\n", (string) $text);
+    $entries = [];
+    foreach (preg_split('/\R/', $text) as $line) {
+        $entry = trim(strtolower(ltrim(trim($line), '.')));
+        if ($entry !== '' && !str_starts_with($entry, '#')) {
+            $entries[] = $entry;
+        }
+    }
+    return array_values(array_unique($entries));
+}
+
+function formatPreviewBlocklistForInput(array $list) {
+    return implode("\n", array_map('strval', $list));
+}
+
+function normalizePreviewBlocklist($list) {
+    if (!is_array($list)) {
+        return [];
+    }
+    $normalized = [];
+    foreach ($list as $entry) {
+        $entry = trim(strtolower(ltrim(trim((string) $entry), '.')));
+        if ($entry !== '') {
+            $normalized[] = $entry;
+        }
+    }
+    return array_values(array_unique($normalized));
+}
+
+function validatePreviewBlocklist(array $entries, &$invalidEntry = null) {
+    foreach ($entries as $entry) {
+        if (!preg_match('/^[a-z0-9]{1,16}$/', $entry)) {
+            $invalidEntry = $entry;
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * True when a relative path contains traversal segments (.. or .) or empty segments.
  */
 function relativePathHasTraversal($path) {
@@ -234,10 +277,92 @@ function normalizeRelativePathForAccess($path) {
 function normalizePathAccessRule($entry) {
     $entry = trim(str_replace('\\', '/', (string) $entry));
     $entry = trim($entry, '/');
-    if ($entry === '' || relativePathHasTraversal($entry) || str_contains($entry, "\0")) {
+    if ($entry === '' || str_contains($entry, "\0")) {
         return null;
     }
+    if (relativePathHasTraversal($entry)) {
+        return null;
+    }
+    foreach (explode('/', $entry) as $segment) {
+        if ($segment === '..' || $segment === '') {
+            return null;
+        }
+    }
     return $entry;
+}
+
+function pathAccessRuleHasWildcard($entry) {
+    return strpbrk((string) $entry, '*?[') !== false;
+}
+
+function pathAccessRuleStaticPrefix($entry) {
+    $entry = trim(str_replace('\\', '/', (string) $entry), '/');
+    if ($entry === '') {
+        return '';
+    }
+    $pos = strcspn($entry, '*?[');
+    return rtrim(substr($entry, 0, $pos), '/');
+}
+
+function pathGlobToRegex($pattern) {
+    $pattern = str_replace('\\', '/', (string) $pattern);
+    $len = strlen($pattern);
+    $out = '';
+    for ($i = 0; $i < $len; $i++) {
+        $c = $pattern[$i];
+        if ($c === '*' && $i + 1 < $len && $pattern[$i + 1] === '*') {
+            $out .= '.*';
+            $i++;
+            if ($i + 1 < $len && $pattern[$i + 1] === '/') {
+                $i++;
+            }
+        } elseif ($c === '*') {
+            $out .= '[^/]*';
+        } elseif ($c === '?') {
+            $out .= '[^/]';
+        } elseif ($c === '[') {
+            $end = strpos($pattern, ']', $i + 1);
+            if ($end === false) {
+                $out .= preg_quote($c, '/');
+            } else {
+                $out .= substr($pattern, $i, $end - $i + 1);
+                $i = $end;
+            }
+        } else {
+            $out .= preg_quote($c, '/');
+        }
+    }
+    return $out;
+}
+
+function pathGlobMatchString($pattern, $string) {
+    $pattern = (string) $pattern;
+    $string = (string) $string;
+    if ($pattern === '') {
+        return false;
+    }
+    if (!pathAccessRuleHasWildcard($pattern)) {
+        return $string === $pattern;
+    }
+    if (str_contains($pattern, '**')) {
+        $regex = '/^' . pathGlobToRegex($pattern) . '$/D';
+        if (defined('FNM_CASEFOLD')) {
+            $regex = '/^' . pathGlobToRegex($pattern) . '$/Di';
+        }
+        return (bool) preg_match($regex, $string);
+    }
+    if (function_exists('fnmatch')) {
+        $flags = FNM_PATHNAME;
+        if (defined('FNM_CASEFOLD')) {
+            $flags |= FNM_CASEFOLD;
+        }
+        return fnmatch($pattern, $string, $flags);
+    }
+    $regex = '/^' . pathGlobToRegex($pattern) . '$/D';
+    if (defined('FNM_CASEFOLD')) {
+        $regex = '/^' . pathGlobToRegex($pattern) . '$/Di';
+    }
+    return (bool) preg_match($regex, $string);
 }
 
 function isValidPathAccessEntry($entry) {
@@ -257,7 +382,7 @@ function validatePathAccessList(array $entries, &$invalidEntry = null) {
 /**
  * Whether a relative path (from index root) matches a path access rule.
  * Rules without a slash match any path segment or basename; rules with a slash
- * match that path and anything beneath it.
+ * match that path and anything beneath it. Wildcards (*, ?, [...], **) are supported.
  */
 function pathMatchesAccessRule($relativePath, $entry) {
     $relativePath = normalizeRelativePathForAccess($relativePath);
@@ -268,6 +393,20 @@ function pathMatchesAccessRule($relativePath, $entry) {
     $rootPathRule = str_contains($entryRaw, '/') || str_ends_with($entryRaw, '/');
     $rule = normalizePathAccessRule($entry);
     if ($rule === null) {
+        return false;
+    }
+    if (pathAccessRuleHasWildcard($entryRaw)) {
+        if ($rootPathRule) {
+            return pathGlobMatchString($rule, $relativePath);
+        }
+        if (pathGlobMatchString($entryRaw, basename($relativePath))) {
+            return true;
+        }
+        foreach (explode('/', $relativePath) as $segment) {
+            if (pathGlobMatchString($entryRaw, $segment)) {
+                return true;
+            }
+        }
         return false;
     }
     if ($rootPathRule) {
@@ -312,7 +451,17 @@ function pathAllowedByWhitelist($relativePath, array $pathWhitelist) {
         }
         $entryRaw = trim(str_replace('\\', '/', (string) $entry));
         $rootPathRule = str_contains($entryRaw, '/') || str_ends_with($entryRaw, '/');
-        if ($rootPathRule && str_starts_with($rule, $trimmed . '/')) {
+        if (!$rootPathRule) {
+            continue;
+        }
+        if (pathAccessRuleHasWildcard($entryRaw)) {
+            $staticPrefix = pathAccessRuleStaticPrefix($entryRaw);
+            if ($staticPrefix !== '' && ($trimmed === $staticPrefix || str_starts_with($staticPrefix, $trimmed . '/'))) {
+                return true;
+            }
+            continue;
+        }
+        if (str_starts_with($rule, $trimmed . '/')) {
             return true;
         }
     }
@@ -1038,7 +1187,7 @@ function shareExpiryFromChoice($choice) {
     }
 }
 
-function serveSharedFileDownload($absolutePath, $displayName) {
+function serveSharedFileBytes($absolutePath, $displayName, $inline = false) {
     if (!is_file($absolutePath) || !is_readable($absolutePath)) {
         header('HTTP/1.1 404 Not Found');
         header('Content-Type: text/plain; charset=UTF-8');
@@ -1049,10 +1198,19 @@ function serveSharedFileDownload($absolutePath, $displayName) {
         $mime = 'application/octet-stream';
     }
     header('Content-Type: ' . $mime);
-    header('Content-Disposition: attachment; filename="' . str_replace(['"', "\r", "\n"], '', $displayName) . '"');
+    $safeName = str_replace(['"', "\r", "\n"], '', $displayName);
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $safeName . '"');
     header('Content-Length: ' . (string) filesize($absolutePath));
     readfile($absolutePath);
     exit;
+}
+
+function serveSharedFileDownload($absolutePath, $displayName) {
+    serveSharedFileBytes($absolutePath, $displayName, false);
+}
+
+function serveSharedFileInline($absolutePath, $displayName) {
+    serveSharedFileBytes($absolutePath, $displayName, true);
 }
 
 function startDirindexSession($name = 'dirindex_upload') {
@@ -1298,6 +1456,8 @@ $dirindexConfig = [
     'path_blacklist'            => [],
     'web_root_url'              => '',
     'listing_from_document_root' => false,
+    'image_preview_enabled'     => true,
+    'preview_blocklist'         => ['php'],
     'session_name'              => 'dirindex_upload',
 ];
 $dirindexStorage = [];
@@ -1331,6 +1491,12 @@ $uploadEnabled = isUploadEnabled($dirindexConfig);
 $createEnabled = isCreateEnabled($dirindexConfig);
 $deleteEnabled = isDeleteEnabled($dirindexConfig);
 $browseAuthRequired = isBrowseAuthRequired($dirindexConfig);
+$previewBlocklist = normalizePreviewBlocklist(
+    isset($dirindexConfig['preview_blocklist']) && is_array($dirindexConfig['preview_blocklist'])
+        ? $dirindexConfig['preview_blocklist']
+        : ['php']
+);
+$imagePreviewEnabled = !isset($dirindexConfig['image_preview_enabled']) || !empty($dirindexConfig['image_preview_enabled']);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
@@ -1429,6 +1595,62 @@ function looksLikeBinary($absolutePath, $maxLen = 8192) {
     return $chunk === false || str_contains($chunk, "\0");
 }
 
+function imagePreviewExtensions() {
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff', 'tif', 'avif', 'heic'];
+}
+
+function isImageExtension($ext) {
+    return in_array(strtolower((string) $ext), imagePreviewExtensions(), true);
+}
+
+function isPreviewExtensionBlocked($ext, array $blocklist) {
+    $ext = strtolower((string) $ext);
+    return $ext !== '' && in_array($ext, $blocklist, true);
+}
+
+/**
+ * Whether a file can open in the preview modal: 'text', 'image', or false.
+ */
+function filePreviewKind($absolutePath, $ext, array $previewExts, array $blocklist, $imagePreviewEnabled) {
+    $ext = strtolower((string) $ext);
+    if (isPreviewExtensionBlocked($ext, $blocklist)) {
+        return false;
+    }
+    if ($imagePreviewEnabled && isImageExtension($ext)) {
+        return 'image';
+    }
+    if (isset($previewExts[$ext])) {
+        return 'text';
+    }
+    if (!is_file($absolutePath)) {
+        return false;
+    }
+    if (!looksLikeBinary($absolutePath)) {
+        return 'text';
+    }
+    return false;
+}
+
+function previewImageUrl($indexHref, $relativePath, $inShareMode) {
+    if ($inShareMode) {
+        return currentListingUrl($indexHref, $relativePath, ['inline' => '1']);
+    }
+    return directEntryUrl($relativePath);
+}
+
+function isMarkdownExtension($ext) {
+    $ext = strtolower((string) $ext);
+    return $ext === 'md' || $ext === 'markdown';
+}
+
+function markdownSafeUrl($url) {
+    $url = trim((string) $url);
+    if ($url === '' || preg_match('/^(javascript|data|vbscript|file):/i', $url)) {
+        return null;
+    }
+    return $url;
+}
+
 function fileExtensionCategory($ext) {
     $ext = strtolower((string) $ext);
     static $categories = [
@@ -1515,7 +1737,7 @@ function dirindexHljsScriptForLang($lang) {
     return $map[(string) $lang] ?? null;
 }
 
-function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $isText, $size, $mtime, array $previewExts, $ext) {
+function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $previewKind, $size, $mtime, array $previewExts, $ext) {
     $name = basename($relativePath);
     $downloadParams = ['download' => '1'];
     if ($share['type'] === 'dir') {
@@ -1526,7 +1748,8 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     $previewHtml = '';
     $previewLang = null;
     $isCodePreview = false;
-    if ($isText) {
+    $isMdPreview = false;
+    if ($previewKind === 'text') {
         $raw = @file_get_contents($absolutePath);
         if ($raw !== false) {
             $lang = $previewExts[$ext] ?? 'plaintext';
@@ -1534,8 +1757,9 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
                 $raw = false;
             }
             if ($raw !== false) {
-                if ($ext === 'md' || $ext === 'markdown') {
+                if (isMarkdownExtension($ext)) {
                     $previewHtml = '<div class="preview-md">' . markdownToHtml($raw) . '</div>';
+                    $isMdPreview = true;
                 } else {
                     $previewLang = $lang;
                     $isCodePreview = true;
@@ -1546,6 +1770,13 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
                 }
             }
         }
+    } elseif ($previewKind === 'image') {
+        $inlineParams = ['inline' => '1'];
+        if ($share['type'] === 'dir') {
+            $inlineParams['path'] = $relativePath;
+        }
+        $inlineUrl = shareUrl($indexHref, $share['token'], $inlineParams);
+        $previewHtml = '<div class="preview-image"><img src="' . h($inlineUrl) . '" alt="' . h($name) . '"></div>';
     }
     $css = '
     :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; --accent-dim: #7c3aed; }
@@ -1577,16 +1808,31 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .btn-download:hover { background: var(--accent); }
     .preview { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); }
     .preview h2 { font-size: 1rem; color: var(--text-muted); margin: 0 0 1rem; font-weight: 500; }
-    .preview-md h1, .preview-md h2, .preview-md h3 { margin-top: 1.25em; }
+    .preview-md h1, .preview-md h2, .preview-md h3, .preview-md h4, .preview-md h5, .preview-md h6 { margin-top: 1.25em; margin-bottom: 0.5em; }
+    .preview-md p { margin: 0.5em 0; }
+    .preview-md a { color: var(--accent); text-decoration: none; }
+    .preview-md a:hover { text-decoration: underline; }
+    .preview-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.9em; background: rgba(0,0,0,0.25); padding: 0.15em 0.35em; border-radius: 4px; }
+    .preview-md pre { margin: 0.75em 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
+    .preview-md pre code { display: block; background: none; padding: 0; white-space: pre; }
+    .preview-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--text-muted); }
+    .preview-md hr { border: none; border-top: 1px solid var(--border); margin: 1.25em 0; }
+    .preview-md img { max-width: 100%; height: auto; border-radius: 8px; }
+    .preview-md ul, .preview-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
+    .preview-md .task-list-item { list-style: none; margin-left: -1.5rem; }
+    .preview-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
+    .preview-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
     .preview-code { margin: 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
     .preview-code code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: pre; }
+    .preview-image { text-align: center; }
+    .preview-image img { max-width: 100%; max-height: min(75vh, 960px); width: auto; height: auto; object-fit: contain; border-radius: 8px; }
     ';
     $hljsCdn = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/';
     $headExtra = '';
-    if ($isCodePreview) {
+    if ($isCodePreview || $isMdPreview) {
         $headExtra = '<link rel="stylesheet" href="' . h($hljsCdn) . 'styles/atom-one-dark.min.css">';
     }
-    $pageClass = $isCodePreview ? 'page page--wide' : 'page';
+    $pageClass = ($isCodePreview || $previewKind === 'image' || $isMdPreview) ? 'page page--wide' : 'page';
     $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . $headExtra . '<style>' . $css . '</style></head><body><div class="' . $pageClass . '"><div class="card">';
     $html .= '<div class="file-header">';
     $html .= fileTypeIconHtml($ext, false);
@@ -1606,6 +1852,12 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
             }
         }
         $html .= '<script>var el=document.querySelector(".preview-code code");if(el&&window.hljs)hljs.highlightElement(el);</script>';
+    } elseif ($isMdPreview) {
+        $html .= '<script src="' . h($hljsCdn) . 'highlight.min.js"></script>';
+        foreach (['php', 'javascript', 'python', 'bash', 'json', 'xml', 'yaml', 'typescript', 'ini'] as $mdHljsLang) {
+            $html .= '<script src="' . h($hljsCdn) . 'languages/' . h($mdHljsLang) . '.min.js"></script>';
+        }
+        $html .= '<script>document.querySelectorAll(".preview-md pre code").forEach(function(el){if(window.hljs)hljs.highlightElement(el);});</script>';
     }
     $html .= '</body></html>';
     return $html;
@@ -1638,12 +1890,15 @@ if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
     if (isset($_GET['download'])) {
         serveSharedFileDownload($shareFileReal, basename($effectivePath));
     }
+    if (isset($_GET['inline'])) {
+        serveSharedFileInline($shareFileReal, basename($effectivePath));
+    }
     if (!isset($_GET['content'])) {
         $shareExt = strtolower(pathinfo($effectivePath, PATHINFO_EXTENSION));
-        $shareIsText = isset($previewExts[$shareExt]) || !looksLikeBinary($shareFileReal);
+        $sharePreviewKind = filePreviewKind($shareFileReal, $shareExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $shareMtime = @filemtime($shareFileReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $shareIsText, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt);
+        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $sharePreviewKind, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt);
         exit;
     }
     $relativePath = $effectivePath;
@@ -1656,26 +1911,38 @@ if ($relativePath !== '') {
     if ($inShareMode && isset($_GET['download']) && is_file($requestedPath) && $requestedReal !== false && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         serveSharedFileDownload($requestedReal, basename($relativePath));
     }
+    if ($inShareMode && isset($_GET['inline']) && is_file($requestedPath) && $requestedReal !== false && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        serveSharedFileInline($requestedReal, basename($relativePath));
+    }
     if ($inShareMode && $shareContext && $shareContext['type'] === 'dir' && is_file($requestedPath) && $requestedReal !== false
-        && !isset($_GET['content']) && !isset($_GET['download']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        && !isset($_GET['content']) && !isset($_GET['download']) && !isset($_GET['inline']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $fileExt = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
-        $fileIsText = isset($previewExts[$fileExt]) || !looksLikeBinary($requestedReal);
+        $filePreviewKind = filePreviewKind($requestedReal, $fileExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $fileMtime = @filemtime($requestedReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $fileIsText, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt);
+        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $filePreviewKind, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt);
         exit;
     }
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
-    $isMdFullPage = ($ext === 'md' && !isset($_GET['content']) && !($inShareMode && $shareContext && $shareContext['type'] === 'dir'));
-    if ($canBrowse && is_file($requestedPath) && $isMdFullPage && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
-        $md = @file_get_contents($requestedPath);
-        if ($md !== false) {
-            header('Content-Type: text/html; charset=UTF-8');
-            echo renderMarkdownPage($md, $relativePath, $indexHref);
-            exit;
+    $isMarkdownDirect = isMarkdownExtension($ext)
+        && !isset($_GET['content']) && !isset($_GET['download']) && !isset($_GET['inline']) && !isset($_GET['open'])
+        && !($inShareMode && $shareContext && $shareContext['type'] === 'dir');
+    if ($canBrowse && is_file($requestedPath) && $isMarkdownDirect && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        $openName = basename($relativePath);
+        $parentPath = dirname($relativePath);
+        if ($parentPath === '.' || $parentPath === '') {
+            $parentPath = '';
         }
+        header('Location: ' . currentListingUrl($indexHref, $parentPath, ['open' => $openName]));
+        exit;
     }
     if ($canBrowse && is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        if (isPreviewExtensionBlocked($ext, $previewBlocklist)) {
+            header('HTTP/1.1 403 Forbidden');
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode(['error' => 'Preview is disabled for this file type.'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
         $raw = @file_get_contents($requestedPath);
         if ($raw !== false) {
             $lang = $previewExts[$ext] ?? 'plaintext';
@@ -1702,7 +1969,7 @@ if ($relativePath !== '') {
                     'perms'           => formatEntryPermissions($requestedPath) ?? '',
                     'ext'             => $ext,
                 ];
-                if ($ext === 'md' || $ext === 'markdown') {
+                if (isMarkdownExtension($ext)) {
                     $out['html'] = markdownToHtml($raw);
                 }
                 echo json_encode($out, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
@@ -1710,7 +1977,7 @@ if ($relativePath !== '') {
             }
         }
     }
-    if (!$allowOutside && is_file($requestedPath) && ($isMdFullPage || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
+    if (!$allowOutside && is_file($requestedPath) && ($isMarkdownDirect || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
         $blockedMessage = 'That link points outside the index and cannot be opened.';
     }
     $realCurrent = realpath($requestedPath);
@@ -1847,6 +2114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($webRootUrl === null) {
             redirectToCurrentListing($indexHref, $relativePath, 'web_root_url_invalid');
         }
+        $previewBlocklistEntries = parsePreviewBlocklistInput($_POST['preview_blocklist'] ?? '');
+        $invalidPreviewEntry = null;
+        if (!validatePreviewBlocklist($previewBlocklistEntries, $invalidPreviewEntry)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'preview_blocklist_invalid');
+        }
         $saveError = null;
         $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
@@ -1856,11 +2128,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'create_enabled' => isset($_POST['create_enabled']) ? '1' : '0',
             'delete_enabled' => isset($_POST['delete_enabled']) ? '1' : '0',
             'browse_requires_auth' => isset($_POST['browse_requires_auth']) ? '1' : '0',
+            'image_preview_enabled' => isset($_POST['image_preview_enabled']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
             'path_whitelist' => $pathWhitelistEntries,
             'path_blacklist' => $pathBlacklistEntries,
+            'preview_blocklist' => $previewBlocklistEntries,
             'ip_header' => $ipHeader,
             'web_root_url' => $webRootUrl,
         ], $saveError);
@@ -2145,7 +2419,7 @@ if ($handle) {
         $isFile = is_file($full);
         $isBrokenLink = $isLink && realpath($full) === false;
         $ext = $isFile ? strtolower(pathinfo($entry, PATHINFO_EXTENSION)) : '';
-        $isText = $isFile && (isset($previewExts[$ext]) || !looksLikeBinary($full));
+        $previewKind = $isFile ? filePreviewKind($full, $ext, $previewExts, $previewBlocklist, $imagePreviewEnabled) : false;
         $entryPerms = @fileperms($full);
         $items[] = [
             'name'       => $entry,
@@ -2159,7 +2433,7 @@ if ($handle) {
             'perms'      => $entryPerms !== false ? (int) $entryPerms : null,
             'permsLabel' => formatEntryPermissions($full),
             'ownerLabel' => formatEntryOwner($full),
-            'isText'     => $isText,
+            'previewKind' => $previewKind,
             'ext'        => $ext,
         ];
     }
@@ -2196,7 +2470,8 @@ $messageMap = [
     'ip_access_invalid' => ['error', 'Access list contains an invalid IP address or CIDR range.'],
     'ip_header_invalid' => ['error', 'Client IP header name is not valid.'],
     'web_root_url_invalid' => ['error', 'Web root URL must be an absolute URL or a path starting with /.'],
-    'path_access_invalid' => ['error', 'Path access list contains an invalid entry. Use relative paths without ..'],
+    'path_access_invalid' => ['error', 'Path access list contains an invalid entry. Use relative paths without ..; wildcards (*, ?, [...], **) are allowed.'],
+    'preview_blocklist_invalid' => ['error', 'Preview blocklist contains an invalid extension. Use lowercase names like php or js, one per line.'],
     'path_denied' => ['error', 'That path is not allowed.'],
     'upload_bad_name' => ['error', 'Upload filename is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
     'upload_exists' => ['error', 'A file with that name already exists. Confirm overwrite and try again.'],
@@ -2252,6 +2527,7 @@ $settingsModalMessageKeys = [
     'ip_access_invalid',
     'ip_header_invalid',
     'path_access_invalid',
+    'preview_blocklist_invalid',
     'web_root_url_invalid',
 ];
 $settingsModalMessage = null;
@@ -2265,6 +2541,8 @@ if ($openSettingsModal) {
         $settingsPanelFocus = 'network';
     } elseif ($settingsMsg === 'path_access_invalid') {
         $settingsPanelFocus = 'path';
+    } elseif ($settingsMsg === 'preview_blocklist_invalid') {
+        $settingsPanelFocus = 'previews';
     } elseif ($settingsMsg === 'web_root_url_invalid') {
         $settingsPanelFocus = 'filesystem';
     }
@@ -2287,16 +2565,28 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
         $openReal = realpath($openAbsPath);
         if ($openReal !== false && is_file($openReal) && (pathUnderBase($openReal, $realBase) || $allowOutside)) {
             $openExt = strtolower(pathinfo($openFilePath, PATHINFO_EXTENSION));
-            $isText = isset($previewExts[$openExt]) || !looksLikeBinary($openReal);
+            $openPreviewKind = filePreviewKind($openReal, $openExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
             $openName = basename($openFilePath);
             $openMtime = @filemtime($openReal);
             $openMtimeFormatted = ($openMtime !== false && $openMtime >= 0 && $openMtime <= 2147483647) ? (@date('Y-m-d H:i', (int) $openMtime) ?: '—') : '—';
             $openDownloadUrl = $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath);
             $openPerms = formatEntryPermissions($openReal) ?? '';
             $openType = $openExt !== '' ? '.' . $openExt : '';
-            if ($isText) {
+            if ($openPreviewKind === 'text') {
                 $openFileForModal = [
                     'content_url' => currentListingUrl($indexHref, $openFilePath, ['content' => '1']),
+                    'name'        => $openName,
+                    'open_url'    => $openDownloadUrl,
+                    'share_path'  => $openFilePath,
+                    'size'        => formatSize(filesize($openReal)),
+                    'mtime'       => $openMtimeFormatted,
+                    'perms'       => $openPerms,
+                    'type'        => $openType,
+                ];
+            } elseif ($openPreviewKind === 'image') {
+                $openFileForModal = [
+                    'image'       => true,
+                    'image_url'   => previewImageUrl($indexHref, $openFilePath, $inShareMode),
                     'name'        => $openName,
                     'open_url'    => $openDownloadUrl,
                     'share_path'  => $openFilePath,
@@ -2388,22 +2678,37 @@ function formatEntryOwner($path) {
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
 /**
- * Simple markdown to HTML (headers, bold, italic, code, links, code blocks, lists).
+ * Simple markdown to HTML (headers, emphasis, links, images, code, lists, blockquotes, rules).
  */
 function markdownToHtml($text) {
     $h = function ($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); };
-    $lines = explode("\n", $text);
+    $lines = preg_split('/\R/', (string) $text);
     $out = '';
     $inBlock = false;
-    $inList = false;
-    foreach ($lines as $i => $line) {
-        $raw = $line;
+    $listType = null;
+    $inBlockquote = false;
+    $closeList = function () use (&$listType, &$out) {
+        if ($listType !== null) {
+            $out .= "</{$listType}>\n";
+            $listType = null;
+        }
+    };
+    $closeBlockquote = function () use (&$inBlockquote, &$out) {
+        if ($inBlockquote) {
+            $out .= "</blockquote>\n";
+            $inBlockquote = false;
+        }
+    };
+    foreach ($lines as $line) {
         if (preg_match('/^```(\w*)\s*$/', $line, $m)) {
+            $closeList();
+            $closeBlockquote();
             if ($inBlock) {
                 $out .= "</code></pre>\n";
                 $inBlock = false;
             } else {
-                $out .= '<pre><code class="' . $h($m[1]) . '">';
+                $lang = $m[1] !== '' ? $m[1] : 'plaintext';
+                $out .= '<pre class="hljs"><code class="language-' . $h($lang) . '">';
                 $inBlock = true;
             }
             continue;
@@ -2412,16 +2717,36 @@ function markdownToHtml($text) {
             $out .= $h($line) . "\n";
             continue;
         }
-        if (preg_match('/^#{1,6}\s+(.+)$/', $line, $m)) {
-            $l = strlen(strtok($line, ' '));
-            $out .= "<h{$l}>" . markdownInline($m[1], $h) . "</h{$l}>\n";
-            $inList = false;
+        if (preg_match('/^(\*{3,}|-{3,}|_{3,})\s*$/', $line)) {
+            $closeList();
+            $closeBlockquote();
+            $out .= "<hr>\n";
             continue;
         }
+        if (preg_match('/^(#{1,6})\s+(.+)$/', $line, $m)) {
+            $closeList();
+            $closeBlockquote();
+            $level = strlen($m[1]);
+            $out .= "<h{$level}>" . markdownInline($m[2], $h) . "</h{$level}>\n";
+            continue;
+        }
+        if (preg_match('/^>\s?(.*)$/', $line, $m)) {
+            $closeList();
+            if (!$inBlockquote) {
+                $out .= "<blockquote>\n";
+                $inBlockquote = true;
+            }
+            if (trim($m[1]) !== '') {
+                $out .= '<p>' . markdownInline($m[1], $h) . "</p>\n";
+            }
+            continue;
+        }
+        $closeBlockquote();
         if (preg_match('/^[\-\*]\s+\[([ xX])\]\s+(.+)$/', $line, $m)) {
-            if (!$inList) {
+            if ($listType !== 'ul') {
+                $closeList();
                 $out .= "<ul>\n";
-                $inList = true;
+                $listType = 'ul';
             }
             $checked = (strtolower($m[1]) === 'x');
             $out .= '<li class="task-list-item">'
@@ -2430,34 +2755,33 @@ function markdownToHtml($text) {
             continue;
         }
         if (preg_match('/^[\-\*]\s+(.+)$/', $line, $m)) {
-            if (!$inList) {
+            if ($listType !== 'ul') {
+                $closeList();
                 $out .= "<ul>\n";
-                $inList = true;
+                $listType = 'ul';
             }
             $out .= '<li>' . markdownInline($m[1], $h) . "</li>\n";
             continue;
         }
         if (preg_match('/^\d+\.\s+(.+)$/', $line, $m)) {
-            if (!$inList) {
+            if ($listType !== 'ol') {
+                $closeList();
                 $out .= "<ol>\n";
-                $inList = true;
+                $listType = 'ol';
             }
             $out .= '<li>' . markdownInline($m[1], $h) . "</li>\n";
             continue;
         }
-        if ($inList) {
-            $out .= "</ul>\n";
-            $inList = false;
-        }
         if (trim($line) === '') {
+            $closeList();
             $out .= "\n";
             continue;
         }
+        $closeList();
         $out .= '<p>' . markdownInline($line, $h) . "</p>\n";
     }
-    if ($inList) {
-        $out .= "</ul>\n";
-    }
+    $closeList();
+    $closeBlockquote();
     if ($inBlock) {
         $out .= "</code></pre>\n";
     }
@@ -2469,40 +2793,19 @@ function markdownInline($s, $h) {
     $s = preg_replace('/\*\*(.+?)\*\*/s', '<strong>$1</strong>', $s);
     $s = preg_replace('/\*(.+?)\*/s', '<em>$1</em>', $s);
     $s = preg_replace('/`([^`]+)`/', '<code>$1</code>', $s);
+    $s = preg_replace_callback('/!\[([^\]]*)\]\(([^)]+)\)/', function ($m) use ($h) {
+        $url = markdownSafeUrl($m[2]);
+        if ($url === null) {
+            return $h('![' . $m[1] . '](' . $m[2] . ')');
+        }
+        return '<img src="' . $h($url) . '" alt="' . $m[1] . '" loading="lazy">';
+    }, $s);
     $s = preg_replace_callback('/\[([^\]]+)\]\(([^)]+)\)/', function ($m) use ($h) {
-        $url = $m[2];
-        // Block javascript:, data:, vbscript: and other scheme-based XSS
-        $safe = !preg_match('/^(javascript|data|vbscript|file):/i', trim($url));
-        $href = $safe ? $h($url) : '#';
+        $url = markdownSafeUrl($m[2]);
+        $href = $url !== null ? $h($url) : '#';
         return '<a href="' . $href . '" target="_blank" rel="noopener noreferrer">' . $m[1] . '</a>';
     }, $s);
     return $s;
-}
-
-function renderMarkdownPage($md, $relativePath, $indexHref) {
-    $title = basename($relativePath);
-    $parentPath = dirname($relativePath);
-    $parentPath = ($parentPath === '.' || $parentPath === '') ? '' : $parentPath;
-    $backUrl = $indexHref . ($parentPath !== '' ? '?path=' . rawurlencode($parentPath) : '');
-    $body = markdownToHtml($md);
-    $css = '
-    :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: 2rem; }
-    .page { max-width: 800px; margin: 0 auto; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .back { margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-muted); }
-    h1,h2,h3,h4,h5,h6 { margin-top: 1.5em; margin-bottom: 0.5em; }
-    pre { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; }
-    code { font-family: ui-monospace, monospace; font-size: 0.9em; }
-    p code { background: var(--bg-card); padding: 0.2em 0.4em; border-radius: 4px; }
-    ul, ol { margin: 0.5em 0; padding-left: 1.5rem; }
-    .task-list-item { list-style: none; margin-left: -1.5rem; }
-    .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
-    .task-list-item-checkbox:checked { background: #2e1065; border-color: var(--accent); }
-    ';
-    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($title) . '</title><style>' . $css . '</style></head><body><div class="page"><div class="back"><a href="' . h($backUrl) . '">← Back to listing</a></div><div class="md">' . $body . '</div></div></body></html>';
 }
 
 $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: /' . h($relativePath ?: '') : ($relativePath ? 'Index of /' . h($relativePath) : 'Index of /'));
@@ -3092,9 +3395,17 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body code { font-family: 'JetBrains Mono', monospace; }
         .modal-body .modal-md { display: none; }
         .modal-body .modal-md.is-visible { display: block; }
-        .modal-body .modal-md h1,.modal-body .modal-md h2,.modal-body .modal-md h3 { margin-top: 1em; margin-bottom: 0.5em; }
-        .modal-body .modal-md pre { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.75rem; margin: 0.5em 0; }
-        .modal-body .modal-md p { margin: 0.5em 0; }
+        .modal-body .modal-md h1, .modal-body .modal-md h2, .modal-body .modal-md h3,
+        .modal-body .modal-md h4, .modal-body .modal-md h5, .modal-body .modal-md h6 { margin-top: 1em; margin-bottom: 0.5em; line-height: 1.3; }
+        .modal-body .modal-md p { margin: 0.5em 0; line-height: 1.6; }
+        .modal-body .modal-md a { color: var(--accent); text-decoration: none; }
+        .modal-body .modal-md a:hover { text-decoration: underline; }
+        .modal-body .modal-md code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: color-mix(in srgb, var(--bg-card) 80%, transparent); padding: 0.15em 0.35em; border-radius: 4px; }
+        .modal-body .modal-md pre { background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75em 0; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(60vh, 720px); }
+        .modal-body .modal-md pre code { display: block; background: none; padding: 0; white-space: pre; }
+        .modal-body .modal-md blockquote { margin: 0.75em 0; padding: 0.25em 0 0.25em 1rem; border-left: 3px solid var(--accent-dim); color: var(--text-muted); }
+        .modal-body .modal-md hr { border: none; border-top: 1px solid var(--border); margin: 1.25em 0; }
+        .modal-body .modal-md img { max-width: 100%; height: auto; border-radius: 8px; }
         .modal-body .modal-md ul, .modal-body .modal-md ol { margin: 0.5em 0; padding-left: 1.5rem; }
         .modal-body .modal-md .task-list-item { list-style: none; margin-left: -1.5rem; }
         .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
@@ -3124,10 +3435,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             word-break: break-word;
         }
         .modal.is-binary { width: min(520px, 95vw); }
+        .modal.is-image { width: min(900px, 95vw); }
+        .modal.is-markdown { width: min(800px, 95vw); }
         .modal-binary[hidden] { display: none !important; }
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
+        .modal-image[hidden] { display: none !important; }
+        .modal-image { text-align: center; }
+        .modal-image img { max-width: 100%; max-height: min(75vh, 960px); width: auto; height: auto; object-fit: contain; border-radius: 8px; }
         .ft-icon {
             position: relative;
             flex-shrink: 0;
@@ -3997,7 +4313,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
     </script>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -4363,11 +4679,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             $sizeFormatted = formatSize($item['size']);
                             $permsLabel = !empty($item['permsLabel']) ? $item['permsLabel'] : '';
                             $typeLabel = $item['ext'] !== '' ? '.' . $item['ext'] : '';
-                            if (!empty($item['isText'])) {
-                                $url = currentListingUrl($indexHref, $item['path']);
+                            if ($item['previewKind'] === 'text') {
+                                $url = '#';
                                 $contentUrl = currentListingUrl($indexHref, $item['path'], ['content' => '1']);
                                 $openUrl = $directUrl;
-                                $linkAttrs = ' class="file-preview" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                $previewClass = 'file-preview' . (isMarkdownExtension($item['ext']) ? ' file-preview-md' : '');
+                                $linkAttrs = ' class="' . $previewClass . '" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                    . ' data-size="' . h($sizeFormatted) . '"'
+                                    . ' data-mtime="' . h($mtimeFormatted) . '"'
+                                    . ' data-perms="' . h($permsLabel) . '"'
+                                    . ' data-type="' . h($typeLabel) . '"';
+                            } elseif ($item['previewKind'] === 'image') {
+                                $url = '#';
+                                $imageUrl = previewImageUrl($indexHref, $item['path'], $inShareMode);
+                                $openUrl = $directUrl;
+                                $linkAttrs = ' class="file-preview file-preview-image" data-image-url="' . h($imageUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
@@ -4385,7 +4711,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-share-path="' . h($item['path']) . '"';
                             }
                         }
-                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && empty($item['isText'])) ? 'binary' : '');
+                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
                         $entryTypeClass = listingEntryTypeClass($item);
                     ?>
                     <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-owner="<?= h(strtolower($item['ownerLabel'] ?? '')) ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
@@ -4473,6 +4799,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <a id="modal-binary-download" class="btn-download" href="#">Download</a>
                 </div>
                 <div id="modal-md" class="modal-md" aria-hidden="true"></div>
+                <div id="modal-image" class="modal-image" hidden aria-hidden="true">
+                    <img id="modal-image-el" alt="">
+                </div>
                 <pre id="modal-pre"><code id="modal-code"></code></pre>
             </div>
             <div id="modal-file-meta" class="modal-file-meta" hidden></div>
@@ -4661,6 +4990,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </div>
                     </details>
 
+                    <details class="settings-panel" id="settings-panel-previews" data-settings-panel="previews">
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Previews</span>
+                                <span class="settings-panel-hint">Image modal preview and blocked file types</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="image_preview_enabled" value="1" <?= $imagePreviewEnabled ? 'checked' : '' ?>>
+                                <span>Enable image preview in modal</span>
+                            </label>
+                            <p class="settings-help">When enabled, common image files (jpg, png, gif, webp, svg, and similar) open in the preview modal instead of the binary download dialog.</p>
+                            <div class="settings-field">
+                                <label for="admin-preview-blocklist">Preview blocklist</label>
+                                <textarea id="admin-preview-blocklist" name="preview_blocklist" rows="4" spellcheck="false" placeholder="php&#10;env"><?= h(formatPreviewBlocklistForInput($previewBlocklist)) ?></textarea>
+                                <span class="settings-help">One file extension per line, without a dot (e.g. <code>php</code>, <code>env</code>). Matching types are not previewed in the modal or on share landing pages; they open as binary files instead. Default: <code>php</code>.</span>
+                            </div>
+                        </div>
+                    </details>
+
                     <details class="settings-panel" id="settings-panel-path" data-settings-panel="path">
                         <summary class="settings-panel-summary">
                             <span class="settings-panel-summary-main">
@@ -4671,13 +5021,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <div class="settings-panel-body">
                             <div class="settings-field">
                                 <label for="admin-path-whitelist">Path whitelist</label>
-                                <textarea id="admin-path-whitelist" name="path_whitelist" rows="4" spellcheck="false" placeholder="public/&#10;docs"><?= h(formatPathAccessListForInput($pathWhitelist)) ?></textarea>
-                                <span class="settings-help">One path per line, relative to the index root. When non-empty, only these paths (and parent folders needed to reach them) are visible. Use a trailing slash or a slash in the path (e.g. <code>public/</code>) for a folder tree; a name without a slash (e.g. <code>README.md</code>) matches that basename anywhere. Share links bypass path rules.</span>
+                                <textarea id="admin-path-whitelist" name="path_whitelist" rows="4" spellcheck="false" placeholder="public/&#10;docs/*.md"><?= h(formatPathAccessListForInput($pathWhitelist)) ?></textarea>
+                                <span class="settings-help">One path per line, relative to the index root. When non-empty, only these paths (and parent folders needed to reach them) are visible. Use a trailing slash or a slash in the path (e.g. <code>public/</code>) for a folder tree; a name without a slash (e.g. <code>README.md</code>) matches that basename anywhere. Wildcards are supported: <code>*.log</code>, <code>backups/*.sql</code>, <code>logs/**</code>. Share links bypass path rules.</span>
                             </div>
                             <div class="settings-field">
                                 <label for="admin-path-blacklist">Path blacklist</label>
-                                <textarea id="admin-path-blacklist" name="path_blacklist" rows="4" spellcheck="false" placeholder="private/&#10;backups/old&#10;.git&#10;node_modules"><?= h(formatPathAccessListForInput($pathBlacklist)) ?></textarea>
-                                <span class="settings-help">One path per line. Same rule syntax as the whitelist. Matching paths are omitted from listings and blocked unless opened via a valid share link.</span>
+                                <textarea id="admin-path-blacklist" name="path_blacklist" rows="4" spellcheck="false" placeholder="private/&#10;*.tmp&#10;.git&#10;node_modules"><?= h(formatPathAccessListForInput($pathBlacklist)) ?></textarea>
+                                <span class="settings-help">One path per line. Same rule syntax as the whitelist, including wildcards. Matching paths are omitted from listings and blocked unless opened via a valid share link.</span>
                             </div>
                         </div>
                     </details>
@@ -5560,6 +5910,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalBinaryIcon = document.getElementById('modal-binary-icon');
         var modalBinaryName = document.getElementById('modal-binary-name');
         var modalBinaryDownload = document.getElementById('modal-binary-download');
+        var modalImage = document.getElementById('modal-image');
+        var modalImageEl = document.getElementById('modal-image-el');
         var modalFileMeta = document.getElementById('modal-file-meta');
         var closeBtn = document.getElementById('modal-close');
         var shareBtn = document.getElementById('modal-share-btn');
@@ -5669,7 +6021,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalPre.style.display = 'none';
             modalBinary.hidden = true;
             modalBinary.setAttribute('aria-hidden', 'true');
-            if (modalPanel) modalPanel.classList.remove('is-binary');
+            if (modalImage) {
+                modalImage.hidden = true;
+                modalImage.setAttribute('aria-hidden', 'true');
+            }
+            if (modalImageEl) modalImageEl.removeAttribute('src');
+            if (modalPanel) {
+                modalPanel.classList.remove('is-binary');
+                modalPanel.classList.remove('is-image');
+                modalPanel.classList.remove('is-markdown');
+            }
             clearModalMeta();
         }
 
@@ -5692,16 +6053,24 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 openLinkEl.removeAttribute('href');
             }
         }
+        function highlightModalMarkdown() {
+            if (!modalMd || !window.hljs) return;
+            modalMd.querySelectorAll('pre code').forEach(function(el) {
+                hljs.highlightElement(el);
+            });
+        }
         function openModal(name, content, lang, html, openUrl, sharePath, meta) {
             hidePreviewPanels();
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
             setModalMeta(meta || {});
             setModalOpenLink(openUrl || '');
-            if (html) {
+            if (html != null) {
                 modalMd.innerHTML = html;
                 modalMd.classList.add('is-visible');
                 modalMd.setAttribute('aria-hidden', 'false');
+                highlightModalMarkdown();
+                if (modalPanel) modalPanel.classList.add('is-markdown');
             } else {
                 modalPre.style.display = '';
                 codeEl.textContent = content;
@@ -5731,13 +6100,33 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'false');
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
+        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta) {
+            hidePreviewPanels();
+            if (modalPanel) modalPanel.classList.add('is-image');
+            titleEl.textContent = name;
+            setModalSharePath(sharePath || '');
+            setModalMeta(meta || {});
+            setModalOpenLink(openUrl || '');
+            if (modalImageEl) {
+                modalImageEl.src = imageUrl;
+                modalImageEl.alt = name;
+            }
+            if (modalImage) {
+                modalImage.hidden = false;
+                modalImage.setAttribute('aria-hidden', 'false');
+            }
+            overlay.classList.add('is-open');
+            overlay.setAttribute('aria-hidden', 'false');
+            if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
+        }
 
         function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta) {
             var fallbackMeta = meta || {};
             fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
                 var path = sharePath || sharePathFromContentUrl(contentUrl, data.name || name);
                 var mergedMeta = mergeModalMeta(metaFromApi(data), fallbackMeta);
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', data.html || null, openUrl, path, mergedMeta);
+                var renderHtml = Object.prototype.hasOwnProperty.call(data, 'html') ? data.html : null;
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', renderHtml, openUrl, path, mergedMeta);
                 if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
             }).catch(function() {
                 if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
@@ -5748,11 +6137,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var previewLink = e.target.closest('a.file-preview');
             if (previewLink) {
                 e.preventDefault();
-                var contentUrl = previewLink.getAttribute('data-content-url');
                 var name = previewLink.getAttribute('data-name') || '';
-                if (!contentUrl) return;
+                var imageUrl = previewLink.getAttribute('data-image-url');
                 var openUrl = previewLink.getAttribute('data-open-url') || '';
-                var sharePath = previewLink.getAttribute('data-share-path') || sharePathFromContentUrl(contentUrl, name);
+                var sharePath = previewLink.getAttribute('data-share-path') || '';
+                if (imageUrl) {
+                    var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink));
+                    return;
+                }
+                var contentUrl = previewLink.getAttribute('data-content-url');
+                if (!contentUrl) return;
+                sharePath = sharePath || sharePathFromContentUrl(contentUrl, name);
                 var listingUrl = buildListingUrlWithOpen(contentUrl, name, sharePath);
                 openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink));
                 return;
@@ -5796,6 +6192,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-mtime') || '',
                 body.getAttribute('data-open-icon-html') || '',
                 body.getAttribute('data-open-download-url') || '',
+                body.getAttribute('data-open-share-path') || '',
+                undefined,
+                metaFromElement(body)
+            );
+        } else if (body.getAttribute('data-open-image') === '1') {
+            openImageModal(
+                body.getAttribute('data-open-name') || '',
+                body.getAttribute('data-open-image-url') || '',
+                body.getAttribute('data-open-url') || '',
                 body.getAttribute('data-open-share-path') || '',
                 undefined,
                 metaFromElement(body)
