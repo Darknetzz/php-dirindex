@@ -1962,7 +1962,7 @@ if ($relativePath !== '') {
             }
             if ($raw !== false) {
                 header('Content-Type: application/json; charset=UTF-8');
-                $out = fileMetadataJson($requestedReal, $relativePath, $ext);
+                $out = fileMetadataJson($requestedReal, $relativePath, $ext, false);
                 $out['content'] = $raw;
                 $out['lang'] = $lang;
                 $out['hashes'] = fileContentHashes($raw);
@@ -2669,31 +2669,64 @@ function fileMtimeFormatted($mtime) {
     return ($formatted !== false) ? $formatted : '—';
 }
 
-function fileContentHashes($data) {
-    return [
-        'crc32'  => hash('crc32b', $data),
-        'md5'    => md5($data),
-        'sha1'   => sha1($data),
-        'sha256' => hash('sha256', $data),
-        'sha512' => hash('sha512', $data),
-    ];
+function fileHashNullSet() {
+    return ['crc32' => null, 'md5' => null, 'sha1' => null, 'sha256' => null, 'sha512' => null];
 }
 
-function filePathHashes($absolutePath) {
-    $hashes = ['crc32' => null];
-    $crc = @hash_file('crc32b', $absolutePath);
-    $hashes['crc32'] = ($crc !== false) ? $crc : null;
-    foreach (['md5', 'sha1', 'sha256', 'sha512'] as $algo) {
-        $h = @hash_file($algo, $absolutePath);
-        $hashes[$algo] = ($h !== false) ? $h : null;
+function fileHashInitContexts() {
+    $algos = ['crc32b' => 'crc32', 'md5' => 'md5', 'sha1' => 'sha1', 'sha256' => 'sha256', 'sha512' => 'sha512'];
+    $contexts = [];
+    foreach ($algos as $algo => $key) {
+        $ctx = @hash_init($algo);
+        if ($ctx === false) {
+            return null;
+        }
+        $contexts[$key] = $ctx;
+    }
+    return $contexts;
+}
+
+function fileHashFinalizeContexts(array $contexts) {
+    $hashes = [];
+    foreach ($contexts as $key => $ctx) {
+        $hashes[$key] = hash_final($ctx);
     }
     return $hashes;
 }
 
-function fileMetadataJson($absolutePath, $relativePath, $ext) {
+function fileContentHashes($data) {
+    $contexts = fileHashInitContexts();
+    if ($contexts === null) {
+        return fileHashNullSet();
+    }
+    foreach ($contexts as $ctx) {
+        hash_update($ctx, $data);
+    }
+    return fileHashFinalizeContexts($contexts);
+}
+
+function filePathHashes($absolutePath) {
+    $contexts = fileHashInitContexts();
+    if ($contexts === null) {
+        return fileHashNullSet();
+    }
+    $fh = @fopen($absolutePath, 'rb');
+    if ($fh === false) {
+        return fileHashNullSet();
+    }
+    while (($chunk = fread($fh, 1048576)) !== false && $chunk !== '') {
+        foreach ($contexts as $ctx) {
+            hash_update($ctx, $chunk);
+        }
+    }
+    fclose($fh);
+    return fileHashFinalizeContexts($contexts);
+}
+
+function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = true) {
     $fileSize = filesize($absolutePath);
     $fileMtime = @filemtime($absolutePath);
-    return [
+    $meta = [
         'name'            => basename($relativePath),
         'size'            => $fileSize,
         'size_formatted'  => formatSize($fileSize),
@@ -2701,8 +2734,11 @@ function fileMetadataJson($absolutePath, $relativePath, $ext) {
         'mtime_formatted' => fileMtimeFormatted($fileMtime !== false ? (int) $fileMtime : null),
         'perms'           => formatEntryPermissions($absolutePath) ?? '',
         'ext'             => $ext,
-        'hashes'          => filePathHashes($absolutePath),
     ];
+    if ($includeHashes) {
+        $meta['hashes'] = filePathHashes($absolutePath);
+    }
+    return $meta;
 }
 
 function formatEntryOwner($path) {
