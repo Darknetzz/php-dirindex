@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Checksum settings** — **Include SHA-256 and SHA-512 checksums** toggle in Settings → Previews (off by default; CRC32, MD5, and SHA-1 are always available)
+- **Broken symlinks** — broken symbolic links are labeled **broken** in the listing (red styling, strikethrough name, tooltip with target path)
 
 ### Changed
 

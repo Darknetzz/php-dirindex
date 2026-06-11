@@ -1830,9 +1830,20 @@ function fileExtensionCategory($ext) {
     return 'file';
 }
 
+function listingEntryLinkTitle(array $item) {
+    if (empty($item['isLink'])) {
+        return '';
+    }
+    $target = trim((string) ($item['linkTarget'] ?? ''));
+    if (!empty($item['isBrokenLink'])) {
+        return $target !== '' ? 'Broken symbolic link → ' . $target : 'Broken symbolic link';
+    }
+    return $target;
+}
+
 function listingEntryTypeClass(array $item) {
     if (!empty($item['isLink'])) {
-        return 'ft-type--symlink';
+        return !empty($item['isBrokenLink']) ? 'ft-type--symlink-broken' : 'ft-type--symlink';
     }
     if (!empty($item['isDir'])) {
         return 'ft-type--dir';
@@ -3236,6 +3247,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --ft-executable: #f87171;
             --ft-file: #a1a1aa;
             --ft-symlink: #a78bfa;
+            --ft-symlink-broken: #f87171;
             --hover: #27272a;
             --md-pre-bg: #282c34;
             --md-code-bg: color-mix(in srgb, var(--text) 8%, var(--bg-card));
@@ -3268,6 +3280,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             --ft-executable: #dc2626;
             --ft-file: #71717a;
             --ft-symlink: #7c3aed;
+            --ft-symlink-broken: #dc2626;
             --hover: #f4f4f5;
         }
         html {
@@ -3711,6 +3724,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .listing .name.ft-type--executable a { color: var(--ft-executable); }
         .listing .name.ft-type--file a { color: var(--ft-file); }
         .listing .name.ft-type--symlink a { color: var(--ft-symlink); }
+        .listing .name.ft-type--symlink-broken a { color: var(--ft-symlink-broken); }
+        .listing .name.ft-type--symlink-broken .entry-name { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ft-symlink-broken) 55%, transparent); }
+        .entry-broken-badge {
+            display: inline-block;
+            margin-left: 0.35rem;
+            padding: 0.05rem 0.35rem;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: var(--ft-symlink-broken);
+            border: 1px solid color-mix(in srgb, var(--ft-symlink-broken) 45%, transparent);
+            border-radius: 4px;
+            vertical-align: middle;
+            line-height: 1.3;
+        }
         .listing .name a.file-preview,
         .listing .name a.file-binary { cursor: pointer; }
         .entry-name {
@@ -5138,6 +5167,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
                     <?php
                     foreach ($items as $item):
+                        $brokenLinkAttr = !empty($item['isBrokenLink']) ? ' data-broken-link="1"' : '';
+                        $linkTitle = listingEntryLinkTitle($item);
+                        if ($linkTitle === '' && !$item['isDir'] && empty($item['previewKind']) && empty($item['isLink'])) {
+                            $linkTitle = 'View file info';
+                        }
+                        $linkTitleAttr = $linkTitle !== '' ? ' title="' . h($linkTitle) . '"' : '';
                         if ($item['isDir']) {
                             $url = currentListingUrl($indexHref, $item['path']);
                             $newTabUrl = $inShareMode ? $url : directEntryUrl($item['path'], true);
@@ -5170,7 +5205,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
-                                    . ' data-type="' . h($typeLabel) . '"';
+                                    . ' data-type="' . h($typeLabel) . '"'
+                                    . $brokenLinkAttr;
                             } elseif ($item['previewKind'] === 'image') {
                                 $url = '#';
                                 $imageUrl = previewImageUrl($indexHref, $item['path'], $inShareMode);
@@ -5181,11 +5217,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
-                                    . ' data-type="' . h($typeLabel) . '"';
+                                    . ' data-type="' . h($typeLabel) . '"'
+                                    . $brokenLinkAttr;
                             } else {
                                 $url = '#';
                                 $metaUrl = currentListingUrl($indexHref, $item['path'], ['meta' => '1']);
-                                $linkAttrs = ' class="file-binary" title="View file info"'
+                                $linkAttrs = ' class="file-binary"'
                                     . ' data-name="' . h($item['name']) . '"'
                                     . ' data-meta-url="' . h($metaUrl) . '"'
                                     . $downloadAttr
@@ -5195,22 +5232,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-type="' . h($typeLabel) . '"'
                                     . ' data-icon-html="' . h(fileTypeIconHtml($item['ext'], false)) . '"'
                                     . ' data-share-path="' . h($item['path']) . '"'
-                                    . (!empty($item['isBrokenLink']) ? ' data-broken-link="1"' : '');
+                                    . $brokenLinkAttr;
                             }
                         }
-                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
+                        $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . (!empty($item['isBrokenLink']) ? 'broken-link ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
                         $entryTypeClass = listingEntryTypeClass($item);
                     ?>
                     <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-owner="<?= h(strtolower($item['ownerLabel'] ?? '')) ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
                         <td class="name <?= trim($nameClass) ?> <?= h($entryTypeClass) ?>">
                             <div class="name-content">
-                                <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= ($item['isLink'] && !empty($item['linkTarget'])) ? ' title="' . h($item['linkTarget']) . '"' : '' ?>>
+                                <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= $linkTitleAttr ?>>
                                     <?php if ($item['isLink']): ?>
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" title="Symbolic link"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                                     <?php else: ?>
                                     <?= fileTypeIconHtml($item['ext'], $item['isDir'], true) ?>
                                     <?php endif; ?>
-                                    <span class="entry-name"><?= h($item['name']) ?></span>
+                                    <span class="entry-name"><?= h($item['name']) ?></span><?php if (!empty($item['isBrokenLink'])): ?><span class="entry-broken-badge">broken</span><?php endif; ?>
                                 </a>
                                 <div class="name-actions">
                                 <?php if ($authenticated && !$inShareMode && $deleteEnabled): ?>
