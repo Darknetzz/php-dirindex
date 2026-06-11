@@ -683,6 +683,23 @@ function pathLogicalUnderBase($absolutePath, $realBase) {
     return $pathNorm === $baseNorm || str_starts_with($pathNorm . $sep, $baseNorm . $sep);
 }
 
+function isBrokenSymbolicLink($path) {
+    return is_link($path) && realpath($path) === false;
+}
+
+function metaRequestAllowed($requestedPath, $requestedReal, $realBase, $allowOutside) {
+    if (!is_file($requestedPath) && !is_link($requestedPath)) {
+        return false;
+    }
+    if ($allowOutside) {
+        return true;
+    }
+    if ($requestedReal !== false) {
+        return pathUnderBase($requestedReal, $realBase);
+    }
+    return pathLogicalUnderBase($requestedPath, $realBase);
+}
+
 /**
  * Validate a listing path can be shared and determine its type.
  */
@@ -2084,13 +2101,23 @@ if ($relativePath !== '') {
         header('Location: ' . currentListingUrl($indexHref, $parentPath, ['open' => $openName]));
         exit;
     }
-    if ($canBrowse && is_file($requestedPath) && isset($_GET['meta']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+    if ($canBrowse && isset($_GET['meta']) && metaRequestAllowed($requestedPath, $requestedReal, $realBase, $allowOutside)) {
         $includeHashes = isset($_GET['hashes']);
         if ($includeHashes) {
             @set_time_limit(0);
         }
         header('Content-Type: application/json; charset=UTF-8');
-        echo json_encode(fileMetadataJson($requestedReal, $relativePath, $ext, $includeHashes, $hashSha256Sha512Enabled), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+        $metaPath = ($requestedReal !== false && is_file($requestedReal)) ? $requestedReal : $requestedPath;
+        $meta = fileMetadataJson($metaPath, $relativePath, $ext, false, $hashSha256Sha512Enabled);
+        if ($includeHashes) {
+            $hashError = filePathHashError($requestedPath);
+            if ($hashError !== null) {
+                $meta['error'] = $hashError;
+            } else {
+                $meta['hashes'] = filePathHashes($metaPath, $hashSha256Sha512Enabled);
+            }
+        }
+        echo json_encode($meta, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
         exit;
     }
     if ($canBrowse && is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
@@ -2880,6 +2907,21 @@ function fileContentHashes($data, $includeSha256Sha512 = false) {
     return fileHashFinalizeContexts($contexts);
 }
 
+function filePathHashError($absolutePath) {
+    if (isBrokenSymbolicLink($absolutePath)) {
+        return 'File does not exist (broken symbolic link).';
+    }
+    if (!is_file($absolutePath)) {
+        return 'File does not exist.';
+    }
+    $fh = @fopen($absolutePath, 'rb');
+    if ($fh === false) {
+        return 'File is not readable.';
+    }
+    fclose($fh);
+    return null;
+}
+
 function filePathHashes($absolutePath, $includeSha256Sha512 = false) {
     $contexts = fileHashInitContexts($includeSha256Sha512);
     if ($contexts === null) {
@@ -2899,19 +2941,25 @@ function filePathHashes($absolutePath, $includeSha256Sha512 = false) {
 }
 
 function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = true, $includeSha256Sha512 = false) {
-    $fileSize = filesize($absolutePath);
+    $fileSize = @filesize($absolutePath);
+    $fileSizeValue = ($fileSize !== false && $fileSize >= 0) ? (int) $fileSize : null;
     $fileMtime = @filemtime($absolutePath);
     $meta = [
         'name'            => basename($relativePath),
-        'size'            => $fileSize,
-        'size_formatted'  => formatSize($fileSize),
+        'size'            => $fileSizeValue,
+        'size_formatted'  => formatSize($fileSizeValue),
         'mtime'           => $fileMtime !== false ? (int) $fileMtime : null,
         'mtime_formatted' => fileMtimeFormatted($fileMtime !== false ? (int) $fileMtime : null),
         'perms'           => formatEntryPermissions($absolutePath) ?? '',
         'ext'             => $ext,
     ];
     if ($includeHashes) {
-        $meta['hashes'] = filePathHashes($absolutePath, $includeSha256Sha512);
+        $hashError = filePathHashError($absolutePath);
+        if ($hashError !== null) {
+            $meta['error'] = $hashError;
+        } else {
+            $meta['hashes'] = filePathHashes($absolutePath, $includeSha256Sha512);
+        }
     }
     return $meta;
 }
@@ -3840,6 +3888,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text-muted);
             font-size: 0.82rem;
         }
+        .modal-file-meta-hashes-error { color: var(--msg-error, #f87171); }
         .modal.is-binary { width: min(520px, 95vw); }
         .modal.is-image { width: min(900px, 95vw); }
         .modal.is-markdown { width: min(800px, 95vw); }
@@ -5145,7 +5194,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"'
                                     . ' data-icon-html="' . h(fileTypeIconHtml($item['ext'], false)) . '"'
-                                    . ' data-share-path="' . h($item['path']) . '"';
+                                    . ' data-share-path="' . h($item['path']) . '"'
+                                    . (!empty($item['isBrokenLink']) ? ' data-broken-link="1"' : '');
                             }
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
@@ -6508,6 +6558,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalMetaFallback = {};
         var modalHashesLoaded = false;
         var modalHashesLoading = false;
+        var modalHashesError = '';
+        var modalBrokenLink = false;
 
         function sharePathFromContentUrl(contentUrl, fileName) {
             if (!contentUrl) return fileName || '';
@@ -6544,12 +6596,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         function metaFromApi(data) {
             if (!data) return {};
-            return Object.assign({
+            var meta = Object.assign({
                 type: data.ext ? ('.' + data.ext) : '',
                 size: data.size_formatted || '',
                 mtime: data.mtime_formatted || '',
                 perms: data.perms || ''
             }, metaHashesFromApi(data));
+            if (data.error) meta.hashesError = data.error;
+            return meta;
         }
         function mergeModalMeta(primary, fallback) {
             return {
@@ -6561,7 +6615,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 md5: primary.md5 || fallback.md5 || '',
                 sha1: primary.sha1 || fallback.sha1 || '',
                 sha256: primary.sha256 || fallback.sha256 || '',
-                sha512: primary.sha512 || fallback.sha512 || ''
+                sha512: primary.sha512 || fallback.sha512 || '',
+                hashesError: primary.hashesError || fallback.hashesError || ''
             };
         }
         function appendModalMetaItem(parent, label, value, wide) {
@@ -6608,15 +6663,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             });
             if (primary.childNodes.length) modalFileMeta.appendChild(primary);
             var hashCount = hashFields.filter(function(field) { return !!field.value; }).length;
-            var showLazyChecksums = !!modalMetaUrl && !modalHashesLoaded;
-            if (hashCount || showLazyChecksums) {
+            var hashesError = meta.hashesError || modalHashesError || '';
+            var showLazyChecksums = !!modalMetaUrl && !modalHashesLoaded && !hashesError;
+            if (hashCount || showLazyChecksums || hashesError) {
                 hasValue = true;
                 var hashesPanel = document.createElement('details');
                 hashesPanel.className = 'modal-file-meta-hashes';
                 if (modalHashesOpen) hashesPanel.open = true;
                 var summary = document.createElement('summary');
                 summary.className = 'modal-file-meta-hashes-summary';
-                if (modalHashesLoading) {
+                if (hashesError) {
+                    summary.textContent = 'Checksums (unavailable)';
+                } else if (modalHashesLoading) {
                     summary.textContent = 'Checksums (computing…)';
                 } else if (hashCount) {
                     summary.textContent = 'Checksums (' + hashCount + ')';
@@ -6630,7 +6688,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     if (!field.value) return;
                     appendModalMetaItem(hashesBody, field.label, field.value, true);
                 });
-                if (showLazyChecksums && !hashCount) {
+                if (hashesError) {
+                    var err = document.createElement('p');
+                    err.className = 'modal-file-meta-hashes-hint modal-file-meta-hashes-error';
+                    err.textContent = hashesError;
+                    hashesBody.appendChild(err);
+                } else if (showLazyChecksums && !hashCount) {
                     var hint = document.createElement('p');
                     hint.className = 'modal-file-meta-hashes-hint';
                     hint.textContent = modalHashesLoading ? 'Reading file and computing checksums…' : 'Expand to compute checksums.';
@@ -6646,33 +6709,59 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (metaUrl.indexOf('hashes=') >= 0) return metaUrl;
             return metaUrl + (metaUrl.indexOf('?') >= 0 ? '&' : '?') + 'hashes=1';
         }
+        function setModalHashesError(message) {
+            modalHashesError = message || '';
+            modalHashesLoaded = true;
+            modalHashesLoading = false;
+            modalMetaFallback = Object.assign({}, modalMetaFallback, { hashesError: modalHashesError });
+            setModalMeta(modalMetaFallback);
+        }
         function loadModalHashes() {
             if (!modalMetaUrl || modalHashesLoaded || modalHashesLoading) return;
+            if (modalBrokenLink) {
+                setModalHashesError('File does not exist (broken symbolic link).');
+                return;
+            }
             modalHashesLoading = true;
+            modalHashesError = '';
             setModalMeta(modalMetaFallback);
-            fetch(modalMetaUrlWithHashes(modalMetaUrl)).then(function(r) { return r.json(); }).then(function(data) {
-                modalHashesLoaded = modalMetaHasHashValues(metaFromApi(data));
-                modalHashesLoading = false;
-                modalMetaFallback = mergeModalMeta(metaFromApi(data), modalMetaFallback);
-                setModalMeta(modalMetaFallback);
+            fetch(modalMetaUrlWithHashes(modalMetaUrl)).then(function(r) {
+                return r.json().then(function(data) {
+                    if (data && data.error) {
+                        setModalHashesError(data.error);
+                        return;
+                    }
+                    modalHashesLoaded = modalMetaHasHashValues(metaFromApi(data));
+                    modalHashesLoading = false;
+                    modalHashesError = '';
+                    modalMetaFallback = mergeModalMeta(metaFromApi(data), modalMetaFallback);
+                    setModalMeta(modalMetaFallback);
+                });
             }).catch(function() {
-                modalHashesLoading = false;
-                setModalMeta(modalMetaFallback);
+                setModalHashesError('Could not compute checksums.');
             });
         }
-        function loadModalMeta(metaUrl, fallbackMeta) {
+        function loadModalMeta(metaUrl, fallbackMeta, brokenLink) {
             modalMetaUrl = metaUrl || '';
             modalMetaFallback = fallbackMeta || {};
+            modalBrokenLink = !!brokenLink;
             modalHashesLoaded = modalMetaHasHashValues(modalMetaFallback);
             modalHashesLoading = false;
+            modalHashesError = modalMetaFallback.hashesError || '';
             setModalMeta(modalMetaFallback);
             if (!metaUrl) return;
-            fetch(metaUrl).then(function(r) { return r.json(); }).then(function(data) {
-                modalMetaFallback = mergeModalMeta(metaFromApi(data), fallbackMeta || {});
-                if (modalMetaHasHashValues(modalMetaFallback)) {
-                    modalHashesLoaded = true;
-                }
-                setModalMeta(modalMetaFallback);
+            fetch(metaUrl).then(function(r) {
+                return r.json().then(function(data) {
+                    modalMetaFallback = mergeModalMeta(metaFromApi(data), fallbackMeta || {});
+                    if (data && data.error) {
+                        modalHashesError = data.error;
+                        modalMetaFallback.hashesError = data.error;
+                    }
+                    if (modalMetaHasHashValues(modalMetaFallback)) {
+                        modalHashesLoaded = true;
+                    }
+                    setModalMeta(modalMetaFallback);
+                });
             }).catch(function() {});
         }
         function clearModalMeta() {
@@ -6681,6 +6770,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             modalMetaFallback = {};
             modalHashesLoaded = false;
             modalHashesLoading = false;
+            modalHashesError = '';
+            modalBrokenLink = false;
             setModalMeta({});
         }
         if (modalFileMeta) {
@@ -6803,7 +6894,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
-        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta, metaUrl) {
+        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta, metaUrl, brokenLink) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-binary');
             titleEl.textContent = name;
@@ -6811,7 +6902,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var fileMeta = meta || {};
             if (!fileMeta.size && size) fileMeta.size = size;
             if (!fileMeta.mtime && mtime) fileMeta.mtime = mtime;
-            loadModalMeta(metaUrl || '', fileMeta);
+            loadModalMeta(metaUrl || '', fileMeta, brokenLink);
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
             if (downloadUrl) {
@@ -6829,12 +6920,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'false');
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
-        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl, downloadUrl) {
+        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl, downloadUrl, brokenLink) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-image');
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
-            loadModalMeta(metaUrl || '', meta || {});
+            loadModalMeta(metaUrl || '', meta || {}, brokenLink);
             setModalDownloadLink(downloadUrl || '', name);
             setModalOpenLink(openUrl || '');
             if (modalImageEl) {
@@ -6874,7 +6965,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var sharePath = previewLink.getAttribute('data-share-path') || '';
                 if (imageUrl) {
                     var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
-                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl);
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl, previewLink.getAttribute('data-broken-link') === '1');
                     return;
                 }
                 var contentUrl = previewLink.getAttribute('data-content-url');
@@ -6901,7 +6992,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 binarySharePath,
                 listingUrl,
                 metaFromElement(binaryLink),
-                binaryLink.getAttribute('data-meta-url') || ''
+                binaryLink.getAttribute('data-meta-url') || '',
+                binaryLink.getAttribute('data-broken-link') === '1'
             );
         });
 
@@ -6927,7 +7019,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-share-path') || '',
                 undefined,
                 metaFromElement(body),
-                body.getAttribute('data-open-meta-url') || ''
+                body.getAttribute('data-open-meta-url') || '',
+                body.getAttribute('data-open-broken-link') === '1'
             );
         } else if (body.getAttribute('data-open-image') === '1') {
             openImageModal(
@@ -6938,7 +7031,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 undefined,
                 metaFromElement(body),
                 body.getAttribute('data-open-meta-url') || '',
-                body.getAttribute('data-open-download-url') || ''
+                body.getAttribute('data-open-download-url') || '',
+                body.getAttribute('data-open-broken-link') === '1'
             );
         } else {
             var initialContentUrl = body.getAttribute('data-open-content-url');

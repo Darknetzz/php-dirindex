@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **File checksums** — expanding checksums on a broken symbolic link shows an error instead of hanging indefinitely
 
 ## [1.2.4] - 2026-06-11
 
