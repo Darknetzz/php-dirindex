@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **File preview modal** — Download button in the header for text and image previews (blocklisted types still open the binary file-info dialog with its own download button)
+
 ### Changed
 
 ### Fixed
