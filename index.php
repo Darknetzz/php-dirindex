@@ -2964,6 +2964,13 @@ function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = t
         'perms'           => formatEntryPermissions($absolutePath) ?? '',
         'ext'             => $ext,
     ];
+    if (isBrokenSymbolicLink($absolutePath)) {
+        $meta['broken_link'] = true;
+        $linkTarget = @readlink($absolutePath);
+        if ($linkTarget !== false && $linkTarget !== '') {
+            $meta['link_target'] = $linkTarget;
+        }
+    }
     if ($includeHashes) {
         $hashError = filePathHashError($absolutePath);
         if ($hashError !== null) {
@@ -3784,7 +3791,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-overlay.is-open { display: flex; }
         .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; max-width: 95vw; max-height: 85vh; width: 1200px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
         .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .modal-title-wrap { display: flex; align-items: center; gap: 0.75rem; flex: 1; min-width: 0; }
+        .modal-title-wrap { display: flex; align-items: center; gap: 0.45rem; flex: 1; min-width: 0; flex-wrap: wrap; }
         .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .modal-header-actions {
             display: flex;
@@ -3926,6 +3933,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-binary-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
         .modal-binary-text { min-width: 0; }
         .modal-binary-name { margin: 0; font-size: 1.25rem; font-weight: 600; word-break: break-word; }
+        .modal-broken-notice {
+            margin: 0 0 1rem;
+            padding: 0.65rem 0.85rem;
+            border: 1px solid color-mix(in srgb, var(--ft-symlink-broken) 35%, transparent);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--ft-symlink-broken) 10%, transparent);
+            color: var(--ft-symlink-broken);
+            font-size: 0.9rem;
+            word-break: break-word;
+        }
         .modal-image[hidden] { display: none !important; }
         .modal-image { text-align: center; }
         .modal-image img { max-width: 100%; max-height: min(75vh, 960px); width: auto; height: auto; object-fit: contain; border-radius: 8px; }
@@ -5168,6 +5185,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <?php
                     foreach ($items as $item):
                         $brokenLinkAttr = !empty($item['isBrokenLink']) ? ' data-broken-link="1"' : '';
+                        $linkTargetAttr = ($item['isLink'] && !empty($item['linkTarget'])) ? ' data-link-target="' . h($item['linkTarget']) . '"' : '';
                         $linkTitle = listingEntryLinkTitle($item);
                         if ($linkTitle === '' && !$item['isDir'] && empty($item['previewKind']) && empty($item['isLink'])) {
                             $linkTitle = 'View file info';
@@ -5176,7 +5194,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         if ($item['isDir']) {
                             $url = currentListingUrl($indexHref, $item['path']);
                             $newTabUrl = $inShareMode ? $url : directEntryUrl($item['path'], true);
-                            $linkAttrs = '';
+                            $linkAttrs = $linkTargetAttr;
                         } else {
                             if ($inShareMode) {
                                 $directUrl = currentListingUrl($indexHref, $item['path'], ['download' => '1']);
@@ -5193,7 +5211,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             $sizeFormatted = formatSize($item['size']);
                             $permsLabel = !empty($item['permsLabel']) ? $item['permsLabel'] : '';
                             $typeLabel = $item['ext'] !== '' ? '.' . $item['ext'] : '';
-                            $entryDownloadUrl = listingEntryDownloadUrl($item['path'], $item['ext'], $inShareMode, $indexHref, $previewBlocklist);
+                            $entryDownloadUrl = !empty($item['isBrokenLink']) ? null : listingEntryDownloadUrl($item['path'], $item['ext'], $inShareMode, $indexHref, $previewBlocklist);
                             $downloadAttr = ($entryDownloadUrl !== null) ? (' data-download-url="' . h($entryDownloadUrl) . '"') : '';
                             if ($item['previewKind'] === 'text') {
                                 $url = '#';
@@ -5206,7 +5224,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"'
-                                    . $brokenLinkAttr;
+                                    . $brokenLinkAttr
+                                    . $linkTargetAttr;
                             } elseif ($item['previewKind'] === 'image') {
                                 $url = '#';
                                 $imageUrl = previewImageUrl($indexHref, $item['path'], $inShareMode);
@@ -5218,7 +5237,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"'
-                                    . $brokenLinkAttr;
+                                    . $brokenLinkAttr
+                                    . $linkTargetAttr;
                             } else {
                                 $url = '#';
                                 $metaUrl = currentListingUrl($indexHref, $item['path'], ['meta' => '1']);
@@ -5232,7 +5252,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     . ' data-type="' . h($typeLabel) . '"'
                                     . ' data-icon-html="' . h(fileTypeIconHtml($item['ext'], false)) . '"'
                                     . ' data-share-path="' . h($item['path']) . '"'
-                                    . $brokenLinkAttr;
+                                    . $brokenLinkAttr
+                                    . $linkTargetAttr;
                             }
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . (!empty($item['isBrokenLink']) ? 'broken-link ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
@@ -5260,7 +5281,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                 </button>
                                 <?php endif; ?>
-                                <?php if (!$inShareMode || $item['isDir']): ?>
+                                <?php if ((!$inShareMode || $item['isDir']) && empty($item['isBrokenLink'])): ?>
                                 <a class="entry-open-new" href="<?= h($newTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
                                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                 </a>
@@ -5297,6 +5318,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             <div class="modal-header">
                 <div class="modal-title-wrap">
                     <span class="modal-title" id="modal-title"></span>
+                    <span id="modal-broken-badge" class="entry-broken-badge" hidden>broken</span>
                 </div>
                 <div class="modal-header-actions">
                     <a id="modal-download-link" class="modal-action-btn" href="#" download hidden>
@@ -5317,6 +5339,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
+                <p id="modal-broken-notice" class="modal-broken-notice" hidden></p>
                 <div id="modal-binary" class="modal-binary" hidden aria-hidden="true">
                     <div class="modal-binary-header">
                         <span id="modal-binary-icon"></span>
@@ -6597,6 +6620,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalHashesLoading = false;
         var modalHashesError = '';
         var modalBrokenLink = false;
+        var modalBrokenLinkTarget = '';
+        var modalBrokenBadge = document.getElementById('modal-broken-badge');
+        var modalBrokenNotice = document.getElementById('modal-broken-notice');
 
         function sharePathFromContentUrl(contentUrl, fileName) {
             if (!contentUrl) return fileName || '';
@@ -6618,8 +6644,36 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 type: el.getAttribute('data-type') || el.getAttribute('data-open-type') || '',
                 size: el.getAttribute('data-size') || el.getAttribute('data-open-size') || '',
                 mtime: el.getAttribute('data-mtime') || el.getAttribute('data-open-mtime') || '',
-                perms: el.getAttribute('data-perms') || el.getAttribute('data-open-perms') || ''
+                perms: el.getAttribute('data-perms') || el.getAttribute('data-open-perms') || '',
+                linkTarget: el.getAttribute('data-link-target') || el.getAttribute('data-open-link-target') || ''
             };
+        }
+        function brokenLinkNoticeText(linkTarget) {
+            var target = (linkTarget || '').trim();
+            return target !== '' ? 'Broken symbolic link → ' + target : 'Broken symbolic link';
+        }
+        function setModalBrokenLinkState(brokenLink, linkTarget) {
+            modalBrokenLink = !!brokenLink;
+            modalBrokenLinkTarget = linkTarget || '';
+            if (modalBrokenBadge) modalBrokenBadge.hidden = !modalBrokenLink;
+            if (modalBrokenNotice) {
+                if (modalBrokenLink) {
+                    modalBrokenNotice.textContent = brokenLinkNoticeText(modalBrokenLinkTarget);
+                    modalBrokenNotice.hidden = false;
+                } else {
+                    modalBrokenNotice.hidden = true;
+                    modalBrokenNotice.textContent = '';
+                }
+            }
+            if (modalBrokenLink) {
+                setModalDownloadLink('');
+                setModalOpenLink('');
+                if (modalBinaryDownload) {
+                    modalBinaryDownload.hidden = true;
+                    modalBinaryDownload.removeAttribute('href');
+                }
+                if (shareBtn) shareBtn.hidden = true;
+            }
         }
         function metaHashesFromApi(data) {
             var hashes = (data && data.hashes && typeof data.hashes === 'object') ? data.hashes : {};
@@ -6640,6 +6694,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 perms: data.perms || ''
             }, metaHashesFromApi(data));
             if (data.error) meta.hashesError = data.error;
+            if (data.broken_link) {
+                meta.brokenLink = true;
+                meta.linkTarget = data.link_target || meta.linkTarget || '';
+            }
             return meta;
         }
         function mergeModalMeta(primary, fallback) {
@@ -6653,7 +6711,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 sha1: primary.sha1 || fallback.sha1 || '',
                 sha256: primary.sha256 || fallback.sha256 || '',
                 sha512: primary.sha512 || fallback.sha512 || '',
-                hashesError: primary.hashesError || fallback.hashesError || ''
+                hashesError: primary.hashesError || fallback.hashesError || '',
+                linkTarget: primary.linkTarget || fallback.linkTarget || '',
+                brokenLink: !!(primary.brokenLink || fallback.brokenLink)
             };
         }
         function appendModalMetaItem(parent, label, value, wide) {
@@ -6794,6 +6854,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         modalHashesError = data.error;
                         modalMetaFallback.hashesError = data.error;
                     }
+                    if (data && data.broken_link) {
+                        setModalBrokenLinkState(true, data.link_target || modalMetaFallback.linkTarget || '');
+                    }
                     if (modalMetaHasHashValues(modalMetaFallback)) {
                         modalHashesLoaded = true;
                     }
@@ -6862,6 +6925,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 modalPanel.classList.remove('is-image');
                 modalPanel.classList.remove('is-markdown');
             }
+            setModalBrokenLinkState(false, '');
             clearModalMeta();
         }
 
@@ -6904,17 +6968,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 hljs.highlightElement(el);
             });
         }
-        function openModal(name, content, lang, html, openUrl, sharePath, meta, downloadUrl) {
+        function openModal(name, content, lang, html, openUrl, sharePath, meta, downloadUrl, brokenLink, linkTarget) {
             hidePreviewPanels();
             modalMetaUrl = '';
             modalMetaFallback = meta || {};
             modalHashesLoaded = modalMetaHasHashValues(modalMetaFallback);
             modalHashesLoading = false;
             titleEl.textContent = name;
+            var isBroken = !!brokenLink || !!modalMetaFallback.brokenLink;
+            var target = linkTarget || modalMetaFallback.linkTarget || '';
             setModalSharePath(sharePath || '');
+            setModalBrokenLinkState(isBroken, target);
             setModalMeta(modalMetaFallback);
-            setModalDownloadLink(downloadUrl || '', name);
-            setModalOpenLink(openUrl || '');
+            if (!isBroken) {
+                setModalDownloadLink(downloadUrl || '', name);
+                setModalOpenLink(openUrl || '');
+            }
             if (html != null) {
                 modalMd.innerHTML = html;
                 modalMd.classList.add('is-visible');
@@ -6931,18 +7000,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
-        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta, metaUrl, brokenLink) {
+        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta, metaUrl, brokenLink, linkTarget) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-binary');
             titleEl.textContent = name;
-            setModalSharePath(sharePath || '');
             var fileMeta = meta || {};
             if (!fileMeta.size && size) fileMeta.size = size;
             if (!fileMeta.mtime && mtime) fileMeta.mtime = mtime;
-            loadModalMeta(metaUrl || '', fileMeta, brokenLink);
+            var isBroken = !!brokenLink;
+            var target = linkTarget || fileMeta.linkTarget || '';
+            setModalSharePath(sharePath || '');
+            setModalBrokenLinkState(isBroken, target);
+            loadModalMeta(metaUrl || '', fileMeta, isBroken);
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
-            if (downloadUrl) {
+            if (!isBroken && downloadUrl) {
                 modalBinaryDownload.href = downloadUrl;
                 modalBinaryDownload.hidden = false;
             } else {
@@ -6950,21 +7022,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 modalBinaryDownload.removeAttribute('href');
             }
             setModalDownloadLink('');
-            setModalOpenLink(downloadUrl || '');
+            if (!isBroken) setModalOpenLink(downloadUrl || '');
             modalBinary.hidden = false;
             modalBinary.setAttribute('aria-hidden', 'false');
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
-        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl, downloadUrl, brokenLink) {
+        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl, downloadUrl, brokenLink, linkTarget) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-image');
             titleEl.textContent = name;
+            var fileMeta = meta || {};
+            var isBroken = !!brokenLink;
+            var target = linkTarget || fileMeta.linkTarget || '';
             setModalSharePath(sharePath || '');
-            loadModalMeta(metaUrl || '', meta || {}, brokenLink);
-            setModalDownloadLink(downloadUrl || '', name);
-            setModalOpenLink(openUrl || '');
+            setModalBrokenLinkState(isBroken, target);
+            loadModalMeta(metaUrl || '', fileMeta, isBroken);
+            if (!isBroken) {
+                setModalDownloadLink(downloadUrl || '', name);
+                setModalOpenLink(openUrl || '');
+            }
             if (modalImageEl) {
                 modalImageEl.src = imageUrl;
                 modalImageEl.alt = name;
@@ -6978,13 +7056,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
 
-        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta, downloadUrl) {
+        function openModalFromContentUrl(contentUrl, name, openUrl, sharePath, pushStateUrl, meta, downloadUrl, brokenLink) {
             var fallbackMeta = meta || {};
+            var isBrokenLink = !!brokenLink;
             fetch(contentUrl).then(function(r) { return r.json(); }).then(function(data) {
                 var path = sharePath || sharePathFromContentUrl(contentUrl, data.name || name);
                 var mergedMeta = mergeModalMeta(metaFromApi(data), fallbackMeta);
                 var renderHtml = Object.prototype.hasOwnProperty.call(data, 'html') ? data.html : null;
-                openModal(data.name || name, data.content || '', data.lang || 'plaintext', renderHtml, openUrl, path, mergedMeta, downloadUrl);
+                var isBroken = isBrokenLink || !!mergedMeta.brokenLink;
+                openModal(data.name || name, data.content || '', data.lang || 'plaintext', renderHtml, openUrl, path, mergedMeta, isBroken ? '' : downloadUrl, isBroken, mergedMeta.linkTarget || fallbackMeta.linkTarget || '');
                 if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
             }).catch(function() {
                 if (pushStateUrl === undefined) window.location.href = contentUrl.split('&content')[0];
@@ -7002,14 +7082,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var sharePath = previewLink.getAttribute('data-share-path') || '';
                 if (imageUrl) {
                     var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
-                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl, previewLink.getAttribute('data-broken-link') === '1');
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '', downloadUrl, previewLink.getAttribute('data-broken-link') === '1', previewLink.getAttribute('data-link-target') || '');
                     return;
                 }
                 var contentUrl = previewLink.getAttribute('data-content-url');
                 if (!contentUrl) return;
                 sharePath = sharePath || sharePathFromContentUrl(contentUrl, name);
                 var listingUrl = buildListingUrlWithOpen(contentUrl, name, sharePath);
-                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink), downloadUrl);
+                openModalFromContentUrl(contentUrl, name, openUrl, sharePath, listingUrl, metaFromElement(previewLink), downloadUrl, previewLink.getAttribute('data-broken-link') === '1');
                 return;
             }
             var binaryLink = e.target.closest('a.file-binary');
@@ -7030,7 +7110,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 listingUrl,
                 metaFromElement(binaryLink),
                 binaryLink.getAttribute('data-meta-url') || '',
-                binaryLink.getAttribute('data-broken-link') === '1'
+                binaryLink.getAttribute('data-broken-link') === '1',
+                binaryLink.getAttribute('data-link-target') || ''
             );
         });
 
@@ -7057,7 +7138,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 undefined,
                 metaFromElement(body),
                 body.getAttribute('data-open-meta-url') || '',
-                body.getAttribute('data-open-broken-link') === '1'
+                body.getAttribute('data-open-broken-link') === '1',
+                body.getAttribute('data-open-link-target') || ''
             );
         } else if (body.getAttribute('data-open-image') === '1') {
             openImageModal(
@@ -7069,7 +7151,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 metaFromElement(body),
                 body.getAttribute('data-open-meta-url') || '',
                 body.getAttribute('data-open-download-url') || '',
-                body.getAttribute('data-open-broken-link') === '1'
+                body.getAttribute('data-open-broken-link') === '1',
+                body.getAttribute('data-open-link-target') || ''
             );
         } else {
             var initialContentUrl = body.getAttribute('data-open-content-url');
