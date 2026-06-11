@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **File preview modal** — Download button in the header for previewable text and image files when download is allowed
+- **Preview settings** — **Render Markdown in preview** toggle in Settings → Previews (when off, `.md` files show as highlighted source)
 
 ### Changed
+
+- **Preview settings** — Previews panel grouped under Settings with image, Markdown, and blocklist options; preview blocklist now stored correctly as JSON in SQLite
 
 ### Fixed
 

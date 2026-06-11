@@ -880,7 +880,7 @@ function dirindexStoredConfigKeys() {
 }
 
 function dirindexArraySettingKeys() {
-    return ['ip_whitelist', 'ip_blacklist', 'path_whitelist', 'path_blacklist'];
+    return ['ip_whitelist', 'ip_blacklist', 'path_whitelist', 'path_blacklist', 'preview_blocklist'];
 }
 
 function dirindexEncodeStoredValue($key, $value) {
@@ -919,7 +919,7 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root', 'browse_requires_auth', 'image_preview_enabled', 'markdown_preview_enabled'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
@@ -1457,6 +1457,7 @@ $dirindexConfig = [
     'web_root_url'              => '',
     'listing_from_document_root' => false,
     'image_preview_enabled'     => true,
+    'markdown_preview_enabled'  => true,
     'preview_blocklist'         => ['php'],
     'session_name'              => 'dirindex_upload',
 ];
@@ -1497,6 +1498,7 @@ $previewBlocklist = normalizePreviewBlocklist(
         : ['php']
 );
 $imagePreviewEnabled = !isset($dirindexConfig['image_preview_enabled']) || !empty($dirindexConfig['image_preview_enabled']);
+$markdownPreviewEnabled = !isset($dirindexConfig['markdown_preview_enabled']) || !empty($dirindexConfig['markdown_preview_enabled']);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
@@ -1747,7 +1749,7 @@ function dirindexHljsScriptForLang($lang) {
     return $map[(string) $lang] ?? null;
 }
 
-function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $previewKind, $size, $mtime, array $previewExts, $ext, array $previewBlocklist) {
+function renderShareFileLandingPage($relativePath, $absolutePath, array $share, $indexHref, $previewKind, $size, $mtime, array $previewExts, $ext, array $previewBlocklist, $markdownPreviewEnabled) {
     $name = basename($relativePath);
     $downloadParams = ['download' => '1'];
     if ($share['type'] === 'dir') {
@@ -1767,7 +1769,7 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
                 $raw = false;
             }
             if ($raw !== false) {
-                if (isMarkdownExtension($ext)) {
+                if (isMarkdownExtension($ext) && $markdownPreviewEnabled) {
                     $previewHtml = '<div class="preview-md">' . markdownToHtml($raw) . '</div>';
                     $isMdPreview = true;
                 } else {
@@ -1916,7 +1918,7 @@ if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
         $sharePreviewKind = filePreviewKind($shareFileReal, $shareExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $shareMtime = @filemtime($shareFileReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $sharePreviewKind, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt, $previewBlocklist);
+        echo renderShareFileLandingPage($effectivePath, $shareFileReal, $shareContext, $indexHref, $sharePreviewKind, filesize($shareFileReal), $shareMtime !== false ? (int) $shareMtime : null, $previewExts, $shareExt, $previewBlocklist, $markdownPreviewEnabled);
         exit;
     }
     $relativePath = $effectivePath;
@@ -1938,7 +1940,7 @@ if ($relativePath !== '') {
         $filePreviewKind = filePreviewKind($requestedReal, $fileExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $fileMtime = @filemtime($requestedReal);
         header('Content-Type: text/html; charset=UTF-8');
-        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $filePreviewKind, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt, $previewBlocklist);
+        echo renderShareFileLandingPage($relativePath, $requestedReal, $shareContext, $indexHref, $filePreviewKind, filesize($requestedReal), $fileMtime !== false ? (int) $fileMtime : null, $previewExts, $fileExt, $previewBlocklist, $markdownPreviewEnabled);
         exit;
     }
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
@@ -1978,7 +1980,7 @@ if ($relativePath !== '') {
                 $out['content'] = $raw;
                 $out['lang'] = $lang;
                 $out['hashes'] = fileContentHashes($raw);
-                if (isMarkdownExtension($ext)) {
+                if (isMarkdownExtension($ext) && $markdownPreviewEnabled) {
                     $out['html'] = markdownToHtml($raw);
                 }
                 echo json_encode($out, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
@@ -2138,6 +2140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'delete_enabled' => isset($_POST['delete_enabled']) ? '1' : '0',
             'browse_requires_auth' => isset($_POST['browse_requires_auth']) ? '1' : '0',
             'image_preview_enabled' => isset($_POST['image_preview_enabled']) ? '1' : '0',
+            'markdown_preview_enabled' => isset($_POST['markdown_preview_enabled']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
@@ -4927,7 +4930,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 $url = '#';
                                 $contentUrl = currentListingUrl($indexHref, $item['path'], ['content' => '1']);
                                 $openUrl = $directUrl;
-                                $previewClass = 'file-preview' . (isMarkdownExtension($item['ext']) ? ' file-preview-md' : '');
+                                $previewClass = 'file-preview' . (isMarkdownExtension($item['ext']) && $markdownPreviewEnabled ? ' file-preview-md' : '');
                                 $linkAttrs = ' class="' . $previewClass . '" data-content-url="' . h($contentUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
                                     . $downloadAttr
                                     . ' data-size="' . h($sizeFormatted) . '"'
@@ -5242,7 +5245,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <summary class="settings-panel-summary">
                             <span class="settings-panel-summary-main">
                                 <span class="settings-panel-title">Previews</span>
-                                <span class="settings-panel-hint">Image modal preview and blocked file types</span>
+                                <span class="settings-panel-hint">Images, Markdown, and blocked file types</span>
                             </span>
                         </summary>
                         <div class="settings-panel-body">
@@ -5251,6 +5254,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 <span>Enable image preview in modal</span>
                             </label>
                             <p class="settings-help">When enabled, common image files (jpg, png, gif, webp, svg, and similar) open in the preview modal instead of the binary download dialog.</p>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="markdown_preview_enabled" value="1" <?= $markdownPreviewEnabled ? 'checked' : '' ?>>
+                                <span>Render Markdown in preview</span>
+                            </label>
+                            <p class="settings-help">When enabled, <code>.md</code> and <code>.markdown</code> files are shown as formatted HTML in the preview modal and on share landing pages. When disabled, they open as syntax-highlighted source instead.</p>
                             <div class="settings-field">
                                 <label for="admin-preview-blocklist">Preview blocklist</label>
                                 <textarea id="admin-preview-blocklist" name="preview_blocklist" rows="4" spellcheck="false" placeholder="php&#10;env"><?= h(formatPreviewBlocklistForInput($previewBlocklist)) ?></textarea>

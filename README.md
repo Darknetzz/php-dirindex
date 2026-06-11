@@ -37,6 +37,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `web_root_url` | *(auto)* | Public URL base for **Open in new tab** links to files and folders (absolute URL or path from the site root). Saved during setup from the current request; leave empty in Settings to keep auto-detecting from the index script path. |
 | `listing_from_document_root` | `false` | When `true`, the listing root follows `DOCUMENT_ROOT` heuristics (web root, or its parent when the script is in or symlinked from the doc root). When `false`, the listing root is the folder containing `index.php`. |
 | `image_preview_enabled` | `true` | When `false`, image files open in the binary download dialog instead of the preview modal. |
+| `markdown_preview_enabled` | `true` | When `false`, `.md` and `.markdown` files open as syntax-highlighted source instead of rendered HTML in the preview modal and on share landing pages. |
 | `preview_blocklist` | `["php"]` | File extensions (without dots) that must not be previewed in the modal or on share landing pages; matching files open as binary instead. |
 
 **Path access** (Settings → Server settings when signed in as admin):
