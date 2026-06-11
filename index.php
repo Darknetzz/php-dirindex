@@ -1458,7 +1458,7 @@ function validateDirindexPhpSource($content, $expectedVersion = null, $expectedB
     if (preg_match('/^<!DOCTYPE html\b/i', $trimmed) || preg_match('/^<html\b/i', $trimmed)) {
         return 'Could not download the update (GitHub returned HTML instead of the release file).';
     }
-    if (!preg_match('/^\xEF\xBB\xBF?<\?php\b/', $trimmed)) {
+    if (!preg_match('/^(?:\xEF\xBB\xBF)?<\?php\b/', $trimmed)) {
         return 'Downloaded file is not a PHP script.';
     }
     if (!str_contains($content, '$dirindexVersion')) {

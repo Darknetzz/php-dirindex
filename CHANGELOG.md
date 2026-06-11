@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **In-place updates** — fix PHP validation regex (optional UTF-8 BOM was parsed incorrectly, so every update failed with “not a PHP script”)
 - **In-place updates** — download release assets via the GitHub API (more reliable than browser redirect URLs); clearer errors when GitHub returns HTML; accept compressed responses from curl
 - **In-place updates** — allow updating when the script directory is writable by PHP even if `index.php` is owned by another user (replace via `rename()` in the same folder)
 - **Broken symlinks** — file modal broken badge and notice hide correctly for normal files (`.entry-broken-badge` no longer overrides the `hidden` attribute)
