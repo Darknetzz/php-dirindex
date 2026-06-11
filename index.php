@@ -8,6 +8,8 @@ header('X-Content-Type-Options: nosniff');
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
 $dirindexVersion = '1.2.4';
+/** Short git ref; set by .github/workflows/dev-release.yml on rolling dev builds. */
+$dirindexBuildRef = '';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
 $dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';
 
@@ -1286,7 +1288,7 @@ function compareSemverTags($a, $b) {
     return 0;
 }
 
-function dirindexHttpGet($url, $accept = '*/*', $timeoutSec = 15) {
+function dirindexHttpRequest($url, $accept = '*/*', $timeoutSec = 15) {
     $userAgent = 'php-dirindex/' . ($GLOBALS['dirindexVersion'] ?? '0');
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
@@ -1299,22 +1301,40 @@ function dirindexHttpGet($url, $accept = '*/*', $timeoutSec = 15) {
         $body = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        if ($body === false || $code < 200 || $code >= 300) {
-            return null;
-        }
-        return $body;
+        return [
+            'status' => $code,
+            'body' => ($body === false) ? null : $body,
+        ];
     }
     if (!ini_get('allow_url_fopen')) {
-        return null;
+        return ['status' => 0, 'body' => null];
     }
     $ctx = stream_context_create([
         'http' => [
             'timeout' => $timeoutSec,
             'header' => "User-Agent: {$userAgent}\r\nAccept: {$accept}\r\n",
+            'ignore_errors' => true,
         ],
     ]);
     $body = @file_get_contents($url, false, $ctx);
-    return $body === false ? null : $body;
+    $status = 0;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', (string) $http_response_header[0], $m)) {
+        $status = (int) $m[1];
+    }
+    return [
+        'status' => $status,
+        'body' => ($body === false) ? null : $body,
+    ];
+}
+
+function dirindexHttpGet($url, $accept = '*/*', $timeoutSec = 15) {
+    $response = dirindexHttpRequest($url, $accept, $timeoutSec);
+    $status = (int) ($response['status'] ?? 0);
+    $body = $response['body'] ?? null;
+    if ($body === null || $status < 200 || $status >= 300) {
+        return null;
+    }
+    return $body;
 }
 
 function dirindexUpdateArtifactName() {
@@ -1329,23 +1349,67 @@ function dirindexGitHubRepoApiBase($repoUrl) {
     return 'https://api.github.com/repos/' . $m[1] . '/' . preg_replace('/\.git$/', '', $m[2]);
 }
 
-function dirindexFetchLatestRelease($repoUrl) {
+function dirindexNormalizeUpdateChannel($channel) {
+    return ($channel === 'dev') ? 'dev' : 'stable';
+}
+
+function dirindexParseDevBuildRef($releaseBody) {
+    if (preg_match('/\*\*Build:\*\*\s*([a-f0-9]{7,40})/i', (string) $releaseBody, $m)) {
+        return strtolower($m[1]);
+    }
+    return null;
+}
+
+function dirindexParseDevVersion($releaseBody) {
+    if (preg_match('/\*\*Version:\*\*\s*([0-9]+\.[0-9]+\.[0-9]+)/i', (string) $releaseBody, $m)) {
+        return $m[1];
+    }
+    return null;
+}
+
+function dirindexBuildRefFromPhpSource($content) {
+    if (preg_match('/\$dirindexBuildRef\s*=\s*[\'"]([a-f0-9]+)[\'"];/i', (string) $content, $m)) {
+        return strtolower($m[1]);
+    }
+    return '';
+}
+
+function dirindexFetchRelease($repoUrl, $channel = 'stable') {
+    $channel = dirindexNormalizeUpdateChannel($channel);
     $apiBase = dirindexGitHubRepoApiBase($repoUrl);
     if ($apiBase === null) {
         return ['error' => 'Could not determine the GitHub repository.'];
     }
-    $body = dirindexHttpGet($apiBase . '/releases/latest', 'application/vnd.github+json');
+    $endpoint = ($channel === 'dev')
+        ? $apiBase . '/releases/tags/dev'
+        : $apiBase . '/releases/latest';
+    $response = dirindexHttpRequest($endpoint, 'application/vnd.github+json');
+    $status = (int) ($response['status'] ?? 0);
+    $body = $response['body'] ?? null;
     if ($body === null) {
+        if ($channel === 'dev' && $status === 404) {
+            return ['error' => 'No dev release found yet. Push to the dev branch on GitHub to publish one.'];
+        }
+        return ['error' => 'Could not reach GitHub. Check outbound network access and try again.'];
+    }
+    if ($status < 200 || $status >= 300) {
+        if ($channel === 'dev' && $status === 404) {
+            return ['error' => 'No dev release found yet. Push to the dev branch on GitHub to publish one.'];
+        }
         return ['error' => 'Could not reach GitHub. Check outbound network access and try again.'];
     }
     $data = json_decode($body, true);
     if (!is_array($data)) {
-        return ['error' => 'Could not read the latest release from GitHub.'];
+        $message = ($channel === 'dev')
+            ? 'Could not read the dev release from GitHub. Push to the dev branch to publish one.'
+            : 'Could not read the latest release from GitHub.';
+        return ['error' => $message];
     }
     $tag = isset($data['tag_name']) ? (string) $data['tag_name'] : '';
     if ($tag === '') {
-        return ['error' => 'Latest release has no version tag.'];
+        return ['error' => 'Release has no version tag.'];
     }
+    $releaseBody = isset($data['body']) ? trim((string) $data['body']) : '';
     $assets = [];
     if (!empty($data['assets']) && is_array($data['assets'])) {
         foreach ($data['assets'] as $asset) {
@@ -1355,16 +1419,27 @@ function dirindexFetchLatestRelease($repoUrl) {
             $assets[(string) $asset['name']] = (string) $asset['browser_download_url'];
         }
     }
+    $version = ltrim($tag, 'vV');
+    $buildRef = null;
+    if ($channel === 'dev') {
+        $buildRef = dirindexParseDevBuildRef($releaseBody);
+        $devVersion = dirindexParseDevVersion($releaseBody);
+        if ($devVersion !== null) {
+            $version = $devVersion;
+        }
+    }
     return [
+        'channel' => $channel,
         'tag' => $tag,
-        'version' => ltrim($tag, 'vV'),
+        'version' => $version,
+        'build_ref' => $buildRef,
         'html_url' => isset($data['html_url']) ? (string) $data['html_url'] : '',
-        'body' => isset($data['body']) ? trim((string) $data['body']) : '',
+        'body' => $releaseBody,
         'assets' => $assets,
     ];
 }
 
-function validateDirindexPhpSource($content, $expectedVersion = null) {
+function validateDirindexPhpSource($content, $expectedVersion = null, $expectedBuildRef = null) {
     if (!is_string($content)) {
         return 'Downloaded file is invalid.';
     }
@@ -1381,6 +1456,12 @@ function validateDirindexPhpSource($content, $expectedVersion = null) {
     if ($expectedVersion !== null && !preg_match('/\$dirindexVersion\s*=\s*[\'"]' . preg_quote((string) $expectedVersion, '/') . '[\'"];/', $content)) {
         return 'Downloaded file version does not match the release.';
     }
+    if ($expectedBuildRef !== null) {
+        $buildRef = dirindexBuildRefFromPhpSource($content);
+        if ($buildRef === '' || !hash_equals(strtolower((string) $expectedBuildRef), $buildRef)) {
+            return 'Downloaded dev build does not match the release.';
+        }
+    }
     return null;
 }
 
@@ -1392,37 +1473,63 @@ function canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareM
     return is_writable($target) && is_writable(dirname($target));
 }
 
-function dirindexUpdateCheckPayload($currentVersion, $repoUrl, $authenticated, $hasUploadCredentials, $inShareMode) {
+function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $channel = 'stable') {
+    $channel = dirindexNormalizeUpdateChannel($channel);
     $artifact = dirindexUpdateArtifactName();
-    $release = dirindexFetchLatestRelease($repoUrl);
+    $currentBuildRef = strtolower(trim((string) $currentBuildRef));
+    $release = dirindexFetchRelease($repoUrl, $channel);
     if (!empty($release['error'])) {
         return [
             'ok' => false,
             'error' => $release['error'],
+            'channel' => $channel,
             'current_version' => $currentVersion,
+            'current_build_ref' => $currentBuildRef,
             'artifact' => $artifact,
             'can_update' => false,
         ];
     }
     $latestVersion = $release['version'];
-    $cmp = compareSemverTags($latestVersion, $currentVersion);
+    $latestBuildRef = $release['build_ref'] ?? null;
+    if ($channel === 'dev') {
+        if ($latestBuildRef === null) {
+            return [
+                'ok' => false,
+                'error' => 'Dev release is missing a build ref.',
+                'channel' => $channel,
+                'current_version' => $currentVersion,
+                'current_build_ref' => $currentBuildRef,
+                'artifact' => $artifact,
+                'can_update' => false,
+            ];
+        }
+        $updateAvailable = $currentBuildRef !== $latestBuildRef;
+        $upToDate = !$updateAvailable;
+    } else {
+        $cmp = compareSemverTags($latestVersion, $currentVersion);
+        $updateAvailable = $cmp > 0;
+        $upToDate = $cmp <= 0;
+    }
     $downloadUrl = $release['assets'][$artifact] ?? null;
     $payload = [
         'ok' => true,
+        'channel' => $channel,
         'current_version' => $currentVersion,
+        'current_build_ref' => $currentBuildRef,
         'latest_version' => $latestVersion,
+        'latest_build_ref' => $latestBuildRef,
         'latest_tag' => $release['tag'],
-        'update_available' => $cmp > 0,
-        'up_to_date' => $cmp <= 0,
+        'update_available' => $updateAvailable,
+        'up_to_date' => $upToDate,
         'release_url' => $release['html_url'],
         'release_notes' => $release['body'],
         'artifact' => $artifact,
         'download_url' => $downloadUrl,
-        'can_update' => $cmp > 0 && $downloadUrl !== null && canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode),
+        'can_update' => $updateAvailable && $downloadUrl !== null && canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode),
     ];
-    if ($cmp > 0 && $downloadUrl === null) {
-        $payload['error'] = 'Latest release has no ' . $artifact . ' asset.';
-    } elseif ($cmp > 0 && !canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
+    if ($updateAvailable && $downloadUrl === null) {
+        $payload['error'] = 'Release has no ' . $artifact . ' asset.';
+    } elseif ($updateAvailable && !canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
         if (!$hasUploadCredentials) {
             $payload['error'] = 'Complete setup to enable in-place updates.';
         } elseif (!$authenticated) {
@@ -1434,12 +1541,17 @@ function dirindexUpdateCheckPayload($currentVersion, $repoUrl, $authenticated, $
     return $payload;
 }
 
-function applyDirindexSelfUpdate($downloadUrl, $expectedVersion) {
+function applyDirindexSelfUpdate($downloadUrl, $expectedVersion, $channel = 'stable', $expectedBuildRef = null) {
+    $channel = dirindexNormalizeUpdateChannel($channel);
     $content = dirindexHttpGet($downloadUrl, 'application/octet-stream', 60);
     if ($content === null) {
         return 'Could not download the update.';
     }
-    $validationError = validateDirindexPhpSource($content, $expectedVersion);
+    $validationError = validateDirindexPhpSource(
+        $content,
+        $channel === 'dev' ? null : $expectedVersion,
+        $channel === 'dev' ? $expectedBuildRef : null
+    );
     if ($validationError !== null) {
         return $validationError;
     }
@@ -1912,9 +2024,10 @@ if ($inShareMode && $shareContext) {
 }
 
 if (isset($_GET['update_check']) && $relativePath === '' && !$inShareMode) {
+    $updateChannel = dirindexNormalizeUpdateChannel(isset($_GET['channel']) ? (string) $_GET['channel'] : 'stable');
     header('Content-Type: application/json; charset=UTF-8');
     echo json_encode(
-        dirindexUpdateCheckPayload($dirindexVersion, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode),
+        dirindexUpdateCheckPayload($dirindexVersion, $dirindexBuildRef, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $updateChannel),
         JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
     );
     exit;
@@ -2778,19 +2891,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
             shareAjaxResponse(false, basename(__FILE__) . ' is not writable by PHP.');
         }
-        $check = dirindexUpdateCheckPayload($dirindexVersion, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode);
+        $updateChannel = dirindexNormalizeUpdateChannel(isset($_POST['channel']) ? (string) $_POST['channel'] : 'stable');
+        $check = dirindexUpdateCheckPayload($dirindexVersion, $dirindexBuildRef, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $updateChannel);
         if (empty($check['ok'])) {
             shareAjaxResponse(false, $check['error'] ?? 'Could not check for updates.');
         }
         if (empty($check['update_available'])) {
+            if ($updateChannel === 'dev') {
+                $buildRef = $dirindexBuildRef !== '' ? $dirindexBuildRef : 'current';
+                shareAjaxResponse(false, 'Already on the latest dev build (' . $buildRef . ').');
+            }
             shareAjaxResponse(false, 'Already up to date (v' . $dirindexVersion . ').');
         }
         if (empty($check['download_url'])) {
             shareAjaxResponse(false, $check['error'] ?? 'Update package not found.');
         }
-        $applyError = applyDirindexSelfUpdate($check['download_url'], $check['latest_version']);
+        $applyError = applyDirindexSelfUpdate(
+            $check['download_url'],
+            $check['latest_version'],
+            $updateChannel,
+            $check['latest_build_ref'] ?? null
+        );
         if ($applyError !== null) {
             shareAjaxResponse(false, $applyError);
+        }
+        if ($updateChannel === 'dev') {
+            $buildRef = $check['latest_build_ref'] ?? 'latest';
+            shareAjaxResponse(true, 'Updated to dev build ' . $buildRef . ' (v' . $check['latest_version'] . '). Reloading…');
         }
         shareAjaxResponse(true, 'Updated to v' . $check['latest_version'] . '. Reloading…');
     }
@@ -4351,6 +4478,27 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .about-update-actions .btn-auth { font-size: 0.85rem; padding: 0.45rem 0.7rem; }
         .about-update-actions .btn-auth[hidden] { display: none; }
+        .about-update-channel {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0 0 0.75rem;
+            font-size: 0.85rem;
+        }
+        .about-update-channel label {
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        .about-update-channel select {
+            flex: 1;
+            min-width: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text);
+            padding: 0.4rem 0.55rem;
+            font: inherit;
+        }
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
@@ -5689,7 +5837,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <dt>Version</dt>
                     <dd><?= h($dirindexVersion) ?></dd>
                     <dt>Build</dt>
-                    <dd><?= h($dirindexBuildLabel) ?></dd>
+                    <dd><?= h($dirindexBuildLabel) ?><?php if ($dirindexBuildRef !== ''): ?> <span class="about-build-ref">(<?= h($dirindexBuildRef) ?>)</span><?php endif; ?></dd>
                     <dt>PHP</dt>
                     <dd><?= h(PHP_VERSION) ?></dd>
                 </dl>
@@ -5697,7 +5845,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <div class="about-update" id="about-update"
                     data-check-url="<?= h(currentListingUrl($indexHref, '', ['update_check' => '1'])) ?>"
                     data-post-url="<?= h($indexHref) ?>"
-                    data-current-version="<?= h($dirindexVersion) ?>">
+                    data-current-version="<?= h($dirindexVersion) ?>"
+                    data-current-build-ref="<?= h($dirindexBuildRef) ?>">
+                    <div class="about-update-channel">
+                        <label for="about-update-channel">Channel</label>
+                        <select id="about-update-channel" aria-label="Update channel">
+                            <option value="stable">Stable (tagged releases)</option>
+                            <option value="dev">Dev (rolling)</option>
+                        </select>
+                    </div>
                     <p class="about-update-status is-muted" id="about-update-status" role="status">Check GitHub for a newer release.</p>
                     <div class="about-update-actions">
                         <button type="button" class="btn-auth btn-auth-secondary" id="about-check-updates">Check for updates</button>
@@ -6800,7 +6956,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var aboutUpdateStatus = document.getElementById('about-update-status');
         var aboutCheckBtn = document.getElementById('about-check-updates');
         var aboutApplyBtn = document.getElementById('about-apply-update');
+        var aboutChannelSelect = document.getElementById('about-update-channel');
         var latestCheckData = null;
+        var updateChannelStorageKey = 'dirindexUpdateChannel';
+
+        function getAboutUpdateChannel() {
+            if (!aboutChannelSelect) return 'stable';
+            return aboutChannelSelect.value === 'dev' ? 'dev' : 'stable';
+        }
+
+        function buildAboutCheckUrl() {
+            var base = aboutUpdate ? aboutUpdate.getAttribute('data-check-url') : '';
+            if (!base) return '';
+            var channel = getAboutUpdateChannel();
+            return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'channel=' + encodeURIComponent(channel);
+        }
 
         function setAboutUpdateStatus(text, tone) {
             if (!aboutUpdateStatus) return;
@@ -6821,18 +6991,33 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 return;
             }
             if (data.up_to_date) {
-                setAboutUpdateStatus('You are on the latest release (v' + data.current_version + ').', 'success');
+                if (data.channel === 'dev') {
+                    var currentRef = data.current_build_ref || 'latest';
+                    setAboutUpdateStatus('You are on the latest dev build (' + currentRef + ', v' + data.current_version + ').', 'success');
+                } else {
+                    setAboutUpdateStatus('You are on the latest release (v' + data.current_version + ').', 'success');
+                }
                 return;
             }
             if (data.update_available) {
-                var msg = 'v' + data.latest_version + ' is available (you have v' + data.current_version + ').';
+                var msg;
+                if (data.channel === 'dev') {
+                    msg = 'Dev build ' + (data.latest_build_ref || '?') + ' is available (v' + data.latest_version;
+                    if (data.current_build_ref) msg += ', you have ' + data.current_build_ref;
+                    else msg += ', stable install';
+                    msg += ').';
+                } else {
+                    msg = 'v' + data.latest_version + ' is available (you have v' + data.current_version + ').';
+                }
                 if (data.error) {
                     msg += ' ' + data.error;
                     setAboutUpdateStatus(msg, 'warning');
                 } else {
                     setAboutUpdateStatus(msg, 'warning');
                     if (aboutApplyBtn && data.can_update) {
-                        aboutApplyBtn.textContent = 'Update to v' + data.latest_version;
+                        aboutApplyBtn.textContent = data.channel === 'dev'
+                            ? ('Update to dev ' + (data.latest_build_ref || ''))
+                            : ('Update to v' + data.latest_version);
                         aboutApplyBtn.hidden = false;
                     }
                 }
@@ -6843,7 +7028,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         function checkAboutUpdates() {
             if (!aboutUpdate || !aboutCheckBtn) return;
-            var checkUrl = aboutUpdate.getAttribute('data-check-url');
+            var checkUrl = buildAboutCheckUrl();
             if (!checkUrl) return;
             aboutCheckBtn.disabled = true;
             if (aboutApplyBtn) aboutApplyBtn.disabled = true;
@@ -6864,18 +7049,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (!aboutUpdate || !aboutApplyBtn || !latestCheckData || !latestCheckData.can_update) return;
             var postUrl = aboutUpdate.getAttribute('data-post-url');
             if (!postUrl) return;
-            var version = latestCheckData.latest_version || 'the latest release';
-            if (!window.confirm('Replace ' + (latestCheckData.artifact || 'index.php') + ' with v' + version + ' from GitHub?')) {
+            var channel = latestCheckData.channel || getAboutUpdateChannel();
+            var label = channel === 'dev'
+                ? ('dev build ' + (latestCheckData.latest_build_ref || latestCheckData.latest_version))
+                : ('v' + (latestCheckData.latest_version || 'latest'));
+            if (!window.confirm('Replace ' + (latestCheckData.artifact || 'index.php') + ' with ' + label + ' from GitHub?')) {
                 return;
             }
             var body = new FormData();
             body.append('action', 'app_update');
             body.append('ajax', '1');
+            body.append('channel', channel);
             var csrf = csrfTokenValue();
             if (csrf) body.append('csrf_token', csrf);
             aboutApplyBtn.disabled = true;
             aboutCheckBtn.disabled = true;
-            setAboutUpdateStatus('Downloading and applying v' + version + '…', 'muted');
+            setAboutUpdateStatus('Downloading and applying ' + label + '…', 'muted');
             fetch(postUrl, { method: 'POST', body: body, credentials: 'same-origin' })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
@@ -6904,6 +7093,25 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             aboutOverlay.classList.remove('is-open');
             aboutOverlay.setAttribute('aria-hidden', 'true');
             if (aboutTrigger) aboutTrigger.focus();
+        }
+
+        if (aboutChannelSelect) {
+            try {
+                var savedChannel = localStorage.getItem(updateChannelStorageKey);
+                if (savedChannel === 'dev' || savedChannel === 'stable') {
+                    aboutChannelSelect.value = savedChannel;
+                }
+            } catch (e) {}
+            aboutChannelSelect.addEventListener('change', function() {
+                try {
+                    localStorage.setItem(updateChannelStorageKey, getAboutUpdateChannel());
+                } catch (e) {}
+                if (aboutApplyBtn) aboutApplyBtn.hidden = true;
+                latestCheckData = null;
+                setAboutUpdateStatus(getAboutUpdateChannel() === 'dev'
+                    ? 'Check GitHub for a newer dev build.'
+                    : 'Check GitHub for a newer release.', 'muted');
+            });
         }
 
         if (btnAbout) btnAbout.addEventListener('click', openAbout);

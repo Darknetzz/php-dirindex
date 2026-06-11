@@ -77,7 +77,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 PHP settings such as `upload_max_filesize`, `post_max_size`, and `max_file_uploads` still apply. Folder uploads are limited to 500 files per request; empty subfolders are not uploaded (only files).
 
-**Updates:** Open **About** (footer version link or toolbar info icon) and use **Check for updates** to compare with the [latest GitHub release](https://github.com/Darknetzz/php-dirindex/releases). When a newer version is available, signed-in admins can **Update now** to replace the running `index.php` or `index.min.php` in place (PHP must be able to write the script file; outbound HTTPS to GitHub is required).
+**Updates:** Open **About** (footer version link or toolbar info icon), choose **Stable** or **Dev** channel, and use **Check for updates**. **Stable** compares your semver with the [latest tagged release](https://github.com/Darknetzz/php-dirindex/releases). **Dev** tracks the rolling [dev prerelease](https://github.com/Darknetzz/php-dirindex/releases/tag/dev) built from the `dev` branch (compares embedded build refs). When an update is available, signed-in admins can **Update now** to replace the running `index.php` or `index.min.php` in place (PHP must be able to write the script file; outbound HTTPS to GitHub is required).
 
 No dependencies—just drop the file and run.
 

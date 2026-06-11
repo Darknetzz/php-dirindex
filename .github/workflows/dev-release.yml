@@ -1,0 +1,51 @@
+name: Dev release
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+
+jobs:
+  dev-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: Embed build ref
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          sed -i "s/^\$dirindexBuildRef = '';/\$dirindexBuildRef = '${SHA}';/" index.php
+          grep '$dirindexBuildRef' index.php
+
+      - name: Build minified artifact
+        run: php scripts/build-min.php
+
+      - name: Syntax check
+        run: |
+          php -l index.php
+          php -l index.min.php
+
+      - name: Package release files
+        run: |
+          mkdir dist
+          cp index.php index.min.php README.md CHANGELOG.md dist/
+
+      - name: Generate dev release notes
+        run: scripts/dev-release-notes.sh > dev-release-notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev
+          name: Development (rolling)
+          prerelease: true
+          make_latest: false
+          body_path: dev-release-notes.md
+          files: |
+            dist/index.php
+            dist/index.min.php
