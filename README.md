@@ -112,20 +112,20 @@ Two remotes: **GitLab** (`origin`) for day-to-day work, **GitHub** (`github`) fo
 ```sh
 git remote add github git@github.com:Darknetzz/php-dirindex.git
 # first push only (GitHub repo must exist and be empty):
-git push -u github main
+git push -u github dev
 ```
 
-**Day-to-day:**
+**Day-to-day** (default branch is `dev`):
 
 ```sh
-git push origin main
-git push github main
+git push origin dev
+git push github dev
 ```
 
 Or push both at once:
 
 ```sh
-git push origin main && git push github main
+git push origin dev && git push github dev
 ```
 
 **Publish a release** (script builds locally, tags, pushes to both remotes; GitHub Actions attaches release files):
@@ -137,6 +137,6 @@ git push origin main && git push github main
 ./scripts/release.sh --dry-run          # preview only
 ```
 
-The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `main` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page, with the release description taken from the same CHANGELOG section.
+The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `dev` if needed, then pushes the tag to GitLab and GitHub. GitHub Actions publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page, with the release description taken from the same CHANGELOG section. Run it from the `dev` branch.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md). Add bullets under `## [Unreleased]` as you make changes.

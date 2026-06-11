@@ -10,6 +10,8 @@
 
 set -euo pipefail
 
+DEFAULT_BRANCH="dev"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -208,8 +210,8 @@ if ! git remote get-url github &>/dev/null; then
 fi
 
 BRANCH="$(git branch --show-current)"
-if [[ "$BRANCH" != "main" ]]; then
-    echo "Not on main (on '$BRANCH'). Checkout main before releasing." >&2
+if [[ "$BRANCH" != "$DEFAULT_BRANCH" ]]; then
+    echo "Not on $DEFAULT_BRANCH (on '$BRANCH'). Checkout $DEFAULT_BRANCH before releasing." >&2
     exit 1
 fi
 
@@ -277,13 +279,13 @@ ensure_web_server_readable "$ROOT/index.min.php"
 run php -l index.php
 run php -l index.min.php
 
-AHEAD_ORIGIN="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
-AHEAD_GITHUB="$(git rev-list --count github/main..HEAD 2>/dev/null || echo 0)"
+AHEAD_ORIGIN="$(git rev-list --count "origin/${DEFAULT_BRANCH}"..HEAD 2>/dev/null || echo 0)"
+AHEAD_GITHUB="$(git rev-list --count "github/${DEFAULT_BRANCH}"..HEAD 2>/dev/null || echo 0)"
 
 if [[ "$AHEAD_ORIGIN" != "0" || "$AHEAD_GITHUB" != "0" ]]; then
-    echo "==> Pushing main (ahead of origin: $AHEAD_ORIGIN, github: $AHEAD_GITHUB)"
-    run git push origin main
-    run git push github main
+    echo "==> Pushing $DEFAULT_BRANCH (ahead of origin: $AHEAD_ORIGIN, github: $AHEAD_GITHUB)"
+    run git push origin "$DEFAULT_BRANCH"
+    run git push github "$DEFAULT_BRANCH"
 fi
 
 echo "==> Creating annotated tag $TAG"

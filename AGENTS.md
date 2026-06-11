@@ -70,7 +70,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Use `./scripts/release.sh v1.0.0` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets and sets the GitHub release description from the version's CHANGELOG section via `scripts/changelog-section.sh`.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Default branch is **`dev`** (rolling dev releases and day-to-day work). Use `./scripts/release.sh v1.0.0` from `dev` to tag and push to both; GitHub Actions (`.github/workflows/release.yml`) publishes release assets and sets the GitHub release description from the version's CHANGELOG section via `scripts/changelog-section.sh`.
 
 **Dev channel:** Pushes to the `dev` branch on GitHub run `.github/workflows/dev-release.yml`, which embeds a short commit ref in `$dirindexBuildRef`, builds `index.min.php`, and updates the rolling prerelease at tag `dev`. The About modal **Dev** channel fetches that release (`/releases/tags/dev`) and compares build refs for update availability.
 
