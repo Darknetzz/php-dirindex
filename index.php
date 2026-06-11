@@ -1264,6 +1264,199 @@ function shareAjaxResponse($ok, $message) {
     exit;
 }
 
+function parseSemverTag($tag) {
+    $tag = ltrim(trim((string) $tag), 'vV');
+    if (!preg_match('/^(\d+)\.(\d+)\.(\d+)/', $tag, $m)) {
+        return null;
+    }
+    return [(int) $m[1], (int) $m[2], (int) $m[3]];
+}
+
+function compareSemverTags($a, $b) {
+    $pa = parseSemverTag($a);
+    $pb = parseSemverTag($b);
+    if ($pa === null || $pb === null) {
+        return 0;
+    }
+    foreach ([0, 1, 2] as $i) {
+        if ($pa[$i] !== $pb[$i]) {
+            return $pa[$i] <=> $pb[$i];
+        }
+    }
+    return 0;
+}
+
+function dirindexHttpGet($url, $accept = '*/*', $timeoutSec = 15) {
+    $userAgent = 'php-dirindex/' . ($GLOBALS['dirindexVersion'] ?? '0');
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => $timeoutSec,
+            CURLOPT_HTTPHEADER => ['User-Agent: ' . $userAgent, 'Accept: ' . $accept],
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($body === false || $code < 200 || $code >= 300) {
+            return null;
+        }
+        return $body;
+    }
+    if (!ini_get('allow_url_fopen')) {
+        return null;
+    }
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => $timeoutSec,
+            'header' => "User-Agent: {$userAgent}\r\nAccept: {$accept}\r\n",
+        ],
+    ]);
+    $body = @file_get_contents($url, false, $ctx);
+    return $body === false ? null : $body;
+}
+
+function dirindexUpdateArtifactName() {
+    $name = basename(__FILE__);
+    return ($name === 'index.php' || $name === 'index.min.php') ? $name : 'index.php';
+}
+
+function dirindexGitHubRepoApiBase($repoUrl) {
+    if (!preg_match('#github\.com/([^/]+)/([^/]+)#i', (string) $repoUrl, $m)) {
+        return null;
+    }
+    return 'https://api.github.com/repos/' . $m[1] . '/' . preg_replace('/\.git$/', '', $m[2]);
+}
+
+function dirindexFetchLatestRelease($repoUrl) {
+    $apiBase = dirindexGitHubRepoApiBase($repoUrl);
+    if ($apiBase === null) {
+        return ['error' => 'Could not determine the GitHub repository.'];
+    }
+    $body = dirindexHttpGet($apiBase . '/releases/latest', 'application/vnd.github+json');
+    if ($body === null) {
+        return ['error' => 'Could not reach GitHub. Check outbound network access and try again.'];
+    }
+    $data = json_decode($body, true);
+    if (!is_array($data)) {
+        return ['error' => 'Could not read the latest release from GitHub.'];
+    }
+    $tag = isset($data['tag_name']) ? (string) $data['tag_name'] : '';
+    if ($tag === '') {
+        return ['error' => 'Latest release has no version tag.'];
+    }
+    $assets = [];
+    if (!empty($data['assets']) && is_array($data['assets'])) {
+        foreach ($data['assets'] as $asset) {
+            if (!is_array($asset) || empty($asset['name']) || empty($asset['browser_download_url'])) {
+                continue;
+            }
+            $assets[(string) $asset['name']] = (string) $asset['browser_download_url'];
+        }
+    }
+    return [
+        'tag' => $tag,
+        'version' => ltrim($tag, 'vV'),
+        'html_url' => isset($data['html_url']) ? (string) $data['html_url'] : '',
+        'body' => isset($data['body']) ? trim((string) $data['body']) : '',
+        'assets' => $assets,
+    ];
+}
+
+function validateDirindexPhpSource($content, $expectedVersion = null) {
+    if (!is_string($content)) {
+        return 'Downloaded file is invalid.';
+    }
+    $len = strlen($content);
+    if ($len < 100000 || $len > 800000) {
+        return 'Downloaded file size is unexpected.';
+    }
+    if (!preg_match('/^\xEF\xBB\xBF?<\?php/', $content)) {
+        return 'Downloaded file is not a PHP script.';
+    }
+    if (!str_contains($content, '$dirindexVersion')) {
+        return 'Downloaded file does not look like php-dirindex.';
+    }
+    if ($expectedVersion !== null && !preg_match('/\$dirindexVersion\s*=\s*[\'"]' . preg_quote((string) $expectedVersion, '/') . '[\'"];/', $content)) {
+        return 'Downloaded file version does not match the release.';
+    }
+    return null;
+}
+
+function canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode) {
+    if ($inShareMode || !$hasUploadCredentials || !$authenticated) {
+        return false;
+    }
+    $target = __FILE__;
+    return is_writable($target) && is_writable(dirname($target));
+}
+
+function dirindexUpdateCheckPayload($currentVersion, $repoUrl, $authenticated, $hasUploadCredentials, $inShareMode) {
+    $artifact = dirindexUpdateArtifactName();
+    $release = dirindexFetchLatestRelease($repoUrl);
+    if (!empty($release['error'])) {
+        return [
+            'ok' => false,
+            'error' => $release['error'],
+            'current_version' => $currentVersion,
+            'artifact' => $artifact,
+            'can_update' => false,
+        ];
+    }
+    $latestVersion = $release['version'];
+    $cmp = compareSemverTags($latestVersion, $currentVersion);
+    $downloadUrl = $release['assets'][$artifact] ?? null;
+    $payload = [
+        'ok' => true,
+        'current_version' => $currentVersion,
+        'latest_version' => $latestVersion,
+        'latest_tag' => $release['tag'],
+        'update_available' => $cmp > 0,
+        'up_to_date' => $cmp <= 0,
+        'release_url' => $release['html_url'],
+        'release_notes' => $release['body'],
+        'artifact' => $artifact,
+        'download_url' => $downloadUrl,
+        'can_update' => $cmp > 0 && $downloadUrl !== null && canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode),
+    ];
+    if ($cmp > 0 && $downloadUrl === null) {
+        $payload['error'] = 'Latest release has no ' . $artifact . ' asset.';
+    } elseif ($cmp > 0 && !canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
+        if (!$hasUploadCredentials) {
+            $payload['error'] = 'Complete setup to enable in-place updates.';
+        } elseif (!$authenticated) {
+            $payload['error'] = 'Sign in as admin to update in place.';
+        } elseif (!is_writable(__FILE__) || !is_writable(dirname(__FILE__))) {
+            $payload['error'] = basename(__FILE__) . ' is not writable by PHP.';
+        }
+    }
+    return $payload;
+}
+
+function applyDirindexSelfUpdate($downloadUrl, $expectedVersion) {
+    $content = dirindexHttpGet($downloadUrl, 'application/octet-stream', 60);
+    if ($content === null) {
+        return 'Could not download the update.';
+    }
+    $validationError = validateDirindexPhpSource($content, $expectedVersion);
+    if ($validationError !== null) {
+        return $validationError;
+    }
+    $target = __FILE__;
+    $dir = dirname($target);
+    $tmp = $dir . DIRECTORY_SEPARATOR . '.dirindex-update-' . bin2hex(random_bytes(8)) . '.tmp';
+    if (file_put_contents($tmp, $content, LOCK_EX) === false) {
+        @unlink($tmp);
+        return 'Could not write a temporary update file.';
+    }
+    if (!@rename($tmp, $target)) {
+        @unlink($tmp);
+        return 'Could not replace ' . basename($target) . '. Check file permissions.';
+    }
+    return null;
+}
+
 function isAuthenticated() {
     return !empty($_SESSION['dirindex_authenticated']);
 }
@@ -1717,6 +1910,16 @@ if ($inShareMode && $shareContext) {
         exit('Path is outside the shared scope.');
     }
 }
+
+if (isset($_GET['update_check']) && $relativePath === '' && !$inShareMode) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(
+        dirindexUpdateCheckPayload($dirindexVersion, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode),
+        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
+    );
+    exit;
+}
+
 // Text file extensions: open in modal. Value = highlight.js language (or 'plaintext').
 $textExts = [
     'md' => 'markdown', 'markdown' => 'markdown',
@@ -2563,6 +2766,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             shareAjaxResponse(true, 'Share link revoked.');
         }
         redirectToCurrentListing($indexHref, $relativePath, 'share_revoked');
+    }
+
+    if ($action === 'app_update') {
+        if (!isShareAjaxRequest()) {
+            redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
+        }
+        if (!$hasUploadCredentials || !$authenticated) {
+            shareAjaxResponse(false, 'Please sign in as admin first.');
+        }
+        if (!canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
+            shareAjaxResponse(false, basename(__FILE__) . ' is not writable by PHP.');
+        }
+        $check = dirindexUpdateCheckPayload($dirindexVersion, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode);
+        if (empty($check['ok'])) {
+            shareAjaxResponse(false, $check['error'] ?? 'Could not check for updates.');
+        }
+        if (empty($check['update_available'])) {
+            shareAjaxResponse(false, 'Already up to date (v' . $dirindexVersion . ').');
+        }
+        if (empty($check['download_url'])) {
+            shareAjaxResponse(false, $check['error'] ?? 'Update package not found.');
+        }
+        $applyError = applyDirindexSelfUpdate($check['download_url'], $check['latest_version']);
+        if ($applyError !== null) {
+            shareAjaxResponse(false, $applyError);
+        }
+        shareAjaxResponse(true, 'Updated to v' . $check['latest_version'] . '. Reloading…');
     }
 
     redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
@@ -4092,6 +4322,31 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             flex-shrink: 0;
         }
         .about-links a:hover { text-decoration: underline; }
+        .about-update {
+            margin: 0 0 1.25rem;
+            padding: 0.85rem 0.95rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg);
+        }
+        .about-update-status {
+            margin: 0 0 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--text);
+        }
+        .about-update-status.is-muted { color: var(--text-muted); }
+        .about-update-status.is-success { color: #4ade80; }
+        .about-update-status.is-warning { color: #fbbf24; }
+        .about-update-status.is-error { color: #f87171; }
+        .about-update-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .about-update-actions .btn-auth { font-size: 0.85rem; padding: 0.45rem 0.7rem; }
+        .about-update-actions .btn-auth[hidden] { display: none; }
 
         .settings-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center; padding: 2rem; box-sizing: border-box; }
         .settings-overlay.is-open { display: flex; }
@@ -5434,6 +5689,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <dt>PHP</dt>
                     <dd><?= h(PHP_VERSION) ?></dd>
                 </dl>
+                <?php if (!$inShareMode): ?>
+                <div class="about-update" id="about-update"
+                    data-check-url="<?= h(currentListingUrl($indexHref, '', ['update_check' => '1'])) ?>"
+                    data-post-url="<?= h($indexHref) ?>"
+                    data-current-version="<?= h($dirindexVersion) ?>">
+                    <p class="about-update-status is-muted" id="about-update-status" role="status">Check GitHub for a newer release.</p>
+                    <div class="about-update-actions">
+                        <button type="button" class="btn-auth btn-auth-secondary" id="about-check-updates">Check for updates</button>
+                        <button type="button" class="btn-auth" id="about-apply-update" hidden>Update now</button>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <div class="about-links">
                     <a href="<?= h($dirindexRepoUrl) ?>" target="_blank" rel="noopener noreferrer">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v12"/><circle cx="6" cy="18" r="3"/><path d="M18 3v6"/><circle cx="18" cy="9" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
@@ -6525,6 +6792,104 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (!aboutOverlay || !aboutClose) return;
 
         var aboutTrigger = btnAbout || footerAbout;
+        var aboutUpdate = document.getElementById('about-update');
+        var aboutUpdateStatus = document.getElementById('about-update-status');
+        var aboutCheckBtn = document.getElementById('about-check-updates');
+        var aboutApplyBtn = document.getElementById('about-apply-update');
+        var latestCheckData = null;
+
+        function setAboutUpdateStatus(text, tone) {
+            if (!aboutUpdateStatus) return;
+            aboutUpdateStatus.textContent = text;
+            aboutUpdateStatus.className = 'about-update-status' + (tone ? ' is-' + tone : '');
+        }
+
+        function csrfTokenValue() {
+            var input = document.querySelector('input[name="csrf_token"]');
+            return input ? input.value : '';
+        }
+
+        function renderAboutUpdateState(data) {
+            latestCheckData = data;
+            if (aboutApplyBtn) aboutApplyBtn.hidden = true;
+            if (!data || !data.ok) {
+                setAboutUpdateStatus((data && data.error) ? data.error : 'Could not check for updates.', 'error');
+                return;
+            }
+            if (data.up_to_date) {
+                setAboutUpdateStatus('You are on the latest release (v' + data.current_version + ').', 'success');
+                return;
+            }
+            if (data.update_available) {
+                var msg = 'v' + data.latest_version + ' is available (you have v' + data.current_version + ').';
+                if (data.error) {
+                    msg += ' ' + data.error;
+                    setAboutUpdateStatus(msg, 'warning');
+                } else {
+                    setAboutUpdateStatus(msg, 'warning');
+                    if (aboutApplyBtn && data.can_update) {
+                        aboutApplyBtn.textContent = 'Update to v' + data.latest_version;
+                        aboutApplyBtn.hidden = false;
+                    }
+                }
+                return;
+            }
+            setAboutUpdateStatus('Could not compare versions.', 'error');
+        }
+
+        function checkAboutUpdates() {
+            if (!aboutUpdate || !aboutCheckBtn) return;
+            var checkUrl = aboutUpdate.getAttribute('data-check-url');
+            if (!checkUrl) return;
+            aboutCheckBtn.disabled = true;
+            if (aboutApplyBtn) aboutApplyBtn.disabled = true;
+            setAboutUpdateStatus('Checking GitHub for updates…', 'muted');
+            fetch(checkUrl, { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(renderAboutUpdateState)
+                .catch(function() {
+                    renderAboutUpdateState({ ok: false, error: 'Could not check for updates.' });
+                })
+                .finally(function() {
+                    aboutCheckBtn.disabled = false;
+                    if (aboutApplyBtn) aboutApplyBtn.disabled = false;
+                });
+        }
+
+        function applyAboutUpdate() {
+            if (!aboutUpdate || !aboutApplyBtn || !latestCheckData || !latestCheckData.can_update) return;
+            var postUrl = aboutUpdate.getAttribute('data-post-url');
+            if (!postUrl) return;
+            var version = latestCheckData.latest_version || 'the latest release';
+            if (!window.confirm('Replace ' + (latestCheckData.artifact || 'index.php') + ' with v' + version + ' from GitHub?')) {
+                return;
+            }
+            var body = new FormData();
+            body.append('action', 'app_update');
+            body.append('ajax', '1');
+            var csrf = csrfTokenValue();
+            if (csrf) body.append('csrf_token', csrf);
+            aboutApplyBtn.disabled = true;
+            aboutCheckBtn.disabled = true;
+            setAboutUpdateStatus('Downloading and applying v' + version + '…', 'muted');
+            fetch(postUrl, { method: 'POST', body: body, credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.ok) {
+                        setAboutUpdateStatus(data.message || 'Update applied.', 'success');
+                        window.setTimeout(function() { window.location.reload(); }, 900);
+                    } else {
+                        setAboutUpdateStatus(data.message || 'Could not apply the update.', 'error');
+                    }
+                })
+                .catch(function() {
+                    setAboutUpdateStatus('Could not apply the update.', 'error');
+                })
+                .finally(function() {
+                    aboutApplyBtn.disabled = false;
+                    aboutCheckBtn.disabled = false;
+                });
+        }
 
         function openAbout() {
             aboutOverlay.classList.add('is-open');
@@ -6540,6 +6905,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         if (btnAbout) btnAbout.addEventListener('click', openAbout);
         if (footerAbout) footerAbout.addEventListener('click', openAbout);
         aboutClose.addEventListener('click', closeAbout);
+        if (aboutCheckBtn) aboutCheckBtn.addEventListener('click', checkAboutUpdates);
+        if (aboutApplyBtn) aboutApplyBtn.addEventListener('click', applyAboutUpdate);
         aboutOverlay.addEventListener('click', function(e) {
             if (e.target === aboutOverlay) closeAbout();
         });
