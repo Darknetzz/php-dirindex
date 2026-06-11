@@ -1822,6 +1822,10 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .preview-md .task-list-item { list-style: none; margin-left: -1.5rem; }
     .preview-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
     .preview-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
+    .preview-md .md-table-wrap { overflow-x: auto; margin: 0.75em 0; }
+    .preview-md table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    .preview-md th, .preview-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
+    .preview-md th { background: rgba(0,0,0,0.2); font-weight: 600; }
     .preview-code { margin: 0; background: #282c34; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.1rem; overflow: auto; font-size: 0.85rem; line-height: 1.55; max-height: min(75vh, 960px); }
     .preview-code code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; white-space: pre; }
     .preview-image { text-align: center; }
@@ -1868,7 +1872,7 @@ $browseAuthBlocked = $browseAuthRequired && !$authenticated && !$inShareMode && 
 $blockedMessage = null;
 
 if ($browseAuthBlocked) {
-    if (isset($_GET['content'])) {
+    if (isset($_GET['content']) || isset($_GET['meta'])) {
         header('HTTP/1.1 401 Unauthorized');
         header('Content-Type: application/json; charset=UTF-8');
         echo json_encode(['error' => 'Authentication required.'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
@@ -1893,7 +1897,7 @@ if ($inShareMode && $shareContext && $shareContext['type'] === 'file') {
     if (isset($_GET['inline'])) {
         serveSharedFileInline($shareFileReal, basename($effectivePath));
     }
-    if (!isset($_GET['content'])) {
+    if (!isset($_GET['content']) && !isset($_GET['meta'])) {
         $shareExt = strtolower(pathinfo($effectivePath, PATHINFO_EXTENSION));
         $sharePreviewKind = filePreviewKind($shareFileReal, $shareExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $shareMtime = @filemtime($shareFileReal);
@@ -1915,7 +1919,7 @@ if ($relativePath !== '') {
         serveSharedFileInline($requestedReal, basename($relativePath));
     }
     if ($inShareMode && $shareContext && $shareContext['type'] === 'dir' && is_file($requestedPath) && $requestedReal !== false
-        && !isset($_GET['content']) && !isset($_GET['download']) && !isset($_GET['inline']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        && !isset($_GET['content']) && !isset($_GET['meta']) && !isset($_GET['download']) && !isset($_GET['inline']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $fileExt = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
         $filePreviewKind = filePreviewKind($requestedReal, $fileExt, $previewExts, $previewBlocklist, $imagePreviewEnabled);
         $fileMtime = @filemtime($requestedReal);
@@ -1925,7 +1929,7 @@ if ($relativePath !== '') {
     }
     $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
     $isMarkdownDirect = isMarkdownExtension($ext)
-        && !isset($_GET['content']) && !isset($_GET['download']) && !isset($_GET['inline']) && !isset($_GET['open'])
+        && !isset($_GET['content']) && !isset($_GET['meta']) && !isset($_GET['download']) && !isset($_GET['inline']) && !isset($_GET['open'])
         && !($inShareMode && $shareContext && $shareContext['type'] === 'dir');
     if ($canBrowse && is_file($requestedPath) && $isMarkdownDirect && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
         $openName = basename($relativePath);
@@ -1934,6 +1938,11 @@ if ($relativePath !== '') {
             $parentPath = '';
         }
         header('Location: ' . currentListingUrl($indexHref, $parentPath, ['open' => $openName]));
+        exit;
+    }
+    if ($canBrowse && is_file($requestedPath) && isset($_GET['meta']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(fileMetadataJson($requestedReal, $relativePath, $ext), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
         exit;
     }
     if ($canBrowse && is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
@@ -1951,24 +1960,10 @@ if ($relativePath !== '') {
             }
             if ($raw !== false) {
                 header('Content-Type: application/json; charset=UTF-8');
-                $fileSize = filesize($requestedPath);
-                $fileMtime = @filemtime($requestedPath);
-                $fileMtimeFormatted = '—';
-                if ($fileMtime !== false && $fileMtime >= 0 && $fileMtime <= 2147483647) {
-                    $formatted = @date('Y-m-d H:i', (int) $fileMtime);
-                    $fileMtimeFormatted = $formatted !== false ? $formatted : '—';
-                }
-                $out = [
-                    'content'         => $raw,
-                    'lang'            => $lang,
-                    'name'            => basename($relativePath),
-                    'size'            => $fileSize,
-                    'size_formatted'  => formatSize($fileSize),
-                    'mtime'           => $fileMtime !== false ? (int) $fileMtime : null,
-                    'mtime_formatted' => $fileMtimeFormatted,
-                    'perms'           => formatEntryPermissions($requestedPath) ?? '',
-                    'ext'             => $ext,
-                ];
+                $out = fileMetadataJson($requestedReal, $relativePath, $ext);
+                $out['content'] = $raw;
+                $out['lang'] = $lang;
+                $out['hashes'] = fileContentHashes($raw);
                 if (isMarkdownExtension($ext)) {
                     $out['html'] = markdownToHtml($raw);
                 }
@@ -1977,7 +1972,7 @@ if ($relativePath !== '') {
             }
         }
     }
-    if (!$allowOutside && is_file($requestedPath) && ($isMarkdownDirect || isset($_GET['content'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
+    if (!$allowOutside && is_file($requestedPath) && ($isMarkdownDirect || isset($_GET['content']) || isset($_GET['meta'])) && $requestedReal !== false && !pathUnderBase($requestedReal, $realBase)) {
         $blockedMessage = 'That link points outside the index and cannot be opened.';
     }
     $realCurrent = realpath($requestedPath);
@@ -2572,6 +2567,7 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
             $openDownloadUrl = $inShareMode ? currentListingUrl($indexHref, $openFilePath, ['download' => '1']) : directEntryUrl($openFilePath);
             $openPerms = formatEntryPermissions($openReal) ?? '';
             $openType = $openExt !== '' ? '.' . $openExt : '';
+            $openMetaUrl = currentListingUrl($indexHref, $openFilePath, ['meta' => '1']);
             if ($openPreviewKind === 'text') {
                 $openFileForModal = [
                     'content_url' => currentListingUrl($indexHref, $openFilePath, ['content' => '1']),
@@ -2587,6 +2583,7 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
                 $openFileForModal = [
                     'image'       => true,
                     'image_url'   => previewImageUrl($indexHref, $openFilePath, $inShareMode),
+                    'meta_url'    => $openMetaUrl,
                     'name'        => $openName,
                     'open_url'    => $openDownloadUrl,
                     'share_path'  => $openFilePath,
@@ -2598,6 +2595,7 @@ if ($canBrowse && isset($_GET['open']) && $_GET['open'] !== '') {
             } else {
                 $openFileForModal = [
                     'binary'       => true,
+                    'meta_url'     => $openMetaUrl,
                     'name'         => $openName,
                     'download_url' => $openDownloadUrl,
                     'size'         => formatSize(filesize($openReal)),
@@ -2661,6 +2659,47 @@ function formatEntryPermissions($path) {
     return $info;
 }
 
+function fileMtimeFormatted($mtime) {
+    if ($mtime === false || $mtime === null || $mtime < 0 || $mtime > 2147483647) {
+        return '—';
+    }
+    $formatted = @date('Y-m-d H:i', (int) $mtime);
+    return ($formatted !== false) ? $formatted : '—';
+}
+
+function fileContentHashes($data) {
+    return [
+        'md5'    => md5($data),
+        'sha1'   => sha1($data),
+        'sha256' => hash('sha256', $data),
+        'sha512' => hash('sha512', $data),
+    ];
+}
+
+function filePathHashes($absolutePath) {
+    $hashes = [];
+    foreach (['md5', 'sha1', 'sha256', 'sha512'] as $algo) {
+        $h = @hash_file($algo, $absolutePath);
+        $hashes[$algo] = ($h !== false) ? $h : null;
+    }
+    return $hashes;
+}
+
+function fileMetadataJson($absolutePath, $relativePath, $ext) {
+    $fileSize = filesize($absolutePath);
+    $fileMtime = @filemtime($absolutePath);
+    return [
+        'name'            => basename($relativePath),
+        'size'            => $fileSize,
+        'size_formatted'  => formatSize($fileSize),
+        'mtime'           => $fileMtime !== false ? (int) $fileMtime : null,
+        'mtime_formatted' => fileMtimeFormatted($fileMtime !== false ? (int) $fileMtime : null),
+        'perms'           => formatEntryPermissions($absolutePath) ?? '',
+        'ext'             => $ext,
+        'hashes'          => filePathHashes($absolutePath),
+    ];
+}
+
 function formatEntryOwner($path) {
     $uid = @fileowner($path);
     if ($uid === false) {
@@ -2677,8 +2716,82 @@ function formatEntryOwner($path) {
 
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+function markdownIsTableRowLine($line) {
+    $trimmed = trim((string) $line);
+    return $trimmed !== '' && $trimmed[0] === '|' && strpos($trimmed, '|', 1) !== false;
+}
+
+function markdownIsTableSeparatorLine($line) {
+    return (bool) preg_match('/^\|(?:\s*:?-+:?\s*\|)+\s*$/', trim((string) $line));
+}
+
+function markdownParseTableCells($line) {
+    $trimmed = trim((string) $line);
+    if ($trimmed !== '' && $trimmed[0] === '|') {
+        $trimmed = substr($trimmed, 1);
+    }
+    if ($trimmed !== '' && substr($trimmed, -1) === '|') {
+        $trimmed = substr($trimmed, 0, -1);
+    }
+    return array_map('trim', explode('|', $trimmed));
+}
+
+function markdownTableAlignments($separatorLine) {
+    $aligns = [];
+    foreach (markdownParseTableCells($separatorLine) as $cell) {
+        if (preg_match('/^:-+:$/', $cell)) {
+            $aligns[] = 'center';
+        } elseif (preg_match('/^-+:$/', $cell)) {
+            $aligns[] = 'right';
+        } elseif (preg_match('/^:-+$/', $cell)) {
+            $aligns[] = 'left';
+        } else {
+            $aligns[] = null;
+        }
+    }
+    return $aligns;
+}
+
+function markdownRenderTableHtml(array $rowLines, $h) {
+    if ($rowLines === []) {
+        return '';
+    }
+    $hasHeader = count($rowLines) >= 2 && markdownIsTableSeparatorLine($rowLines[1]);
+    $aligns = $hasHeader ? markdownTableAlignments($rowLines[1]) : [];
+    $cellAlign = function ($index) use ($aligns) {
+        if (!isset($aligns[$index]) || $aligns[$index] === null) {
+            return '';
+        }
+        return ' style="text-align:' . $aligns[$index] . ';"';
+    };
+    $html = '<div class="md-table-wrap"><table>' . "\n";
+    $bodyStart = 0;
+    if ($hasHeader) {
+        $html .= "<thead><tr>\n";
+        foreach (markdownParseTableCells($rowLines[0]) as $i => $cell) {
+            $html .= '<th' . $cellAlign($i) . '>' . markdownInline($cell, $h) . "</th>\n";
+        }
+        $html .= "</tr></thead>\n<tbody>\n";
+        $bodyStart = 2;
+    } else {
+        $html .= "<tbody>\n";
+    }
+    for ($r = $bodyStart; $r < count($rowLines); $r++) {
+        if (markdownIsTableSeparatorLine($rowLines[$r])) {
+            continue;
+        }
+        $html .= "<tr>\n";
+        foreach (markdownParseTableCells($rowLines[$r]) as $i => $cell) {
+            $html .= '<td' . $cellAlign($i) . '>' . markdownInline($cell, $h) . "</td>\n";
+        }
+        $html .= "</tr>\n";
+    }
+    $html .= "</tbody></table></div>\n";
+    return $html;
+}
+
 /**
- * Simple markdown to HTML (headers, emphasis, links, images, code, lists, blockquotes, rules).
+ * Simple markdown to HTML (headers, emphasis, links, images, code, lists, blockquotes, rules, tables).
  */
 function markdownToHtml($text) {
     $h = function ($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); };
@@ -2687,6 +2800,13 @@ function markdownToHtml($text) {
     $inBlock = false;
     $listType = null;
     $inBlockquote = false;
+    $tableBuffer = [];
+    $flushTable = function () use (&$tableBuffer, &$out, $h) {
+        if ($tableBuffer !== []) {
+            $out .= markdownRenderTableHtml($tableBuffer, $h);
+            $tableBuffer = [];
+        }
+    };
     $closeList = function () use (&$listType, &$out) {
         if ($listType !== null) {
             $out .= "</{$listType}>\n";
@@ -2701,6 +2821,7 @@ function markdownToHtml($text) {
     };
     foreach ($lines as $line) {
         if (preg_match('/^```(\w*)\s*$/', $line, $m)) {
+            $flushTable();
             $closeList();
             $closeBlockquote();
             if ($inBlock) {
@@ -2717,6 +2838,13 @@ function markdownToHtml($text) {
             $out .= $h($line) . "\n";
             continue;
         }
+        if (markdownIsTableRowLine($line)) {
+            $closeList();
+            $closeBlockquote();
+            $tableBuffer[] = $line;
+            continue;
+        }
+        $flushTable();
         if (preg_match('/^(\*{3,}|-{3,}|_{3,})\s*$/', $line)) {
             $closeList();
             $closeBlockquote();
@@ -2780,6 +2908,7 @@ function markdownToHtml($text) {
         $closeList();
         $out .= '<p>' . markdownInline($line, $h) . "</p>\n";
     }
+    $flushTable();
     $closeList();
     $closeBlockquote();
     if ($inBlock) {
@@ -3410,6 +3539,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .modal-body .modal-md .task-list-item { list-style: none; margin-left: -1.5rem; }
         .modal-body .modal-md .task-list-item-checkbox { margin: 0 0.4em 0 0; vertical-align: middle; cursor: default; width: 1.1em; height: 1.1em; border: 1px solid var(--text-muted); background: var(--bg); border-radius: 3px; accent-color: var(--accent); }
         .modal-body .modal-md .task-list-item-checkbox:checked { background: var(--accent-dim); border-color: var(--accent); }
+        .modal-body .modal-md .md-table-wrap { overflow-x: auto; margin: 0.75em 0; }
+        .modal-body .modal-md table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .modal-body .modal-md th, .modal-body .modal-md td { border: 1px solid var(--border); padding: 0.4em 0.65em; text-align: left; vertical-align: top; }
+        .modal-body .modal-md th { background: color-mix(in srgb, var(--bg-card) 80%, transparent); font-weight: 600; }
         .modal-file-meta {
             display: flex;
             flex-wrap: wrap;
@@ -3434,6 +3567,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text);
             word-break: break-word;
         }
+        .modal-file-meta-item--wide { flex: 1 1 100%; min-width: 0; }
+        .modal-file-meta-item--wide .modal-file-meta-value { font-size: 0.75rem; word-break: break-all; }
         .modal.is-binary { width: min(520px, 95vw); }
         .modal.is-image { width: min(900px, 95vw); }
         .modal.is-markdown { width: min(800px, 95vw); }
@@ -4313,7 +4448,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
     </script>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
+<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-download-url="<?= h($openFileForModal['download_url']) ?>" data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>" data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
@@ -4692,16 +4827,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             } elseif ($item['previewKind'] === 'image') {
                                 $url = '#';
                                 $imageUrl = previewImageUrl($indexHref, $item['path'], $inShareMode);
+                                $metaUrl = currentListingUrl($indexHref, $item['path'], ['meta' => '1']);
                                 $openUrl = $directUrl;
-                                $linkAttrs = ' class="file-preview file-preview-image" data-image-url="' . h($imageUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
+                                $linkAttrs = ' class="file-preview file-preview-image" data-image-url="' . h($imageUrl) . '" data-meta-url="' . h($metaUrl) . '" data-name="' . h($item['name']) . '" data-open-url="' . h($openUrl) . '" data-share-path="' . h($item['path']) . '"'
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
                                     . ' data-perms="' . h($permsLabel) . '"'
                                     . ' data-type="' . h($typeLabel) . '"';
                             } else {
                                 $url = '#';
+                                $metaUrl = currentListingUrl($indexHref, $item['path'], ['meta' => '1']);
                                 $linkAttrs = ' class="file-binary" title="View file info"'
                                     . ' data-name="' . h($item['name']) . '"'
+                                    . ' data-meta-url="' . h($metaUrl) . '"'
                                     . ' data-download-url="' . h($directUrl) . '"'
                                     . ' data-size="' . h($sizeFormatted) . '"'
                                     . ' data-mtime="' . h($mtimeFormatted) . '"'
@@ -5940,21 +6078,34 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 perms: el.getAttribute('data-perms') || el.getAttribute('data-open-perms') || ''
             };
         }
+        function metaHashesFromApi(data) {
+            var hashes = (data && data.hashes && typeof data.hashes === 'object') ? data.hashes : {};
+            return {
+                md5: hashes.md5 || '',
+                sha1: hashes.sha1 || '',
+                sha256: hashes.sha256 || '',
+                sha512: hashes.sha512 || ''
+            };
+        }
         function metaFromApi(data) {
             if (!data) return {};
-            return {
+            return Object.assign({
                 type: data.ext ? ('.' + data.ext) : '',
                 size: data.size_formatted || '',
                 mtime: data.mtime_formatted || '',
                 perms: data.perms || ''
-            };
+            }, metaHashesFromApi(data));
         }
         function mergeModalMeta(primary, fallback) {
             return {
                 type: primary.type || fallback.type || '',
                 size: primary.size || fallback.size || '',
                 mtime: primary.mtime || fallback.mtime || '',
-                perms: primary.perms || fallback.perms || ''
+                perms: primary.perms || fallback.perms || '',
+                md5: primary.md5 || fallback.md5 || '',
+                sha1: primary.sha1 || fallback.sha1 || '',
+                sha256: primary.sha256 || fallback.sha256 || '',
+                sha512: primary.sha512 || fallback.sha512 || ''
             };
         }
         function setModalMeta(meta) {
@@ -5963,7 +6114,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 { label: 'Type', value: meta.type || '' },
                 { label: 'Size', value: meta.size || '' },
                 { label: 'Modified', value: meta.mtime || '' },
-                { label: 'Permissions', value: meta.perms || '' }
+                { label: 'Permissions', value: meta.perms || '' },
+                { label: 'MD5', value: meta.md5 || '', wide: true },
+                { label: 'SHA-1', value: meta.sha1 || '', wide: true },
+                { label: 'SHA-256', value: meta.sha256 || '', wide: true },
+                { label: 'SHA-512', value: meta.sha512 || '', wide: true }
             ];
             modalFileMeta.innerHTML = '';
             var hasValue = false;
@@ -5971,7 +6126,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (!field.value) return;
                 hasValue = true;
                 var item = document.createElement('div');
-                item.className = 'modal-file-meta-item';
+                item.className = 'modal-file-meta-item' + (field.wide ? ' modal-file-meta-item--wide' : '');
                 var label = document.createElement('span');
                 label.className = 'modal-file-meta-label';
                 label.textContent = field.label;
@@ -5983,6 +6138,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 modalFileMeta.appendChild(item);
             });
             modalFileMeta.hidden = !hasValue;
+        }
+        function loadModalMeta(metaUrl, fallbackMeta) {
+            setModalMeta(fallbackMeta || {});
+            if (!metaUrl) return;
+            fetch(metaUrl).then(function(r) { return r.json(); }).then(function(data) {
+                setModalMeta(mergeModalMeta(metaFromApi(data), fallbackMeta || {}));
+            }).catch(function() {});
         }
         function clearModalMeta() {
             setModalMeta({});
@@ -6081,7 +6243,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.classList.add('is-open');
             overlay.setAttribute('aria-hidden', 'false');
         }
-        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta) {
+        function openBinaryModal(name, size, mtime, iconHtml, downloadUrl, sharePath, pushStateUrl, meta, metaUrl) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-binary');
             titleEl.textContent = name;
@@ -6089,7 +6251,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var fileMeta = meta || {};
             if (!fileMeta.size && size) fileMeta.size = size;
             if (!fileMeta.mtime && mtime) fileMeta.mtime = mtime;
-            setModalMeta(fileMeta);
+            loadModalMeta(metaUrl || '', fileMeta);
             modalBinaryIcon.innerHTML = iconHtml || '';
             modalBinaryName.textContent = name;
             modalBinaryDownload.href = downloadUrl || '#';
@@ -6100,12 +6262,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             overlay.setAttribute('aria-hidden', 'false');
             if (pushStateUrl !== undefined) history.pushState({ modal: true }, '', pushStateUrl);
         }
-        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta) {
+        function openImageModal(name, imageUrl, openUrl, sharePath, pushStateUrl, meta, metaUrl) {
             hidePreviewPanels();
             if (modalPanel) modalPanel.classList.add('is-image');
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
-            setModalMeta(meta || {});
+            loadModalMeta(metaUrl || '', meta || {});
             setModalOpenLink(openUrl || '');
             if (modalImageEl) {
                 modalImageEl.src = imageUrl;
@@ -6143,7 +6305,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 var sharePath = previewLink.getAttribute('data-share-path') || '';
                 if (imageUrl) {
                     var imageListingUrl = buildListingUrlWithOpen('', name, sharePath);
-                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink));
+                    openImageModal(name, imageUrl, openUrl, sharePath, imageListingUrl, metaFromElement(previewLink), previewLink.getAttribute('data-meta-url') || '');
                     return;
                 }
                 var contentUrl = previewLink.getAttribute('data-content-url');
@@ -6169,7 +6331,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 downloadUrl,
                 binarySharePath,
                 listingUrl,
-                metaFromElement(binaryLink)
+                metaFromElement(binaryLink),
+                binaryLink.getAttribute('data-meta-url') || ''
             );
         });
 
@@ -6194,7 +6357,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-download-url') || '',
                 body.getAttribute('data-open-share-path') || '',
                 undefined,
-                metaFromElement(body)
+                metaFromElement(body),
+                body.getAttribute('data-open-meta-url') || ''
             );
         } else if (body.getAttribute('data-open-image') === '1') {
             openImageModal(
@@ -6203,7 +6367,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 body.getAttribute('data-open-url') || '',
                 body.getAttribute('data-open-share-path') || '',
                 undefined,
-                metaFromElement(body)
+                metaFromElement(body),
+                body.getAttribute('data-open-meta-url') || ''
             );
         } else {
             var initialContentUrl = body.getAttribute('data-open-content-url');
