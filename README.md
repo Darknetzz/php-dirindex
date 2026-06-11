@@ -39,6 +39,7 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `image_preview_enabled` | `true` | When `false`, image files open in the binary download dialog instead of the preview modal. |
 | `markdown_preview_enabled` | `true` | When `false`, `.md` and `.markdown` files open as syntax-highlighted source instead of rendered HTML in the preview modal and on share landing pages. |
 | `preview_blocklist` | `["php"]` | File extensions (without dots) that must not be previewed in the modal or on share landing pages; matching files open as binary instead. |
+| `hash_sha256_sha512_enabled` | `false` | When `true`, the file info modal can compute SHA-256 and SHA-512 in addition to CRC32, MD5, and SHA-1. Disabled by default because the stronger digests are much slower on large files. |
 
 **Path access** (Settings → Server settings when signed in as admin):
 

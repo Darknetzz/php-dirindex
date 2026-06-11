@@ -919,7 +919,7 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root', 'browse_requires_auth', 'image_preview_enabled', 'markdown_preview_enabled'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root', 'browse_requires_auth', 'image_preview_enabled', 'markdown_preview_enabled', 'hash_sha256_sha512_enabled'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
@@ -1585,6 +1585,7 @@ $dirindexConfig = [
     'image_preview_enabled'     => true,
     'markdown_preview_enabled'  => true,
     'preview_blocklist'         => ['php'],
+    'hash_sha256_sha512_enabled' => false,
     'session_name'              => 'dirindex_upload',
 ];
 $dirindexStorage = [];
@@ -1625,6 +1626,7 @@ $previewBlocklist = normalizePreviewBlocklist(
 );
 $imagePreviewEnabled = !isset($dirindexConfig['image_preview_enabled']) || !empty($dirindexConfig['image_preview_enabled']);
 $markdownPreviewEnabled = !isset($dirindexConfig['markdown_preview_enabled']) || !empty($dirindexConfig['markdown_preview_enabled']);
+$hashSha256Sha512Enabled = !empty($dirindexConfig['hash_sha256_sha512_enabled']);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
@@ -2083,8 +2085,12 @@ if ($relativePath !== '') {
         exit;
     }
     if ($canBrowse && is_file($requestedPath) && isset($_GET['meta']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
+        $includeHashes = isset($_GET['hashes']);
+        if ($includeHashes) {
+            @set_time_limit(0);
+        }
         header('Content-Type: application/json; charset=UTF-8');
-        echo json_encode(fileMetadataJson($requestedReal, $relativePath, $ext), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+        echo json_encode(fileMetadataJson($requestedReal, $relativePath, $ext, $includeHashes, $hashSha256Sha512Enabled), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
         exit;
     }
     if ($canBrowse && is_file($requestedPath) && isset($_GET['content']) && (pathUnderBase($requestedReal, $realBase) || $allowOutside)) {
@@ -2105,7 +2111,7 @@ if ($relativePath !== '') {
                 $out = fileMetadataJson($requestedReal, $relativePath, $ext, false);
                 $out['content'] = $raw;
                 $out['lang'] = $lang;
-                $out['hashes'] = fileContentHashes($raw);
+                $out['hashes'] = fileContentHashes($raw, $hashSha256Sha512Enabled);
                 if (isMarkdownExtension($ext) && $markdownPreviewEnabled) {
                     $out['html'] = markdownToHtml($raw);
                 }
@@ -2267,6 +2273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'browse_requires_auth' => isset($_POST['browse_requires_auth']) ? '1' : '0',
             'image_preview_enabled' => isset($_POST['image_preview_enabled']) ? '1' : '0',
             'markdown_preview_enabled' => isset($_POST['markdown_preview_enabled']) ? '1' : '0',
+            'hash_sha256_sha512_enabled' => isset($_POST['hash_sha256_sha512_enabled']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
@@ -2833,10 +2840,18 @@ function fileHashNullSet() {
     return ['crc32' => null, 'md5' => null, 'sha1' => null, 'sha256' => null, 'sha512' => null];
 }
 
-function fileHashInitContexts() {
-    $algos = ['crc32b' => 'crc32', 'md5' => 'md5', 'sha1' => 'sha1', 'sha256' => 'sha256', 'sha512' => 'sha512'];
+function fileHashAlgorithmMap($includeSha256Sha512 = false) {
+    $algos = ['crc32b' => 'crc32', 'md5' => 'md5', 'sha1' => 'sha1'];
+    if ($includeSha256Sha512) {
+        $algos['sha256'] = 'sha256';
+        $algos['sha512'] = 'sha512';
+    }
+    return $algos;
+}
+
+function fileHashInitContexts($includeSha256Sha512 = false) {
     $contexts = [];
-    foreach ($algos as $algo => $key) {
+    foreach (fileHashAlgorithmMap($includeSha256Sha512) as $algo => $key) {
         $ctx = @hash_init($algo);
         if ($ctx === false) {
             return null;
@@ -2854,8 +2869,8 @@ function fileHashFinalizeContexts(array $contexts) {
     return $hashes;
 }
 
-function fileContentHashes($data) {
-    $contexts = fileHashInitContexts();
+function fileContentHashes($data, $includeSha256Sha512 = false) {
+    $contexts = fileHashInitContexts($includeSha256Sha512);
     if ($contexts === null) {
         return fileHashNullSet();
     }
@@ -2865,8 +2880,8 @@ function fileContentHashes($data) {
     return fileHashFinalizeContexts($contexts);
 }
 
-function filePathHashes($absolutePath) {
-    $contexts = fileHashInitContexts();
+function filePathHashes($absolutePath, $includeSha256Sha512 = false) {
+    $contexts = fileHashInitContexts($includeSha256Sha512);
     if ($contexts === null) {
         return fileHashNullSet();
     }
@@ -2883,7 +2898,7 @@ function filePathHashes($absolutePath) {
     return fileHashFinalizeContexts($contexts);
 }
 
-function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = true) {
+function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = true, $includeSha256Sha512 = false) {
     $fileSize = filesize($absolutePath);
     $fileMtime = @filemtime($absolutePath);
     $meta = [
@@ -2896,7 +2911,7 @@ function fileMetadataJson($absolutePath, $relativePath, $ext, $includeHashes = t
         'ext'             => $ext,
     ];
     if ($includeHashes) {
-        $meta['hashes'] = filePathHashes($absolutePath);
+        $meta['hashes'] = filePathHashes($absolutePath, $includeSha256Sha512);
     }
     return $meta;
 }
@@ -3820,6 +3835,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .modal-file-meta-item--wide { width: 100%; min-width: 0; }
         .modal-file-meta-item--wide .modal-file-meta-value { font-size: 0.75rem; word-break: break-all; }
+        .modal-file-meta-hashes-hint {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
         .modal.is-binary { width: min(520px, 95vw); }
         .modal.is-image { width: min(900px, 95vw); }
         .modal.is-markdown { width: min(800px, 95vw); }
@@ -5429,6 +5449,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 <textarea id="admin-preview-blocklist" name="preview_blocklist" rows="4" spellcheck="false" placeholder="php&#10;env"><?= h(formatPreviewBlocklistForInput($previewBlocklist)) ?></textarea>
                                 <span class="settings-help">One file extension per line, without a dot (e.g. <code>php</code>, <code>env</code>). Matching types are not previewed in the modal or on share landing pages; they open as binary files instead. Default: <code>php</code>.</span>
                             </div>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="hash_sha256_sha512_enabled" value="1" <?= $hashSha256Sha512Enabled ? 'checked' : '' ?>>
+                                <span>Include SHA-256 and SHA-512 checksums</span>
+                            </label>
+                            <p class="settings-help">When enabled, the file info modal can compute SHA-256 and SHA-512 in addition to CRC32, MD5, and SHA-1. Disabled by default because the stronger digests are much slower on large files.</p>
                         </div>
                     </details>
 
@@ -6479,6 +6504,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var shareBtn = document.getElementById('modal-share-btn');
         var currentSharePath = '';
         var modalHashesOpen = false;
+        var modalMetaUrl = '';
+        var modalMetaFallback = {};
+        var modalHashesLoaded = false;
+        var modalHashesLoading = false;
 
         function sharePathFromContentUrl(contentUrl, fileName) {
             if (!contentUrl) return fileName || '';
@@ -6548,6 +6577,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             item.appendChild(valueEl);
             parent.appendChild(item);
         }
+        function modalMetaHasHashValues(meta) {
+            return !!(meta && (meta.crc32 || meta.md5 || meta.sha1 || meta.sha256 || meta.sha512));
+        }
         function setModalMeta(meta) {
             if (!modalFileMeta) return;
             var existingHashes = modalFileMeta.querySelector('.modal-file-meta-hashes');
@@ -6576,14 +6608,21 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             });
             if (primary.childNodes.length) modalFileMeta.appendChild(primary);
             var hashCount = hashFields.filter(function(field) { return !!field.value; }).length;
-            if (hashCount) {
+            var showLazyChecksums = !!modalMetaUrl && !modalHashesLoaded;
+            if (hashCount || showLazyChecksums) {
                 hasValue = true;
                 var hashesPanel = document.createElement('details');
                 hashesPanel.className = 'modal-file-meta-hashes';
                 if (modalHashesOpen) hashesPanel.open = true;
                 var summary = document.createElement('summary');
                 summary.className = 'modal-file-meta-hashes-summary';
-                summary.textContent = 'Checksums (' + hashCount + ')';
+                if (modalHashesLoading) {
+                    summary.textContent = 'Checksums (computing…)';
+                } else if (hashCount) {
+                    summary.textContent = 'Checksums (' + hashCount + ')';
+                } else {
+                    summary.textContent = 'Checksums';
+                }
                 hashesPanel.appendChild(summary);
                 var hashesBody = document.createElement('div');
                 hashesBody.className = 'modal-file-meta-hashes-body';
@@ -6591,21 +6630,65 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     if (!field.value) return;
                     appendModalMetaItem(hashesBody, field.label, field.value, true);
                 });
+                if (showLazyChecksums && !hashCount) {
+                    var hint = document.createElement('p');
+                    hint.className = 'modal-file-meta-hashes-hint';
+                    hint.textContent = modalHashesLoading ? 'Reading file and computing checksums…' : 'Expand to compute checksums.';
+                    hashesBody.appendChild(hint);
+                }
                 hashesPanel.appendChild(hashesBody);
                 modalFileMeta.appendChild(hashesPanel);
             }
             modalFileMeta.hidden = !hasValue;
         }
+        function modalMetaUrlWithHashes(metaUrl) {
+            if (!metaUrl) return '';
+            if (metaUrl.indexOf('hashes=') >= 0) return metaUrl;
+            return metaUrl + (metaUrl.indexOf('?') >= 0 ? '&' : '?') + 'hashes=1';
+        }
+        function loadModalHashes() {
+            if (!modalMetaUrl || modalHashesLoaded || modalHashesLoading) return;
+            modalHashesLoading = true;
+            setModalMeta(modalMetaFallback);
+            fetch(modalMetaUrlWithHashes(modalMetaUrl)).then(function(r) { return r.json(); }).then(function(data) {
+                modalHashesLoaded = modalMetaHasHashValues(metaFromApi(data));
+                modalHashesLoading = false;
+                modalMetaFallback = mergeModalMeta(metaFromApi(data), modalMetaFallback);
+                setModalMeta(modalMetaFallback);
+            }).catch(function() {
+                modalHashesLoading = false;
+                setModalMeta(modalMetaFallback);
+            });
+        }
         function loadModalMeta(metaUrl, fallbackMeta) {
-            setModalMeta(fallbackMeta || {});
+            modalMetaUrl = metaUrl || '';
+            modalMetaFallback = fallbackMeta || {};
+            modalHashesLoaded = modalMetaHasHashValues(modalMetaFallback);
+            modalHashesLoading = false;
+            setModalMeta(modalMetaFallback);
             if (!metaUrl) return;
             fetch(metaUrl).then(function(r) { return r.json(); }).then(function(data) {
-                setModalMeta(mergeModalMeta(metaFromApi(data), fallbackMeta || {}));
+                modalMetaFallback = mergeModalMeta(metaFromApi(data), fallbackMeta || {});
+                if (modalMetaHasHashValues(modalMetaFallback)) {
+                    modalHashesLoaded = true;
+                }
+                setModalMeta(modalMetaFallback);
             }).catch(function() {});
         }
         function clearModalMeta() {
             modalHashesOpen = false;
+            modalMetaUrl = '';
+            modalMetaFallback = {};
+            modalHashesLoaded = false;
+            modalHashesLoading = false;
             setModalMeta({});
+        }
+        if (modalFileMeta) {
+            modalFileMeta.addEventListener('toggle', function(e) {
+                var panel = e.target;
+                if (!panel.classList || !panel.classList.contains('modal-file-meta-hashes') || !panel.open) return;
+                loadModalHashes();
+            }, true);
         }
 
         function buildListingUrlWithOpen(contentUrl, fileName, sharePath) {
@@ -6695,9 +6778,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         function openModal(name, content, lang, html, openUrl, sharePath, meta, downloadUrl) {
             hidePreviewPanels();
+            modalMetaUrl = '';
+            modalMetaFallback = meta || {};
+            modalHashesLoaded = modalMetaHasHashValues(modalMetaFallback);
+            modalHashesLoading = false;
             titleEl.textContent = name;
             setModalSharePath(sharePath || '');
-            setModalMeta(meta || {});
+            setModalMeta(modalMetaFallback);
             setModalDownloadLink(downloadUrl || '', name);
             setModalOpenLink(openUrl || '');
             if (html != null) {

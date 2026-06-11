@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Checksum settings** — **Include SHA-256 and SHA-512 checksums** toggle in Settings → Previews (off by default; CRC32, MD5, and SHA-1 are always available)
+
 ### Changed
+
+- **File checksums** — binary and image files load metadata immediately; checksums are computed only when the **Checksums** panel is expanded (`?meta=1&hashes=1`)
 
 ### Fixed
 
