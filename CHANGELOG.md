@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+
+## [1.2.3] - 2026-06-11
+
+### Added
+
+### Changed
+
+### Fixed
+
 - **File hashes** — checksums for large files are computed in a single pass over the file instead of reading it once per algorithm
 
 ## [1.2.2] - 2026-06-11
