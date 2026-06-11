@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [1.2.0] - 2026-06-11
+
+### Added
+
 - **Image preview modal** — common image types (jpg, png, gif, webp, svg, and similar) open in the file preview modal; share landing pages show inline image previews when enabled
 - **`image_preview_enabled`** — Settings → Previews toggle to disable image modal preview
 - **`preview_blocklist`** — Settings → Previews list of extensions (e.g. `php`) that are never previewed in the modal or on share pages; default includes `php`
