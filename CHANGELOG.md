@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [1.2.5] - 2026-06-12
+
+### Added
+
 - **Dev releases** — pushes to the `dev` branch publish/update a rolling GitHub prerelease (`dev` tag) with embedded build refs; About → **Channel: Dev** checks and applies these builds
 - **About modal** — **Check for updates** compares the running version with the latest GitHub release; signed-in admins with a writable script file can apply the update in place (downloads the matching `index.php` or `index.min.php` asset); **Stable** / **Dev** channel selector
 - **Checksum settings** — **Include SHA-256 and SHA-512 checksums** toggle in Settings → Previews (off by default; CRC32, MD5, and SHA-1 are always available)
