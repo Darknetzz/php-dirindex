@@ -1465,12 +1465,16 @@ function validateDirindexPhpSource($content, $expectedVersion = null, $expectedB
     return null;
 }
 
+function dirindexScriptDirWritableForUpdate() {
+    $dir = dirname(__FILE__);
+    return is_writable($dir);
+}
+
 function canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode) {
     if ($inShareMode || !$hasUploadCredentials || !$authenticated) {
         return false;
     }
-    $target = __FILE__;
-    return is_writable($target) && is_writable(dirname($target));
+    return dirindexScriptDirWritableForUpdate();
 }
 
 function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $channel = 'stable') {
@@ -1534,8 +1538,8 @@ function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl,
             $payload['error'] = 'Complete setup to enable in-place updates.';
         } elseif (!$authenticated) {
             $payload['error'] = 'Sign in as admin to update in place.';
-        } elseif (!is_writable(__FILE__) || !is_writable(dirname(__FILE__))) {
-            $payload['error'] = basename(__FILE__) . ' is not writable by PHP.';
+        } elseif (!dirindexScriptDirWritableForUpdate()) {
+            $payload['error'] = 'The script directory is not writable by PHP.';
         }
     }
     return $payload;
@@ -2889,7 +2893,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             shareAjaxResponse(false, 'Please sign in as admin first.');
         }
         if (!canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
-            shareAjaxResponse(false, basename(__FILE__) . ' is not writable by PHP.');
+            shareAjaxResponse(false, 'The script directory is not writable by PHP.');
         }
         $updateChannel = dirindexNormalizeUpdateChannel(isset($_POST['channel']) ? (string) $_POST['channel'] : 'stable');
         $check = dirindexUpdateCheckPayload($dirindexVersion, $dirindexBuildRef, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $updateChannel);
