@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **File preview modal** — Download button in the header for previewable text and image files when download is allowed
 - **Preview settings** — **Render Markdown in preview** toggle in Settings → Previews (when off, `.md` files show as highlighted source)
+- **Folder upload** — upload an entire directory from the admin upload panel (Browse folder or drag-and-drop); subfolders are created under the current path (up to 500 files per upload)
 
 ### Changed
 

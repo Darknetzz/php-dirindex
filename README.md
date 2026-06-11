@@ -6,7 +6,7 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **Lists** the current directory with name, size, modified date, owner, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
 - **Display** (gear icon → Settings → Display): theme (follow system, light, or dark), text size (extra small through extra large), and a custom breadcrumb separator — all saved in the browser.
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
-- **Upload** files after setting up the built-in upload login. Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.
+- **Upload** files after setting up the built-in upload login. Upload a single file or an entire folder (preserving subfolders). Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.
 - **Create** empty folders and files in the current directory when signed in as admin (toolbar buttons in the listing). Same naming rules as uploads.
 - **Requires** PHP and a web server. By default the index lists the folder where the script lives. Enable **Use document root as listing base** in Settings → Filesystem to list from the web server root instead (legacy behavior for symlinked or nested installs).
 
@@ -74,7 +74,7 @@ To create a password hash manually:
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-PHP settings such as `upload_max_filesize` and `post_max_size` still apply.
+PHP settings such as `upload_max_filesize`, `post_max_size`, and `max_file_uploads` still apply. Folder uploads are limited to 500 files per request; empty subfolders are not uploaded (only files).
 
 No dependencies—just drop the file and run.
 

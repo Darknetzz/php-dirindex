@@ -1422,6 +1422,132 @@ function cleanUploadFilename($name) {
     return $name;
 }
 
+function uploadDirMaxFiles() {
+    return 500;
+}
+
+function normalizeUploadRelativePath($path) {
+    $path = str_replace('\\', '/', (string) $path);
+    $path = trim($path, '/');
+    if ($path === '' || str_contains($path, "\0") || relativePathHasTraversal($path)) {
+        return null;
+    }
+    $segments = [];
+    foreach (explode('/', $path) as $segment) {
+        if (!isAllowedEntryName($segment)) {
+            return null;
+        }
+        if (dirindexIsHiddenListingEntry($segment)) {
+            return null;
+        }
+        $segments[] = $segment;
+    }
+    return implode('/', $segments);
+}
+
+function uploadFilesArrayFromRequest($field = 'upload_file') {
+    if (empty($_FILES[$field]) || !isset($_FILES[$field]['name'])) {
+        return [];
+    }
+    $file = $_FILES[$field];
+    if (!is_array($file['name'])) {
+        return [[
+            'name'     => (string) $file['name'],
+            'type'     => (string) ($file['type'] ?? ''),
+            'tmp_name' => (string) ($file['tmp_name'] ?? ''),
+            'error'    => (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE),
+            'size'     => (int) ($file['size'] ?? 0),
+        ]];
+    }
+    $out = [];
+    foreach ($file['name'] as $i => $name) {
+        $out[] = [
+            'name'     => (string) $name,
+            'type'     => (string) ($file['type'][$i] ?? ''),
+            'tmp_name' => (string) ($file['tmp_name'][$i] ?? ''),
+            'error'    => (int) ($file['error'][$i] ?? UPLOAD_ERR_NO_FILE),
+            'size'     => (int) ($file['size'][$i] ?? 0),
+        ];
+    }
+    return $out;
+}
+
+function processDirectoryUpload($currentPath, $relativePath, array $files, $maxBytes, $allowOverwrite, array $pathWhitelist, array $pathBlacklist) {
+    if ($files === []) {
+        return 'upload_missing';
+    }
+    if (count($files) > uploadDirMaxFiles()) {
+        return 'upload_dir_too_many';
+    }
+    $planned = [];
+    foreach ($files as $file) {
+        if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+            return uploadErrorMessage($file['error']);
+        }
+        $entryRel = normalizeUploadRelativePath($file['name']);
+        if ($entryRel === null) {
+            return 'upload_dir_bad_path';
+        }
+        $fullRel = $relativePath !== '' ? $relativePath . '/' . $entryRel : $entryRel;
+        if (isPathAccessDenied($fullRel, $pathWhitelist, $pathBlacklist)) {
+            return 'path_denied';
+        }
+        if ($maxBytes > 0 && (int) $file['size'] > $maxBytes) {
+            return 'upload_too_large';
+        }
+        $planned[] = [
+            'entryRel' => $entryRel,
+            'dest'     => $currentPath . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entryRel),
+            'file'     => $file,
+        ];
+    }
+    $conflicts = 0;
+    foreach ($planned as $entry) {
+        if (!file_exists($entry['dest'])) {
+            continue;
+        }
+        if (is_dir($entry['dest']) || is_link($entry['dest'])) {
+            return 'upload_target_blocked';
+        }
+        $conflicts++;
+    }
+    if ($conflicts > 0 && !$allowOverwrite) {
+        dirindexFlashSet($conflicts . ' file(s) in this upload already exist.');
+        return 'upload_dir_exists';
+    }
+    $uploaded = 0;
+    foreach ($planned as $entry) {
+        $dest = $entry['dest'];
+        $exists = file_exists($dest);
+        if ($exists && (is_dir($dest) || is_link($dest))) {
+            return 'upload_target_blocked';
+        }
+        if ($exists && !$allowOverwrite) {
+            continue;
+        }
+        $parentDir = dirname($dest);
+        if (!is_dir($parentDir) && !@mkdir($parentDir, 0755, true)) {
+            return 'upload_failed';
+        }
+        $tmpName = (string) $entry['file']['tmp_name'];
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            return 'upload_failed';
+        }
+        if ($exists && !@unlink($dest)) {
+            return 'upload_failed';
+        }
+        if (!@move_uploaded_file($tmpName, $dest)) {
+            return 'upload_failed';
+        }
+        $uploaded++;
+    }
+    if ($uploaded === 0) {
+        return 'upload_missing';
+    }
+    dirindexFlashSet($uploaded . ' file(s) uploaded.');
+    return ($conflicts > 0) ? 'upload_dir_overwritten' : 'upload_dir_ok';
+}
+
 function uploadErrorMessage($errorCode) {
     switch ((int) $errorCode) {
         case UPLOAD_ERR_INI_SIZE:
@@ -2201,10 +2327,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!is_dir($currentPath) || !is_writable($currentPath)) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_not_writable');
         }
-        if (empty($_FILES['upload_file']) || !isset($_FILES['upload_file']['error'])) {
+        $uploadMode = (string) ($_POST['upload_mode'] ?? 'file');
+        $allowOverwrite = ($_POST['overwrite'] ?? '') === '1';
+        $maxBytes = isset($dirindexConfig['upload_max_bytes']) ? (int) $dirindexConfig['upload_max_bytes'] : 0;
+        if ($uploadMode === 'directory') {
+            $dirFiles = uploadFilesArrayFromRequest('upload_file');
+            redirectToCurrentListing(
+                $indexHref,
+                $relativePath,
+                processDirectoryUpload($currentPath, $relativePath, $dirFiles, $maxBytes, $allowOverwrite, $pathWhitelist, $pathBlacklist)
+            );
+        }
+        $uploadFiles = uploadFilesArrayFromRequest('upload_file');
+        if ($uploadFiles === []) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_missing');
         }
-        $file = $_FILES['upload_file'];
+        $file = $uploadFiles[0];
         if ((int) $file['error'] !== UPLOAD_ERR_OK) {
             redirectToCurrentListing($indexHref, $relativePath, uploadErrorMessage($file['error']));
         }
@@ -2227,7 +2365,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isPathAccessDenied($uploadRelativePath, $pathWhitelist, $pathBlacklist)) {
             redirectToCurrentListing($indexHref, $relativePath, 'path_denied');
         }
-        $maxBytes = isset($dirindexConfig['upload_max_bytes']) ? (int) $dirindexConfig['upload_max_bytes'] : 0;
         $size = isset($file['size']) ? (int) $file['size'] : 0;
         if ($maxBytes > 0 && $size > $maxBytes) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_too_large');
@@ -2241,7 +2378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($exists && (is_dir($destination) || is_link($destination))) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_target_blocked');
         }
-        if ($exists && ($_POST['overwrite'] ?? '') !== '1') {
+        if ($exists && !$allowOverwrite) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_exists');
         }
         if (!@move_uploaded_file($tmpName, $destination)) {
@@ -2495,6 +2632,11 @@ $messageMap = [
     'upload_partial' => ['error', 'Upload was interrupted before it completed.'],
     'upload_target_blocked' => ['error', 'Cannot overwrite a directory or symlink.'],
     'upload_too_large' => ['error', 'Uploaded file is too large.'],
+    'upload_dir_ok' => ['success', 'Folder upload complete.'],
+    'upload_dir_overwritten' => ['success', 'Folder upload complete; existing files were overwritten.'],
+    'upload_dir_exists' => ['error', 'Some files in this upload already exist. Confirm overwrite and try again.'],
+    'upload_dir_bad_path' => ['error', 'A file path in this upload is not allowed.'],
+    'upload_dir_too_many' => ['error', 'Too many files in one folder upload (limit is ' . uploadDirMaxFiles() . ').'],
     'create_disabled' => ['error', 'Creating folders and files is disabled in settings.'],
     'create_bad_name' => ['error', 'Name is not allowed. Use letters, numbers, spaces, and . _ - ( ) [ ]. Avoid * ? " < > | : \\ / and trailing dots or spaces.'],
     'create_exists' => ['error', 'An entry with that name already exists.'],
@@ -3284,7 +3426,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             border-color: var(--accent);
         }
         .listing.is-dragover::after {
-            content: 'Drop file to upload';
+            content: 'Drop files to upload';
             position: absolute;
             inset: 0;
             z-index: 10;
@@ -4151,6 +4293,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: var(--hover);
             outline: none;
         }
+        .upload-browse-btn-secondary {
+            background: transparent;
+        }
+        .upload-browse-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+        }
         .upload-file-name {
             display: inline-flex;
             align-items: center;
@@ -4183,7 +4334,12 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             display: flex;
             flex-wrap: wrap;
             justify-content: flex-end;
+            align-items: center;
             gap: 0.65rem;
+        }
+        .upload-dir-overwrite {
+            margin: 0;
+            margin-right: auto;
         }
         .settings-panel {
             border: 1px solid var(--border);
@@ -4749,7 +4905,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </div>
                 <div class="admin-bar-actions">
                     <?php if ($uploadEnabled): ?>
-                    <button type="button" class="btn-auth" id="btn-upload-toggle" aria-expanded="false" aria-controls="upload-panel">Upload file</button>
+                    <button type="button" class="btn-auth" id="btn-upload-toggle" aria-expanded="false" aria-controls="upload-panel">Upload</button>
                     <?php endif; ?>
                     <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>">
                         <input type="hidden" name="action" value="logout">
@@ -4760,21 +4916,30 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             </div>
             <?php if ($uploadEnabled): ?>
             <div class="upload-panel" id="upload-panel">
-                <form class="upload-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>">
+                <form class="upload-form" id="upload-form" method="post" enctype="multipart/form-data" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" data-existing-names="<?= h(json_encode($existingNames, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>" data-dir-max-files="<?= (int) uploadDirMaxFiles() ?>" data-upload-path="/<?= h($relativePath ?: '') ?>">
                     <input type="hidden" name="action" value="upload">
                     <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                    <input type="hidden" name="upload_mode" id="upload-mode" value="file">
                     <input type="hidden" name="overwrite" id="upload-overwrite" value="">
                     <input type="hidden" name="upload_as" id="upload-as" value="">
                     <div class="upload-dropzone" id="upload-dropzone">
-                        <input type="file" id="upload-file" class="upload-file-input" name="upload_file" required>
+                        <input type="file" id="upload-file" class="upload-file-input" name="upload_file">
+                        <input type="file" id="upload-file-dir" class="upload-file-input" name="upload_file[]" multiple webkitdirectory directory disabled>
                         <svg class="upload-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 16V4"/><path d="m8 8 4-4 4 4"/><path d="M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/></svg>
-                        <p class="upload-dropzone-title">Drop a file here</p>
-                        <p class="upload-dropzone-hint">or choose one from your device</p>
-                        <button type="button" class="upload-browse-btn" id="upload-browse-btn">Browse files</button>
+                        <p class="upload-dropzone-title" id="upload-dropzone-title">Drop a file here</p>
+                        <p class="upload-dropzone-hint" id="upload-dropzone-hint">or choose one from your device</p>
+                        <div class="upload-browse-actions">
+                            <button type="button" class="upload-browse-btn" id="upload-browse-btn">Browse files</button>
+                            <button type="button" class="upload-browse-btn upload-browse-btn-secondary" id="upload-browse-dir-btn">Browse folder</button>
+                        </div>
                         <span class="upload-file-name" id="upload-file-name" aria-live="polite"></span>
                     </div>
+                    <label class="settings-check-row upload-dir-overwrite" id="upload-dir-overwrite-row" hidden>
+                        <input type="checkbox" id="upload-dir-overwrite" value="1">
+                        <span>Overwrite existing files in this folder upload</span>
+                    </label>
                     <div class="upload-form-actions">
-                        <button type="submit" class="btn-auth">Upload to /<?= h($relativePath ?: '') ?></button>
+                        <button type="submit" class="btn-auth" id="upload-submit-btn">Upload to /<?= h($relativePath ?: '') ?></button>
                     </div>
                 </form>
             </div>
@@ -5781,7 +5946,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         toggle.addEventListener('click', function() {
             var isOpen = panel.classList.toggle('is-open');
             toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            toggle.textContent = isOpen ? 'Hide upload' : 'Upload file';
+            toggle.textContent = isOpen ? 'Hide upload' : 'Upload';
         });
     })();
 
@@ -5884,16 +6049,56 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var uploadForm = document.getElementById('upload-form');
         if (!uploadForm) return;
         var fileInput = document.getElementById('upload-file');
+        var dirInput = document.getElementById('upload-file-dir');
+        var uploadModeInput = document.getElementById('upload-mode');
         var overwriteInput = document.getElementById('upload-overwrite');
         var uploadAsInput = document.getElementById('upload-as');
         var dropzone = document.getElementById('upload-dropzone');
+        var dropzoneTitle = document.getElementById('upload-dropzone-title');
+        var dropzoneHint = document.getElementById('upload-dropzone-hint');
         var browseBtn = document.getElementById('upload-browse-btn');
+        var browseDirBtn = document.getElementById('upload-browse-dir-btn');
+        var submitBtn = document.getElementById('upload-submit-btn');
         var fileNameEl = document.getElementById('upload-file-name');
+        var dirOverwriteRow = document.getElementById('upload-dir-overwrite-row');
+        var dirOverwriteCheckbox = document.getElementById('upload-dir-overwrite');
+        var dirMaxFiles = parseInt(uploadForm.getAttribute('data-dir-max-files') || '500', 10);
+        if (!dirMaxFiles || dirMaxFiles < 1) dirMaxFiles = 500;
+        var dirUploadConfirmed = false;
         var existingNames = [];
         try {
             existingNames = JSON.parse(uploadForm.getAttribute('data-existing-names') || '[]');
         } catch (e) {
             existingNames = [];
+        }
+
+        function isDirectoryUploadMode() {
+            return uploadModeInput && uploadModeInput.value === 'directory';
+        }
+
+        function updateSubmitLabel() {
+            if (!submitBtn) return;
+            var path = uploadForm.getAttribute('data-upload-path') || '/';
+            submitBtn.textContent = (isDirectoryUploadMode() ? 'Upload folder to ' : 'Upload to ') + path;
+        }
+
+        function setUploadMode(mode) {
+            var isDirectory = mode === 'directory';
+            if (uploadModeInput) uploadModeInput.value = isDirectory ? 'directory' : 'file';
+            if (fileInput) {
+                fileInput.disabled = isDirectory;
+                if (isDirectory) fileInput.value = '';
+            }
+            if (dirInput) {
+                dirInput.disabled = !isDirectory;
+                if (!isDirectory) dirInput.value = '';
+            }
+            if (dropzoneTitle) dropzoneTitle.textContent = isDirectory ? 'Drop a folder here' : 'Drop a file here';
+            if (dropzoneHint) dropzoneHint.textContent = isDirectory ? 'or choose a folder from your device' : 'or choose one from your device';
+            if (dirOverwriteRow) dirOverwriteRow.hidden = !isDirectory;
+            if (!isDirectory && dirOverwriteCheckbox) dirOverwriteCheckbox.checked = false;
+            updateSubmitLabel();
+            clearSelection();
         }
 
         function hasFileDrag(e) {
@@ -5902,7 +6107,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             return Array.prototype.indexOf.call(types, 'Files') !== -1;
         }
 
-        function setSelectedFileName(name) {
+        function isDirectoryFileList(files) {
+            if (!files || files.length === 0) return false;
+            if (files.length > 1) return true;
+            var first = files[0];
+            return !!(first && first.webkitRelativePath);
+        }
+
+        function directoryLabelFromFiles(files) {
+            if (!files || !files.length) return '';
+            var firstPath = files[0].webkitRelativePath || files[0].name || '';
+            var parts = firstPath.split('/');
+            if (parts.length > 1) return parts[0] + ' (' + files.length + ' files)';
+            return files.length + ' file' + (files.length === 1 ? '' : 's');
+        }
+
+        function setSelectionLabel(name, isDirectory) {
             if (!dropzone || !fileNameEl) return;
             if (!name) {
                 dropzone.classList.remove('has-file');
@@ -5911,40 +6131,94 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 return;
             }
             dropzone.classList.add('has-file');
-            fileNameEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg><span class="upload-file-name-text"></span>';
+            var icon = isDirectory
+                ? '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
+                : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>';
+            fileNameEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' + icon + '</svg><span class="upload-file-name-text"></span>';
             var textEl = fileNameEl.querySelector('.upload-file-name-text');
             if (textEl) textEl.textContent = name;
+        }
+
+        function clearSelection() {
+            dirUploadConfirmed = false;
+            setSelectionLabel('');
+            if (overwriteInput) overwriteInput.value = '';
+            clearUploadRename();
         }
 
         function clearUploadRename() {
             if (uploadAsInput) uploadAsInput.value = '';
         }
+
         function uploadTargetName() {
             if (uploadAsInput && uploadAsInput.value) return uploadAsInput.value;
             if (!fileInput || !fileInput.files || !fileInput.files[0]) return '';
             return fileInput.files[0].name;
         }
 
-        function assignDroppedFile(file) {
-            if (!file || !fileInput) return;
+        function assignFileList(files, directoryMode) {
+            if (!files || !files.length) return;
             var dt = new DataTransfer();
-            dt.items.add(file);
-            fileInput.files = dt.files;
-            setSelectedFileName(file.name);
-            overwriteInput.value = '';
+            Array.prototype.forEach.call(files, function(file) {
+                dt.items.add(file);
+            });
+            if (directoryMode) {
+                setUploadMode('directory');
+                if (!dirInput) return;
+                dirInput.files = dt.files;
+                setSelectionLabel(directoryLabelFromFiles(dirInput.files), true);
+            } else {
+                setUploadMode('file');
+                if (!fileInput) return;
+                fileInput.files = dt.files;
+                setSelectionLabel(fileInput.files[0] ? fileInput.files[0].name : '', false);
+            }
+            if (overwriteInput) overwriteInput.value = '';
             clearUploadRename();
+        }
+
+        function openUploadPanel() {
+            var panel = document.getElementById('upload-panel');
+            var toggle = document.getElementById('btn-upload-toggle');
+            if (panel && !panel.classList.contains('is-open')) {
+                panel.classList.add('is-open');
+                if (toggle) {
+                    toggle.setAttribute('aria-expanded', 'true');
+                    toggle.textContent = 'Hide upload';
+                }
+            }
         }
 
         if (browseBtn && fileInput) {
             browseBtn.addEventListener('click', function() {
+                setUploadMode('file');
                 fileInput.click();
+            });
+        }
+        if (browseDirBtn && dirInput) {
+            browseDirBtn.addEventListener('click', function() {
+                setUploadMode('directory');
+                dirInput.click();
             });
         }
         if (fileInput) {
             fileInput.addEventListener('change', function() {
+                setUploadMode('file');
                 var file = fileInput.files && fileInput.files[0];
-                setSelectedFileName(file ? file.name : '');
-                overwriteInput.value = '';
+                setSelectionLabel(file ? file.name : '', false);
+                if (overwriteInput) overwriteInput.value = '';
+                clearUploadRename();
+            });
+        }
+        if (dirInput) {
+            dirInput.addEventListener('change', function() {
+                setUploadMode('directory');
+                if (!dirInput.files || !dirInput.files.length) {
+                    clearSelection();
+                    return;
+                }
+                setSelectionLabel(directoryLabelFromFiles(dirInput.files), true);
+                if (overwriteInput) overwriteInput.value = '';
                 clearUploadRename();
             });
         }
@@ -5974,14 +6248,50 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 dropCounter = 0;
                 dropzone.classList.remove('is-dragover');
                 if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-                assignDroppedFile(e.dataTransfer.files[0]);
+                assignFileList(e.dataTransfer.files, isDirectoryFileList(e.dataTransfer.files));
             });
         }
 
         uploadForm.addEventListener('submit', function(e) {
-            if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
+            if (isDirectoryUploadMode()) {
+                if (!dirInput || !dirInput.files || !dirInput.files.length) {
+                    e.preventDefault();
+                    window.alert('Choose a folder to upload.');
+                    return;
+                }
+                if (dirInput.files.length > dirMaxFiles) {
+                    e.preventDefault();
+                    window.alert('Too many files in this folder (limit is ' + dirMaxFiles + ').');
+                    return;
+                }
+                if (dirOverwriteCheckbox && dirOverwriteCheckbox.checked) {
+                    if (overwriteInput) overwriteInput.value = '1';
+                } else if (overwriteInput) {
+                    overwriteInput.value = '';
+                }
+                if (!dirUploadConfirmed && !(dirOverwriteCheckbox && dirOverwriteCheckbox.checked)) {
+                    e.preventDefault();
+                    showConfirmModal({
+                        title: 'Upload folder?',
+                        message: 'Upload ' + dirInput.files.length + ' file(s) from this folder?',
+                        detail: 'If any target files already exist, enable overwrite and upload again.',
+                        confirmLabel: 'Upload folder'
+                    }).then(function(confirmed) {
+                        if (!confirmed) return;
+                        dirUploadConfirmed = true;
+                        uploadForm.requestSubmit();
+                    });
+                    return;
+                }
+                dirUploadConfirmed = false;
+                return;
+            }
+            if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+                e.preventDefault();
+                window.alert('Choose a file to upload.');
+                return;
+            }
             var originalName = fileInput.files[0].name;
-
             if (!uploadAsInput || !uploadAsInput.value) {
                 if (!isAllowedEntryName(originalName)) {
                     e.preventDefault();
@@ -5997,60 +6307,50 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 clearUploadRename();
                 return;
             }
-
             var name = uploadTargetName();
-            if (existingNames.indexOf(name) !== -1 && overwriteInput.value !== '1') {
+            if (existingNames.indexOf(name) !== -1 && overwriteInput && overwriteInput.value !== '1') {
                 e.preventDefault();
                 if (window.confirm('A file named "' + name + '" already exists. Overwrite it?')) {
                     overwriteInput.value = '1';
                     uploadForm.requestSubmit();
-                } else {
+                } else if (overwriteInput) {
                     overwriteInput.value = '';
                 }
-                return;
             }
         });
 
         var listing = document.querySelector('.listing');
-        if (!listing) return;
-        var listingDragCounter = 0;
-
-        listing.addEventListener('dragenter', function(e) {
-            if (!hasFileDrag(e)) return;
-            e.preventDefault();
-            listingDragCounter++;
-            listing.classList.add('is-dragover');
-        });
-        listing.addEventListener('dragover', function(e) {
-            if (!hasFileDrag(e)) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'copy';
-        });
-        listing.addEventListener('dragleave', function(e) {
-            if (!hasFileDrag(e)) return;
-            listingDragCounter--;
-            if (listingDragCounter <= 0) {
+        if (listing) {
+            var listingDragCounter = 0;
+            listing.addEventListener('dragenter', function(e) {
+                if (!hasFileDrag(e)) return;
+                e.preventDefault();
+                listingDragCounter++;
+                listing.classList.add('is-dragover');
+            });
+            listing.addEventListener('dragover', function(e) {
+                if (!hasFileDrag(e)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+            });
+            listing.addEventListener('dragleave', function(e) {
+                if (!hasFileDrag(e)) return;
+                listingDragCounter--;
+                if (listingDragCounter <= 0) {
+                    listingDragCounter = 0;
+                    listing.classList.remove('is-dragover');
+                }
+            });
+            listing.addEventListener('drop', function(e) {
+                e.preventDefault();
                 listingDragCounter = 0;
                 listing.classList.remove('is-dragover');
-            }
-        });
-        listing.addEventListener('drop', function(e) {
-            e.preventDefault();
-            listingDragCounter = 0;
-            listing.classList.remove('is-dragover');
-            if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-            assignDroppedFile(e.dataTransfer.files[0]);
-            var panel = document.getElementById('upload-panel');
-            var toggle = document.getElementById('btn-upload-toggle');
-            if (panel && !panel.classList.contains('is-open')) {
-                panel.classList.add('is-open');
-                if (toggle) {
-                    toggle.setAttribute('aria-expanded', 'true');
-                    toggle.textContent = 'Hide upload';
-                }
-            }
-            uploadForm.requestSubmit();
-        });
+                if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+                assignFileList(e.dataTransfer.files, isDirectoryFileList(e.dataTransfer.files));
+                openUploadPanel();
+                uploadForm.requestSubmit();
+            });
+        }
     })();
 
     (function() {
