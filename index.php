@@ -738,6 +738,70 @@ function resolveShareableEntry($absolutePath, $realBase, $allowOutside) {
     return ['ok' => false, 'type' => null, 'error' => 'share_failed'];
 }
 
+function shareListingBaseCandidates($scriptDir) {
+    $candidates = [];
+    $scriptReal = realpath($scriptDir);
+    if ($scriptReal !== false) {
+        $candidates[] = $scriptReal;
+    }
+    $docRootBase = resolveListingBaseDir($scriptDir, true);
+    $docRootReal = realpath($docRootBase);
+    if ($docRootReal !== false) {
+        $candidates[] = $docRootReal;
+    }
+    return array_values(array_unique($candidates));
+}
+
+function shareEntryExistsUnderBase($sharePath, $type, $baseDir, $allowOutside) {
+    $sharePath = trim((string) $sharePath, '/');
+    if ($sharePath === '' || relativePathHasTraversal($sharePath) || str_contains($sharePath, "\0")) {
+        return false;
+    }
+    $abs = $baseDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $sharePath);
+    if ($type === 'dir') {
+        if (!is_dir($abs) && !is_link($abs)) {
+            return false;
+        }
+    } elseif (!is_file($abs) && !is_link($abs)) {
+        return false;
+    }
+    if ($allowOutside) {
+        return true;
+    }
+    $realBase = realpath($baseDir);
+    if ($realBase === false) {
+        return false;
+    }
+    $resolved = realpath($abs);
+    if ($resolved !== false) {
+        return pathUnderBase($resolved, $realBase);
+    }
+    return pathLogicalUnderBase($abs, $realBase);
+}
+
+function resolveShareListingBase(array $shareContext, $scriptDir, $fallbackBaseDir, $allowOutside) {
+    $sharePath = trim($shareContext['path'], '/');
+    $shareType = $shareContext['type'] ?? 'file';
+    if (!empty($shareContext['base_dir'])) {
+        $stored = realpath((string) $shareContext['base_dir']);
+        if ($stored !== false && shareEntryExistsUnderBase($sharePath, $shareType, $stored, $allowOutside)) {
+            return $stored;
+        }
+    }
+    $candidates = shareListingBaseCandidates($scriptDir);
+    $fallbackReal = realpath($fallbackBaseDir);
+    if ($fallbackReal !== false) {
+        array_unshift($candidates, $fallbackReal);
+        $candidates = array_values(array_unique($candidates));
+    }
+    foreach ($candidates as $candidate) {
+        if (shareEntryExistsUnderBase($sharePath, $shareType, $candidate, $allowOutside)) {
+            return $candidate;
+        }
+    }
+    return null;
+}
+
 function deleteDirectoryRecursive($dir) {
     if (!is_dir($dir)) {
         return false;
@@ -1113,8 +1177,20 @@ function dirindexEnsureSharesTable($pdo) {
         path TEXT NOT NULL,
         type TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        expires_at INTEGER
+        expires_at INTEGER,
+        base_dir TEXT
     )');
+    $cols = $pdo->query('PRAGMA table_info(shares)')->fetchAll(PDO::FETCH_ASSOC);
+    $hasBaseDir = false;
+    foreach ($cols as $col) {
+        if (($col['name'] ?? '') === 'base_dir') {
+            $hasBaseDir = true;
+            break;
+        }
+    }
+    if (!$hasBaseDir) {
+        $pdo->exec('ALTER TABLE shares ADD COLUMN base_dir TEXT');
+    }
 }
 
 function dirindexGetSharesPdo($scriptDir, &$error = null) {
@@ -1134,7 +1210,7 @@ function loadShareByToken($pdo, $token) {
     if ($token === '' || strlen($token) !== 64 || !ctype_xdigit($token)) {
         return null;
     }
-    $stmt = $pdo->prepare('SELECT token, path, type, created_at, expires_at FROM shares WHERE token = ?');
+    $stmt = $pdo->prepare('SELECT token, path, type, created_at, expires_at, base_dir FROM shares WHERE token = ?');
     $stmt->execute([$token]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row || !hash_equals($row['token'], $token)) {
@@ -1149,13 +1225,15 @@ function loadShareByToken($pdo, $token) {
         'type'       => $row['type'],
         'created_at' => (int) $row['created_at'],
         'expires_at' => $row['expires_at'] !== null ? (int) $row['expires_at'] : null,
+        'base_dir'   => isset($row['base_dir']) ? (string) $row['base_dir'] : '',
     ];
 }
 
-function createShare($pdo, $relativePath, $type, $expiresAt) {
+function createShare($pdo, $relativePath, $type, $expiresAt, $baseDir = '') {
     $token = bin2hex(random_bytes(32));
-    $stmt = $pdo->prepare('INSERT INTO shares (token, path, type, created_at, expires_at) VALUES (?, ?, ?, ?, ?)');
-    $stmt->execute([$token, $relativePath, $type, time(), $expiresAt]);
+    $baseDirStored = $baseDir !== '' ? (string) $baseDir : '';
+    $stmt = $pdo->prepare('INSERT INTO shares (token, path, type, created_at, expires_at, base_dir) VALUES (?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$token, $relativePath, $type, time(), $expiresAt, $baseDirStored !== '' ? $baseDirStored : null]);
     return $token;
 }
 
@@ -2001,6 +2079,19 @@ if ($shareRequestToken !== '') {
     }
     $inShareMode = true;
     $shareTokenActive = $shareContext['token'];
+    $shareListingBase = resolveShareListingBase($shareContext, __DIR__, $baseDir, $allowOutside);
+    if ($shareListingBase === null) {
+        header('HTTP/1.1 404 Not Found');
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit('Shared file not found.');
+    }
+    $baseDir = $shareListingBase;
+    $realBase = realpath($baseDir);
+    if ($realBase === false) {
+        header('HTTP/1.1 404 Not Found');
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit('Shared file not found.');
+    }
 }
 
 // IP access check (whitelist / blacklist with CIDR support)
@@ -2863,7 +2954,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirectToCurrentListing($indexHref, $relativePath, 'share_unavailable');
         }
         $expiresAt = shareExpiryFromChoice($_POST['expires'] ?? 'never');
-        $token = createShare($pdo, $sharePath, $shareType, $expiresAt);
+        $token = createShare($pdo, $sharePath, $shareType, $expiresAt, $realBase);
         $_SESSION['share_created_token'] = $token;
         redirectToCurrentListing($indexHref, $relativePath, 'share_created');
     }
