@@ -106,8 +106,9 @@ Treat these as non-negotiable when making changes:
 3. **Uploads** — Require authentication, CSRF, `is_uploaded_file()`, sanitized filenames (`cleanUploadFilename`), and writable-directory checks. Existing files need explicit overwrite confirmation.
 4. **Secrets** — Do not commit `.dirindex.sqlite`, `.dirindex.json`, `.dirindex-lockouts.json`, or legacy `config.php`. Passwords are stored as `password_hash()` output only.
 5. **Output** — Escape user-controlled strings in HTML (`h()`). JSON responses use safe encoding flags.
-6. **Auth lockout** — Login and setup POST handlers use `dirindexRejectIfLoginLocked()` / `dirindexLoginRecordFailure()`; lockout state lives in `.dirindex-lockouts.json` (blocked by `.htaccess`).
-7. **Response headers** — `dirindexSendSecurityHeaders()` runs on every response (CSP allows inline script/style for the monolith; CDN hosts are whitelisted).
+6. **Auth lockout** — Login and setup POST handlers use `dirindexRejectIfLoginLocked()` / `dirindexLoginRecordFailure()`; thresholds in Settings → Security (`login_lockout_enabled`, `login_max_attempts`, `login_lockout_seconds`); state in `.dirindex-lockouts.json` (blocked by `.htaccess`).
+7. **Response headers** — `dirindexSendSecurityHeaders()` runs after config load; toggle with `security_headers_enabled` in Settings → Security.
+8. **Update checks** — `update_check_requires_auth` restricts `?update_check=1` to signed-in admins when enabled.
 
 ## Common change patterns
 

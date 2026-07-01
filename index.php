@@ -5,7 +5,6 @@
  */
 
 header('X-Content-Type-Options: nosniff');
-dirindexSendSecurityHeaders();
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
 $dirindexVersion = '1.2.5';
@@ -1006,11 +1005,11 @@ function dirindexPrepareSettingsForJson(array $settings) {
             $prepared[$key] = array_values((array) $value);
             continue;
         }
-        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root', 'browse_requires_auth', 'image_preview_enabled', 'markdown_preview_enabled', 'hash_sha256_sha512_enabled'], true)) {
+        if (in_array($key, ['show_symlinks', 'allow_open_symlinks_outside', 'upload_enabled', 'create_enabled', 'delete_enabled', 'listing_from_document_root', 'browse_requires_auth', 'image_preview_enabled', 'markdown_preview_enabled', 'hash_sha256_sha512_enabled', 'login_lockout_enabled', 'security_headers_enabled', 'update_check_requires_auth'], true)) {
             $prepared[$key] = ($value === '1' || $value === 1 || $value === true);
             continue;
         }
-        if ($key === 'upload_max_bytes') {
+        if (in_array($key, ['upload_max_bytes', 'login_max_attempts', 'login_lockout_seconds'], true)) {
             $prepared[$key] = (int) $value;
             continue;
         }
@@ -1321,8 +1320,11 @@ function dirindexRequestIsHttps() {
         || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
 }
 
-function dirindexSendSecurityHeaders() {
+function dirindexSendSecurityHeaders(array $config = []) {
     if (headers_sent()) {
+        return;
+    }
+    if (!dirindexSecurityHeadersEnabled($config)) {
         return;
     }
     header('X-Frame-Options: DENY');
@@ -1342,12 +1344,41 @@ function dirindexSendSecurityHeaders() {
     );
 }
 
-function dirindexLoginMaxAttempts() {
-    return 5;
+function dirindexSecurityHeadersEnabled(array $config = []) {
+    if ($config === []) {
+        $config = $GLOBALS['dirindexConfig'] ?? [];
+    }
+    return !isset($config['security_headers_enabled']) || !empty($config['security_headers_enabled']);
 }
 
-function dirindexLoginLockoutSeconds() {
-    return 900;
+function dirindexLoginLockoutEnabled(array $config = []) {
+    if ($config === []) {
+        $config = $GLOBALS['dirindexConfig'] ?? [];
+    }
+    return !isset($config['login_lockout_enabled']) || !empty($config['login_lockout_enabled']);
+}
+
+function dirindexLoginMaxAttempts(array $config = []) {
+    if ($config === []) {
+        $config = $GLOBALS['dirindexConfig'] ?? [];
+    }
+    $attempts = isset($config['login_max_attempts']) ? (int) $config['login_max_attempts'] : 5;
+    return max(1, min($attempts, 100));
+}
+
+function dirindexLoginLockoutSeconds(array $config = []) {
+    if ($config === []) {
+        $config = $GLOBALS['dirindexConfig'] ?? [];
+    }
+    $seconds = isset($config['login_lockout_seconds']) ? (int) $config['login_lockout_seconds'] : 900;
+    return max(60, min($seconds, 86400));
+}
+
+function isUpdateCheckAuthRequired(array $config = []) {
+    if ($config === []) {
+        $config = $GLOBALS['dirindexConfig'] ?? [];
+    }
+    return !empty($config['update_check_requires_auth']);
 }
 
 function dirindexLockoutsPath($scriptDir) {
@@ -1447,7 +1478,10 @@ function dirindexLoginLockoutState($scriptDir, $ip) {
     return ['locked' => false, 'retry_after' => 0];
 }
 
-function dirindexLoginRecordFailure($scriptDir, $ip) {
+function dirindexLoginRecordFailure($scriptDir, $ip, array $config = []) {
+    if (!dirindexLoginLockoutEnabled($config)) {
+        return;
+    }
     $ip = trim((string) $ip);
     if ($ip === '') {
         return;
@@ -1478,8 +1512,8 @@ function dirindexLoginRecordFailure($scriptDir, $ip) {
         $entry = ['failures' => 0, 'locked_until' => 0];
     }
     $entry['failures'] = (int) ($entry['failures'] ?? 0) + 1;
-    if ($entry['failures'] >= dirindexLoginMaxAttempts()) {
-        $entry['locked_until'] = $now + dirindexLoginLockoutSeconds();
+    if ($entry['failures'] >= dirindexLoginMaxAttempts($config)) {
+        $entry['locked_until'] = $now + dirindexLoginLockoutSeconds($config);
     }
     $data[$ip] = $entry;
     $json = json_encode($data, JSON_UNESCAPED_SLASHES);
@@ -1504,7 +1538,18 @@ function dirindexLoginClearFailures($scriptDir, $ip) {
     dirindexWriteLockoutsFile($scriptDir, $data);
 }
 
-function dirindexRejectIfLoginLocked($indexHref, $relativePath, $scriptDir, $clientIp) {
+function dirindexClearAllLoginLockouts($scriptDir) {
+    $path = dirindexLockoutsPath($scriptDir);
+    if (is_file($path)) {
+        return @unlink($path);
+    }
+    return true;
+}
+
+function dirindexRejectIfLoginLocked($indexHref, $relativePath, $scriptDir, $clientIp, array $config = []) {
+    if (!dirindexLoginLockoutEnabled($config)) {
+        return;
+    }
     $lockout = dirindexLoginLockoutState($scriptDir, $clientIp);
     if (!$lockout['locked']) {
         return;
@@ -2213,6 +2258,11 @@ $dirindexConfig = [
     'preview_blocklist'         => ['php'],
     'hash_sha256_sha512_enabled' => false,
     'session_name'              => 'dirindex_upload',
+    'login_lockout_enabled'     => true,
+    'login_max_attempts'        => 5,
+    'login_lockout_seconds'     => 900,
+    'security_headers_enabled'  => true,
+    'update_check_requires_auth' => false,
 ];
 $dirindexStorage = [];
 $storedConfig = loadDirindexStoredConfig(__DIR__, $dirindexStorage);
@@ -2220,6 +2270,7 @@ $storedConfig = dirindexImportLegacyConfigIfNeeded(__DIR__, $storedConfig);
 if ($storedConfig) {
     $dirindexConfig = array_merge($dirindexConfig, $storedConfig);
 }
+dirindexSendSecurityHeaders($dirindexConfig);
 $baseDir = resolveListingBaseDir(__DIR__, !empty($dirindexConfig['listing_from_document_root']));
 $realBase = realpath($baseDir);
 if ($realBase === false) {
@@ -2253,6 +2304,9 @@ $previewBlocklist = normalizePreviewBlocklist(
 $imagePreviewEnabled = !isset($dirindexConfig['image_preview_enabled']) || !empty($dirindexConfig['image_preview_enabled']);
 $markdownPreviewEnabled = !isset($dirindexConfig['markdown_preview_enabled']) || !empty($dirindexConfig['markdown_preview_enabled']);
 $hashSha256Sha512Enabled = !empty($dirindexConfig['hash_sha256_sha512_enabled']);
+$loginLockoutEnabled = dirindexLoginLockoutEnabled($dirindexConfig);
+$securityHeadersEnabled = dirindexSecurityHeadersEnabled($dirindexConfig);
+$updateCheckAuthRequired = isUpdateCheckAuthRequired($dirindexConfig);
 $sessionNeeded = $setupNeeded || $hasUploadCredentials || $browseAuthRequired || $_SERVER['REQUEST_METHOD'] === 'POST';
 if ($sessionNeeded) {
     startDirindexSession((string) $dirindexConfig['session_name']);
@@ -2338,6 +2392,12 @@ if ($inShareMode && $shareContext) {
 }
 
 if (isset($_GET['update_check']) && $relativePath === '' && !$inShareMode) {
+    if ($updateCheckAuthRequired && !$authenticated) {
+        header('HTTP/1.1 401 Unauthorized');
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['ok' => false, 'error' => 'Authentication required.'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
     $updateChannel = dirindexNormalizeUpdateChannel(isset($_GET['channel']) ? (string) $_GET['channel'] : 'stable');
     header('Content-Type: application/json; charset=UTF-8');
     echo json_encode(
@@ -2830,7 +2890,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$setupNeeded) {
             redirectToCurrentListing($indexHref, $relativePath, 'setup_done');
         }
-        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp);
+        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp, $dirindexConfig);
         $username = trim((string) ($_POST['username'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
         $confirm = (string) ($_POST['password_confirm'] ?? '');
@@ -2886,13 +2946,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$hasUploadCredentials) {
             redirectToCurrentListing($indexHref, $relativePath, 'setup_required');
         }
-        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp);
+        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp, $dirindexConfig);
         $username = trim((string) ($_POST['username'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
         $userOk = hash_equals((string) $dirindexConfig['auth_username'], $username);
         $passOk = password_verify($password, (string) $dirindexConfig['auth_password_hash']);
         if (!$userOk || !$passOk) {
-            dirindexLoginRecordFailure(__DIR__, $clientIp);
+            dirindexLoginRecordFailure(__DIR__, $clientIp, $dirindexConfig);
             redirectToCurrentListing($indexHref, $relativePath, 'login_failed');
         }
         session_regenerate_id(true);
@@ -2938,6 +2998,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!validatePreviewBlocklist($previewBlocklistEntries, $invalidPreviewEntry)) {
             redirectToCurrentListing($indexHref, $relativePath, 'preview_blocklist_invalid');
         }
+        $loginMaxAttemptsRaw = trim((string) ($_POST['login_max_attempts'] ?? '5'));
+        $loginLockoutSecondsRaw = trim((string) ($_POST['login_lockout_seconds'] ?? '900'));
+        if ($loginMaxAttemptsRaw === '' || !ctype_digit($loginMaxAttemptsRaw) || (int) $loginMaxAttemptsRaw < 1 || (int) $loginMaxAttemptsRaw > 100) {
+            redirectToCurrentListing($indexHref, $relativePath, 'login_lockout_invalid');
+        }
+        if ($loginLockoutSecondsRaw === '' || !ctype_digit($loginLockoutSecondsRaw) || (int) $loginLockoutSecondsRaw < 60 || (int) $loginLockoutSecondsRaw > 86400) {
+            redirectToCurrentListing($indexHref, $relativePath, 'login_lockout_invalid');
+        }
         $saveError = null;
         $saved = saveDirindexStoredConfig(__DIR__, [
             'show_symlinks' => isset($_POST['show_symlinks']) ? '1' : '0',
@@ -2950,6 +3018,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'image_preview_enabled' => isset($_POST['image_preview_enabled']) ? '1' : '0',
             'markdown_preview_enabled' => isset($_POST['markdown_preview_enabled']) ? '1' : '0',
             'hash_sha256_sha512_enabled' => isset($_POST['hash_sha256_sha512_enabled']) ? '1' : '0',
+            'login_lockout_enabled' => isset($_POST['login_lockout_enabled']) ? '1' : '0',
+            'login_max_attempts' => (string) (int) $loginMaxAttemptsRaw,
+            'login_lockout_seconds' => (string) (int) $loginLockoutSecondsRaw,
+            'security_headers_enabled' => isset($_POST['security_headers_enabled']) ? '1' : '0',
+            'update_check_requires_auth' => isset($_POST['update_check_requires_auth']) ? '1' : '0',
             'upload_max_bytes' => (string) $maxBytesInt,
             'ip_whitelist' => $ipWhitelistEntries,
             'ip_blacklist' => $ipBlacklistEntries,
@@ -2960,6 +3033,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'web_root_url' => $webRootUrl,
         ], $saveError);
         redirectToCurrentListing($indexHref, $relativePath, $saved ? 'settings_saved' : 'settings_write_failed');
+    }
+
+    if ($action === 'clear_login_lockouts') {
+        if (!$hasUploadCredentials || !$authenticated) {
+            redirectToCurrentListing($indexHref, $relativePath, 'auth_required');
+        }
+        if (!dirindexClearAllLoginLockouts(__DIR__)) {
+            redirectToCurrentListing($indexHref, $relativePath, 'lockouts_clear_failed');
+        }
+        redirectToCurrentListing($indexHref, $relativePath, 'lockouts_cleared');
     }
 
     if ($action === 'account') {
@@ -3329,6 +3412,9 @@ $messageMap = [
     'login_failed' => ['error', 'Invalid username or password.'],
     'login_locked' => ['error', 'Too many sign-in attempts. Please wait and try again.'],
     'login_ok' => ['success', 'Signed in.'],
+    'lockouts_cleared' => ['success', 'Login lockouts cleared.'],
+    'lockouts_clear_failed' => ['error', 'Could not clear login lockouts. Check file permissions.'],
+    'login_lockout_invalid' => ['error', 'Login lockout settings are invalid. Use 1–100 attempts and 60–86400 seconds.'],
     'logout_ok' => ['info', 'Signed out.'],
     'setup_done' => ['info', 'Upload setup is already complete.'],
     'setup_missing' => ['error', 'Enter a username and password to finish setup.'],
@@ -3408,6 +3494,8 @@ $settingsModalMessageKeys = [
     'path_access_invalid',
     'preview_blocklist_invalid',
     'web_root_url_invalid',
+    'login_lockout_invalid',
+    'lockouts_cleared',
 ];
 $settingsModalMessage = null;
 $openSettingsModal = $authenticated && !$inShareMode && isset($_GET['msg']) && in_array((string) $_GET['msg'], $settingsModalMessageKeys, true);
@@ -6166,7 +6254,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     data-check-url="<?= h(currentListingUrl($indexHref, '', ['update_check' => '1'])) ?>"
                     data-post-url="<?= h($indexHref) ?>"
                     data-current-version="<?= h($dirindexVersion) ?>"
-                    data-current-build-ref="<?= h($dirindexBuildRef) ?>">
+                    data-current-build-ref="<?= h($dirindexBuildRef) ?>"
+                    data-update-check-auth="<?= $updateCheckAuthRequired ? '1' : '0' ?>"
+                    data-signed-in="<?= $authenticated ? '1' : '0' ?>">
                     <div class="about-update-channel">
                         <label for="about-update-channel">Channel</label>
                         <select id="about-update-channel" aria-label="Update channel">
@@ -6280,6 +6370,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 <input type="number" id="admin-upload-max" name="upload_max_bytes" min="0" inputmode="numeric" value="<?= h((string) ((int) ($dirindexConfig['upload_max_bytes'] ?? 0))) ?>">
                                 <span class="settings-help">Use 0 to rely on PHP's configured upload limit.</span>
                             </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-panel" id="settings-panel-security" data-settings-panel="security">
+                        <summary class="settings-panel-summary">
+                            <span class="settings-panel-summary-main">
+                                <span class="settings-panel-title">Security</span>
+                                <span class="settings-panel-hint">Login lockout, response headers, and update checks</span>
+                            </span>
+                        </summary>
+                        <div class="settings-panel-body">
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="login_lockout_enabled" value="1" <?= $loginLockoutEnabled ? 'checked' : '' ?>>
+                                <span>Enable login rate limiting</span>
+                            </label>
+                            <p class="settings-help">When enabled, repeated failed sign-in or setup attempts from one IP are temporarily blocked. State is stored in <code>.dirindex-lockouts.json</code>.</p>
+                            <div class="settings-field">
+                                <label for="admin-login-max-attempts">Max failed attempts before lockout</label>
+                                <input type="number" id="admin-login-max-attempts" name="login_max_attempts" min="1" max="100" inputmode="numeric" value="<?= h((string) dirindexLoginMaxAttempts($dirindexConfig)) ?>">
+                            </div>
+                            <div class="settings-field">
+                                <label for="admin-login-lockout-seconds">Lockout duration in seconds</label>
+                                <input type="number" id="admin-login-lockout-seconds" name="login_lockout_seconds" min="60" max="86400" inputmode="numeric" value="<?= h((string) dirindexLoginLockoutSeconds($dirindexConfig)) ?>">
+                                <span class="settings-help">Default is 900 (15 minutes). Allowed range: 60–86400.</span>
+                            </div>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="security_headers_enabled" value="1" <?= $securityHeadersEnabled ? 'checked' : '' ?>>
+                                <span>Send security headers (CSP, X-Frame-Options, …)</span>
+                            </label>
+                            <p class="settings-help">Disable only if your web server already sets equivalent headers and duplicates cause problems.</p>
+                            <label class="settings-check-row">
+                                <input type="checkbox" name="update_check_requires_auth" value="1" <?= $updateCheckAuthRequired ? 'checked' : '' ?>>
+                                <span>Require sign-in for update checks</span>
+                            </label>
+                            <p class="settings-help">When enabled, the About modal’s <strong>Check for updates</strong> request requires an admin session.</p>
                         </div>
                     </details>
 
@@ -6415,6 +6540,23 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         </div>
                     </details>
                 </form>
+
+                <details class="settings-panel settings-panel--danger" id="settings-panel-lockouts" data-settings-panel="lockouts">
+                    <summary class="settings-panel-summary">
+                        <span class="settings-panel-summary-main">
+                            <span class="settings-panel-title">Login lockouts</span>
+                            <span class="settings-panel-hint">Clear IP blocks from failed sign-in attempts</span>
+                        </span>
+                    </summary>
+                    <div class="settings-panel-body">
+                        <p class="settings-help">Removes all entries from <code>.dirindex-lockouts.json</code>. Use this if you locked yourself out during testing or changed lockout settings.</p>
+                        <form class="settings-form" method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" id="clear-lockouts-form">
+                            <input type="hidden" name="action" value="clear_login_lockouts">
+                            <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+                            <button type="button" class="btn-auth btn-auth-secondary" id="btn-clear-login-lockouts">Clear all login lockouts</button>
+                        </form>
+                    </div>
+                </details>
 
                 <details class="settings-panel settings-panel--danger" id="settings-panel-reset" data-settings-panel="reset">
                     <summary class="settings-panel-summary">
@@ -7348,13 +7490,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         function checkAboutUpdates() {
             if (!aboutUpdate || !aboutCheckBtn) return;
+            if (aboutUpdate.getAttribute('data-update-check-auth') === '1' && aboutUpdate.getAttribute('data-signed-in') !== '1') {
+                setAboutUpdateStatus('Sign in as admin to check for updates.', 'warning');
+                return;
+            }
             var checkUrl = buildAboutCheckUrl();
             if (!checkUrl) return;
             aboutCheckBtn.disabled = true;
             if (aboutApplyBtn) aboutApplyBtn.disabled = true;
             setAboutUpdateStatus('Checking GitHub for updates…', 'muted');
             fetch(checkUrl, { credentials: 'same-origin' })
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    if (r.status === 401) {
+                        return { ok: false, error: 'Sign in as admin to check for updates.' };
+                    }
+                    return r.json();
+                })
                 .then(renderAboutUpdateState)
                 .catch(function() {
                     renderAboutUpdateState({ ok: false, error: 'Could not check for updates.' });
@@ -8569,6 +8720,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     danger: true
                 }).then(function(confirmed) {
                     if (confirmed) resetForm.submit();
+                });
+            });
+        }
+
+        var clearLockoutsForm = document.getElementById('clear-lockouts-form');
+        var btnClearLoginLockouts = document.getElementById('btn-clear-login-lockouts');
+        if (clearLockoutsForm && btnClearLoginLockouts) {
+            btnClearLoginLockouts.addEventListener('click', function() {
+                showConfirmModal({
+                    title: 'Clear login lockouts?',
+                    message: 'Remove all IP blocks from failed sign-in attempts?',
+                    detail: 'Anyone currently locked out will be able to sign in again immediately.',
+                    confirmLabel: 'Clear lockouts',
+                    danger: false
+                }).then(function(confirmed) {
+                    if (confirmed) clearLockoutsForm.submit();
                 });
             });
         }

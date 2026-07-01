@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings → Security** — configure login rate limiting (enable, max attempts, lockout duration), toggle security response headers, and require sign-in for About update checks
+- **Settings → Login lockouts** — clear all IP blocks from `.dirindex-lockouts.json`
+
 ### Changed
 
 ### Fixed
@@ -19,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`.htaccess`** — block direct HTTP access to `.git` (prevents source and history recovery when the repo is deployed inside the web root)
 - **Sessions** — auth session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` when the request is HTTPS (including behind `X-Forwarded-Proto`)
-- **Login lockout** — after 5 failed sign-in attempts from one IP, login and first-run setup are blocked for 15 minutes (tracked in `.dirindex-lockouts.json`, denied by `.htaccess`)
+- **Login lockout** — after 5 failed sign-in attempts from one IP, login and first-run setup are blocked for 15 minutes by default (configurable in Settings → Security; tracked in `.dirindex-lockouts.json`, denied by `.htaccess`)
 - **HTTP headers** — `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, pragmatic `Content-Security-Policy`, and HSTS on HTTPS via `dirindexSendSecurityHeaders()`
 
 ## [1.2.5] - 2026-06-12

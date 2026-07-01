@@ -17,7 +17,7 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 
 Shipped `.htaccess` (Apache) denies direct HTTP access to `.git`, `.dirindex.sqlite` (including `-wal` / `-shm` sidecars), `.dirindex.json`, `.dirindex-lockouts.json` (login rate-limit state), and legacy `config.php`. PHP still reads them normally; only browser downloads are blocked. Nginx and `php -S` need equivalent rules if you use those instead.
 
-Failed sign-in attempts are rate-limited per client IP: **5** failures trigger a **15-minute** lockout for login and first-run setup. Lockout state is stored in `.dirindex-lockouts.json` next to the script.
+Failed sign-in attempts are rate-limited per client IP when **Enable login rate limiting** is on (default: **5** failures → **15-minute** lockout). Thresholds are configurable in Settings → Security. Lockout state is stored in `.dirindex-lockouts.json` next to the script.
 
 If you still have a legacy `config.php`, missing keys are imported into the active store on first request. You can delete `config.php` afterward.
 
@@ -42,6 +42,15 @@ If you still have a legacy `config.php`, missing keys are imported into the acti
 | `markdown_preview_enabled` | `true` | When `false`, `.md` and `.markdown` files open as syntax-highlighted source instead of rendered HTML in the preview modal and on share landing pages. |
 | `preview_blocklist` | `["php"]` | File extensions (without dots) that must not be previewed in the modal or on share landing pages; matching files open as binary instead. |
 | `hash_sha256_sha512_enabled` | `false` | When `true`, the file info modal can compute SHA-256 and SHA-512 in addition to CRC32, MD5, and SHA-1. Disabled by default because the stronger digests are much slower on large files. |
+| `login_lockout_enabled` | `true` | When `true`, failed sign-in and setup attempts are rate-limited per client IP. |
+| `login_max_attempts` | `5` | Consecutive failures before lockout (1–100). |
+| `login_lockout_seconds` | `900` | Lockout duration in seconds (60–86400). |
+| `security_headers_enabled` | `true` | When `true`, send CSP, `X-Frame-Options`, `Referrer-Policy`, and related headers on every response. |
+| `update_check_requires_auth` | `false` | When `true`, the About modal’s update check requires an admin session. |
+
+**Security** (Settings → Security when signed in as admin):
+
+- **Login rate limiting** — configurable thresholds; lockout state in `.dirindex-lockouts.json` (blocked by `.htaccess`). Use **Settings → Login lockouts → Clear all login lockouts** to reset IP blocks.
 
 **Path access** (Settings → Server settings when signed in as admin):
 
