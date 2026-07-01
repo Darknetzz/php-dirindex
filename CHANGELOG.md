@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [1.2.6] - 2026-07-01
+
+### Added
+
 - **Settings → Security** — configure login rate limiting (enable, max attempts, lockout duration), toggle security response headers, and require sign-in for About update checks
 - **Settings → Login lockouts** — clear all IP blocks from `.dirindex-lockouts.json`
 
