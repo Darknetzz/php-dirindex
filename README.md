@@ -15,7 +15,9 @@ A single-file directory index that lists files and folders in a dark-themed, rea
 - **PDO SQLite available (recommended):** `.dirindex.sqlite` next to the script (upload settings, share links, and UI-managed options).
 - **No SQLite:** `.dirindex.json` in the same folder (upload and UI-managed options; share links require SQLite).
 
-Shipped `.htaccess` (Apache) denies direct HTTP access to `.git`, `.dirindex.sqlite` (including `-wal` / `-shm` sidecars), `.dirindex.json`, and legacy `config.php`. PHP still reads them normally; only browser downloads are blocked. Nginx and `php -S` need equivalent rules if you use those instead.
+Shipped `.htaccess` (Apache) denies direct HTTP access to `.git`, `.dirindex.sqlite` (including `-wal` / `-shm` sidecars), `.dirindex.json`, `.dirindex-lockouts.json` (login rate-limit state), and legacy `config.php`. PHP still reads them normally; only browser downloads are blocked. Nginx and `php -S` need equivalent rules if you use those instead.
+
+Failed sign-in attempts are rate-limited per client IP: **5** failures trigger a **15-minute** lockout for login and first-run setup. Lockout state is stored in `.dirindex-lockouts.json` next to the script.
 
 If you still have a legacy `config.php`, missing keys are imported into the active store on first request. You can delete `config.php` afterward.
 

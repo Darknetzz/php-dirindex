@@ -4,12 +4,12 @@ RedirectMatch 403 (?i)(^|/)\.git(/|$)
 # Block direct HTTP access to dirindex settings storage.
 # PHP reads and writes these files on the filesystem; they must not be downloadable.
 <IfModule mod_authz_core.c>
-    <FilesMatch "^\.dirindex\.sqlite|^\.dirindex\.json$|^config\.php$">
+    <FilesMatch "^\.dirindex\.sqlite|^\.dirindex\.json$|^\.dirindex-lockouts\.json$|^config\.php$">
         Require all denied
     </FilesMatch>
 </IfModule>
 <IfModule !mod_authz_core.c>
-    <FilesMatch "^\.dirindex\.sqlite|^\.dirindex\.json$|^config\.php$">
+    <FilesMatch "^\.dirindex\.sqlite|^\.dirindex\.json$|^\.dirindex-lockouts\.json$|^config\.php$">
         Order allow,deny
         Deny from all
     </FilesMatch>

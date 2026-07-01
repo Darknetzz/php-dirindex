@@ -104,8 +104,10 @@ Treat these as non-negotiable when making changes:
 1. **Path safety** — Never bypass `pathUnderBase()` or `..` / null-byte checks when resolving user-supplied paths.
 2. **Symlinks** — Respect `show_symlinks` and `allow_open_symlinks_outside`; do not silently follow links outside the base when disabled.
 3. **Uploads** — Require authentication, CSRF, `is_uploaded_file()`, sanitized filenames (`cleanUploadFilename`), and writable-directory checks. Existing files need explicit overwrite confirmation.
-4. **Secrets** — Do not commit `.dirindex.sqlite`, `.dirindex.json`, or legacy `config.php`. Passwords are stored as `password_hash()` output only.
+4. **Secrets** — Do not commit `.dirindex.sqlite`, `.dirindex.json`, `.dirindex-lockouts.json`, or legacy `config.php`. Passwords are stored as `password_hash()` output only.
 5. **Output** — Escape user-controlled strings in HTML (`h()`). JSON responses use safe encoding flags.
+6. **Auth lockout** — Login and setup POST handlers use `dirindexRejectIfLoginLocked()` / `dirindexLoginRecordFailure()`; lockout state lives in `.dirindex-lockouts.json` (blocked by `.htaccess`).
+7. **Response headers** — `dirindexSendSecurityHeaders()` runs on every response (CSP allows inline script/style for the monolith; CDN hosts are whitelisted).
 
 ## Common change patterns
 

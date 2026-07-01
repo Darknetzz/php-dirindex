@@ -5,6 +5,7 @@
  */
 
 header('X-Content-Type-Options: nosniff');
+dirindexSendSecurityHeaders();
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
 $dirindexVersion = '1.2.5';
@@ -1022,6 +1023,7 @@ function dirindexIsHiddenListingEntry($entry) {
     return $entry === '.dirindex.sqlite'
         || str_starts_with($entry, '.dirindex.sqlite-')
         || $entry === '.dirindex.json'
+        || $entry === '.dirindex-lockouts.json'
         || $entry === 'config.php';
 }
 
@@ -1317,6 +1319,202 @@ function dirindexRequestIsHttps() {
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443)
         || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+}
+
+function dirindexSendSecurityHeaders() {
+    if (headers_sent()) {
+        return;
+    }
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+    if (dirindexRequestIsHttps()) {
+        header('Strict-Transport-Security: max-age=31536000');
+    }
+    header(
+        "Content-Security-Policy: default-src 'self'; "
+        . "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        . "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        . "font-src https://fonts.gstatic.com; "
+        . "img-src 'self' data: blob:; "
+        . "connect-src 'self' https://api.github.com https://github.com; "
+        . "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    );
+}
+
+function dirindexLoginMaxAttempts() {
+    return 5;
+}
+
+function dirindexLoginLockoutSeconds() {
+    return 900;
+}
+
+function dirindexLockoutsPath($scriptDir) {
+    return $scriptDir . DIRECTORY_SEPARATOR . '.dirindex-lockouts.json';
+}
+
+function dirindexReadLockoutsFile($scriptDir) {
+    $path = dirindexLockoutsPath($scriptDir);
+    if (!is_file($path)) {
+        return [];
+    }
+    $fp = @fopen($path, 'rb');
+    if (!$fp) {
+        return [];
+    }
+    $data = [];
+    if (flock($fp, LOCK_SH)) {
+        $raw = stream_get_contents($fp);
+        flock($fp, LOCK_UN);
+        $decoded = json_decode($raw ?: '', true);
+        if (is_array($decoded)) {
+            $data = $decoded;
+        }
+    }
+    fclose($fp);
+    return $data;
+}
+
+function dirindexWriteLockoutsFile($scriptDir, array $data) {
+    $path = dirindexLockoutsPath($scriptDir);
+    $json = json_encode($data, JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return false;
+    }
+    $fp = @fopen($path, 'c+b');
+    if (!$fp) {
+        return false;
+    }
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return false;
+    }
+    ftruncate($fp, 0);
+    rewind($fp);
+    $written = fwrite($fp, $json . "\n");
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return $written !== false;
+}
+
+function dirindexLoginLockoutGc($scriptDir, array $data) {
+    $now = time();
+    $changed = false;
+    foreach ($data as $ip => $entry) {
+        if (!is_array($entry)) {
+            unset($data[$ip]);
+            $changed = true;
+            continue;
+        }
+        $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+        $failures = (int) ($entry['failures'] ?? 0);
+        if ($lockedUntil > $now) {
+            continue;
+        }
+        if ($lockedUntil > 0 && $lockedUntil <= $now) {
+            unset($data[$ip]);
+            $changed = true;
+            continue;
+        }
+        if ($failures === 0 && $lockedUntil === 0) {
+            unset($data[$ip]);
+            $changed = true;
+        }
+    }
+    if ($changed) {
+        dirindexWriteLockoutsFile($scriptDir, $data);
+    }
+    return $data;
+}
+
+function dirindexLoginLockoutState($scriptDir, $ip) {
+    $ip = trim((string) $ip);
+    if ($ip === '') {
+        return ['locked' => false, 'retry_after' => 0];
+    }
+    $data = dirindexLoginLockoutGc($scriptDir, dirindexReadLockoutsFile($scriptDir));
+    $entry = $data[$ip] ?? null;
+    if (!is_array($entry)) {
+        return ['locked' => false, 'retry_after' => 0];
+    }
+    $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+    $now = time();
+    if ($lockedUntil > $now) {
+        return ['locked' => true, 'retry_after' => $lockedUntil - $now];
+    }
+    return ['locked' => false, 'retry_after' => 0];
+}
+
+function dirindexLoginRecordFailure($scriptDir, $ip) {
+    $ip = trim((string) $ip);
+    if ($ip === '') {
+        return;
+    }
+    $path = dirindexLockoutsPath($scriptDir);
+    $fp = @fopen($path, 'c+b');
+    if (!$fp) {
+        return;
+    }
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return;
+    }
+    $raw = stream_get_contents($fp);
+    $data = json_decode($raw ?: '', true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $now = time();
+    $entry = $data[$ip] ?? ['failures' => 0, 'locked_until' => 0];
+    $lockedUntil = (int) ($entry['locked_until'] ?? 0);
+    if ($lockedUntil > $now) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return;
+    }
+    if ($lockedUntil > 0 && $lockedUntil <= $now) {
+        $entry = ['failures' => 0, 'locked_until' => 0];
+    }
+    $entry['failures'] = (int) ($entry['failures'] ?? 0) + 1;
+    if ($entry['failures'] >= dirindexLoginMaxAttempts()) {
+        $entry['locked_until'] = $now + dirindexLoginLockoutSeconds();
+    }
+    $data[$ip] = $entry;
+    $json = json_encode($data, JSON_UNESCAPED_SLASHES);
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, ($json !== false ? $json : '{}') . "\n");
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
+function dirindexLoginClearFailures($scriptDir, $ip) {
+    $ip = trim((string) $ip);
+    if ($ip === '') {
+        return;
+    }
+    $data = dirindexReadLockoutsFile($scriptDir);
+    if (!isset($data[$ip])) {
+        return;
+    }
+    unset($data[$ip]);
+    dirindexWriteLockoutsFile($scriptDir, $data);
+}
+
+function dirindexRejectIfLoginLocked($indexHref, $relativePath, $scriptDir, $clientIp) {
+    $lockout = dirindexLoginLockoutState($scriptDir, $clientIp);
+    if (!$lockout['locked']) {
+        return;
+    }
+    $retryAfter = (int) $lockout['retry_after'];
+    if ($retryAfter > 0) {
+        $minutes = max(1, (int) ceil($retryAfter / 60));
+        dirindexFlashSet('Try again in about ' . $minutes . ' minute' . ($minutes === 1 ? '' : 's') . '.');
+    }
+    redirectToCurrentListing($indexHref, $relativePath, 'login_locked');
 }
 
 function startDirindexSession($name = 'dirindex_upload') {
@@ -2632,6 +2830,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$setupNeeded) {
             redirectToCurrentListing($indexHref, $relativePath, 'setup_done');
         }
+        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp);
         $username = trim((string) ($_POST['username'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
         $confirm = (string) ($_POST['password_confirm'] ?? '');
@@ -2676,6 +2875,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         session_regenerate_id(true);
         $_SESSION['dirindex_authenticated'] = true;
+        dirindexLoginClearFailures(__DIR__, $clientIp);
         if ($restrictPrivateNetworks && $clientIp !== '' && !isPrivateOrLocalIp($clientIp)) {
             dirindexFlashSet('Private-network access is enabled. Your current IP (' . $clientIp . ') was added to the whitelist so you stay signed in.');
         }
@@ -2686,15 +2886,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$hasUploadCredentials) {
             redirectToCurrentListing($indexHref, $relativePath, 'setup_required');
         }
+        dirindexRejectIfLoginLocked($indexHref, $relativePath, __DIR__, $clientIp);
         $username = trim((string) ($_POST['username'] ?? ''));
         $password = (string) ($_POST['password'] ?? '');
         $userOk = hash_equals((string) $dirindexConfig['auth_username'], $username);
         $passOk = password_verify($password, (string) $dirindexConfig['auth_password_hash']);
         if (!$userOk || !$passOk) {
+            dirindexLoginRecordFailure(__DIR__, $clientIp);
             redirectToCurrentListing($indexHref, $relativePath, 'login_failed');
         }
         session_regenerate_id(true);
         $_SESSION['dirindex_authenticated'] = true;
+        dirindexLoginClearFailures(__DIR__, $clientIp);
         redirectToCurrentListing($indexHref, $relativePath, 'login_ok');
     }
 
@@ -3124,6 +3327,7 @@ $messageMap = [
     'bad_action' => ['error', 'Unknown action.'],
     'csrf_failed' => ['error', 'Security check failed. Please try again.'],
     'login_failed' => ['error', 'Invalid username or password.'],
+    'login_locked' => ['error', 'Too many sign-in attempts. Please wait and try again.'],
     'login_ok' => ['success', 'Signed in.'],
     'logout_ok' => ['info', 'Signed out.'],
     'setup_done' => ['info', 'Upload setup is already complete.'],
@@ -3190,7 +3394,7 @@ if (isset($_GET['msg'], $messageMap[$_GET['msg']])) {
 $storageWritable = dirindexStorageWritable(__DIR__, $storageWritableDetail);
 $openLoginModal = $hasUploadCredentials && !$authenticated && !$inShareMode && (
     $browseAuthBlocked
-    || (isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed'], true))
+    || (isset($_GET['msg']) && in_array((string) $_GET['msg'], ['auth_required', 'login_failed', 'login_locked'], true))
 );
 $openAccountModal = $authenticated && !$inShareMode && (
     isset($_GET['msg']) && in_array((string) $_GET['msg'], ['account_mismatch', 'account_missing', 'account_saved', 'account_short_password'], true)
