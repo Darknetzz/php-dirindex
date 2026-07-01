@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **In-place updates** — **Update now** replaces both `index.php` and `index.min.php` from the release assets
+- **Minified entry** — when `index.min.php` exists beside `index.php`, GET requests to `index.php` redirect to `index.min.php` (query string preserved; POST unchanged)
+
 ### Changed
+
+- **Updates** — `can_update` requires both release artifacts and writable deploy files when present
 
 ### Fixed
 

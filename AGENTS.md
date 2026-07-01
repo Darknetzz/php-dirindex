@@ -32,6 +32,8 @@ Runtime files (not in git): `.dirindex.sqlite` (settings and share links when PD
 
 Generated (not in git): `index.min.php` — deploy artifact from `scripts/build-min.php`. Rebuild after changing `index.php` before shipping or tagging a release.
 
+When both deploy files exist, `index.php` redirects GET requests to `index.min.php` (query string preserved). In-place updates download and replace **both** `index.php` and `index.min.php` from GitHub release assets.
+
 ## How it works
 
 - **Listing root** — Defaults to `__DIR__` (the script folder). Optional `listing_from_document_root` uses `resolveListingBaseDir()` with `DOCUMENT_ROOT` heuristics (web root, or its parent for symlink/subfolder cases) so sibling directories can be listed.

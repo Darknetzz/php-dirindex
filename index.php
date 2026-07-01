@@ -4,6 +4,8 @@
  * Place in any folder and open in browser (requires PHP).
  */
 
+dirindexMaybeRedirectToMinifiedEntry();
+
 header('X-Content-Type-Options: nosniff');
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
@@ -1672,6 +1674,38 @@ function dirindexHttpGet($url, $accept = '*/*', $timeoutSec = 15) {
     return $body;
 }
 
+function dirindexDeployArtifactNames() {
+    return ['index.php', 'index.min.php'];
+}
+
+/**
+ * When index.min.php exists beside index.php, serve the minified entry for GET requests.
+ */
+function dirindexMaybeRedirectToMinifiedEntry() {
+    if (PHP_SAPI === 'cli' || basename(__FILE__) !== 'index.php') {
+        return;
+    }
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+        return;
+    }
+    $minPath = __DIR__ . DIRECTORY_SEPARATOR . 'index.min.php';
+    if (!is_file($minPath)) {
+        return;
+    }
+    $scriptName = isset($_SERVER['SCRIPT_NAME']) ? (string) $_SERVER['SCRIPT_NAME'] : '/index.php';
+    $scriptDir = str_replace('\\', '/', dirname($scriptName));
+    if ($scriptDir === '/' || $scriptDir === '.') {
+        $minHref = '/index.min.php';
+    } else {
+        $minHref = rtrim($scriptDir, '/') . '/index.min.php';
+    }
+    $query = isset($_SERVER['QUERY_STRING']) && (string) $_SERVER['QUERY_STRING'] !== ''
+        ? '?' . (string) $_SERVER['QUERY_STRING']
+        : '';
+    header('Location: ' . $minHref . $query, true, 302);
+    exit;
+}
+
 function dirindexUpdateArtifactName() {
     $name = basename(__FILE__);
     return ($name === 'index.php' || $name === 'index.min.php') ? $name : 'index.php';
@@ -1812,7 +1846,16 @@ function validateDirindexPhpSource($content, $expectedVersion = null, $expectedB
 
 function dirindexScriptDirWritableForUpdate() {
     $dir = dirname(__FILE__);
-    return is_writable($dir);
+    if (!is_dir($dir) || !is_writable($dir)) {
+        return false;
+    }
+    foreach (dirindexDeployArtifactNames() as $name) {
+        $path = $dir . DIRECTORY_SEPARATOR . $name;
+        if (is_file($path) && !is_writable($path)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode) {
@@ -1860,6 +1903,13 @@ function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl,
         $upToDate = $cmp <= 0;
     }
     $downloadUrl = $release['assets'][$artifact] ?? null;
+    $deployArtifacts = dirindexDeployArtifactNames();
+    $missingArtifacts = [];
+    foreach ($deployArtifacts as $deployName) {
+        if (empty($release['assets'][$deployName])) {
+            $missingArtifacts[] = $deployName;
+        }
+    }
     $payload = [
         'ok' => true,
         'channel' => $channel,
@@ -1873,10 +1923,16 @@ function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl,
         'release_url' => $release['html_url'],
         'release_notes' => $release['body'],
         'artifact' => $artifact,
+        'artifacts' => $deployArtifacts,
         'download_url' => $downloadUrl,
-        'can_update' => $updateAvailable && $downloadUrl !== null && canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode),
+        'can_update' => $updateAvailable
+            && $missingArtifacts === []
+            && $downloadUrl !== null
+            && canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode),
     ];
-    if ($updateAvailable && $downloadUrl === null) {
+    if ($updateAvailable && $missingArtifacts !== []) {
+        $payload['error'] = 'Release is missing ' . implode(' and ', $missingArtifacts) . '.';
+    } elseif ($updateAvailable && $downloadUrl === null) {
         $payload['error'] = 'Release has no ' . $artifact . ' asset.';
     } elseif ($updateAvailable && !canApplyDirindexUpdate($authenticated, $hasUploadCredentials, $inShareMode)) {
         if (!$hasUploadCredentials) {
@@ -1890,30 +1946,53 @@ function dirindexUpdateCheckPayload($currentVersion, $currentBuildRef, $repoUrl,
     return $payload;
 }
 
-function applyDirindexSelfUpdate($downloadUrl, $expectedVersion, $channel = 'stable', $expectedBuildRef = null) {
+function applyDirindexSelfUpdateFromRelease(array $release, $expectedVersion, $channel = 'stable', $expectedBuildRef = null) {
     $channel = dirindexNormalizeUpdateChannel($channel);
-    $content = dirindexHttpGet($downloadUrl, 'application/octet-stream', 60);
-    if ($content === null) {
-        return 'Could not download the update.';
+    $assets = isset($release['assets']) && is_array($release['assets']) ? $release['assets'] : [];
+    $dir = dirname(__FILE__);
+    $staged = [];
+    foreach (dirindexDeployArtifactNames() as $name) {
+        $url = $assets[$name] ?? null;
+        if ($url === null || $url === '') {
+            foreach ($staged as $tmp) {
+                @unlink($tmp);
+            }
+            return 'Release has no ' . $name . ' asset.';
+        }
+        $content = dirindexHttpGet($url, 'application/octet-stream', 60);
+        if ($content === null) {
+            foreach ($staged as $tmp) {
+                @unlink($tmp);
+            }
+            return 'Could not download ' . $name . ' from the release.';
+        }
+        $validationError = validateDirindexPhpSource(
+            $content,
+            $channel === 'dev' ? null : $expectedVersion,
+            $channel === 'dev' ? $expectedBuildRef : null
+        );
+        if ($validationError !== null) {
+            foreach ($staged as $tmp) {
+                @unlink($tmp);
+            }
+            return $name . ': ' . $validationError;
+        }
+        $tmp = $dir . DIRECTORY_SEPARATOR . '.dirindex-update-' . bin2hex(random_bytes(8)) . '.tmp';
+        if (file_put_contents($tmp, $content, LOCK_EX) === false) {
+            foreach ($staged as $tmpPath) {
+                @unlink($tmpPath);
+            }
+            @unlink($tmp);
+            return 'Could not write a temporary update file.';
+        }
+        $staged[$name] = $tmp;
     }
-    $validationError = validateDirindexPhpSource(
-        $content,
-        $channel === 'dev' ? null : $expectedVersion,
-        $channel === 'dev' ? $expectedBuildRef : null
-    );
-    if ($validationError !== null) {
-        return $validationError;
-    }
-    $target = __FILE__;
-    $dir = dirname($target);
-    $tmp = $dir . DIRECTORY_SEPARATOR . '.dirindex-update-' . bin2hex(random_bytes(8)) . '.tmp';
-    if (file_put_contents($tmp, $content, LOCK_EX) === false) {
-        @unlink($tmp);
-        return 'Could not write a temporary update file.';
-    }
-    if (!@rename($tmp, $target)) {
-        @unlink($tmp);
-        return 'Could not replace ' . basename($target) . '. Check file permissions.';
+    foreach ($staged as $name => $tmp) {
+        $target = $dir . DIRECTORY_SEPARATOR . $name;
+        if (!@rename($tmp, $target)) {
+            @unlink($tmp);
+            return 'Could not replace ' . $name . '. Check file permissions.';
+        }
     }
     return null;
 }
@@ -3305,11 +3384,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             shareAjaxResponse(false, 'Already up to date (v' . $dirindexVersion . ').');
         }
-        if (empty($check['download_url'])) {
-            shareAjaxResponse(false, $check['error'] ?? 'Update package not found.');
+        $release = dirindexFetchRelease($dirindexRepoUrl, $updateChannel);
+        if (!empty($release['error'])) {
+            shareAjaxResponse(false, $release['error']);
         }
-        $applyError = applyDirindexSelfUpdate(
-            $check['download_url'],
+        $applyError = applyDirindexSelfUpdateFromRelease(
+            $release,
             $check['latest_version'],
             $updateChannel,
             $check['latest_build_ref'] ?? null
@@ -3319,9 +3399,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($updateChannel === 'dev') {
             $buildRef = $check['latest_build_ref'] ?? 'latest';
-            shareAjaxResponse(true, 'Updated to dev build ' . $buildRef . ' (v' . $check['latest_version'] . '). Reloading…');
+            shareAjaxResponse(true, 'Updated index.php and index.min.php to dev build ' . $buildRef . ' (v' . $check['latest_version'] . '). Reloading…');
         }
-        shareAjaxResponse(true, 'Updated to v' . $check['latest_version'] . '. Reloading…');
+        shareAjaxResponse(true, 'Updated index.php and index.min.php to v' . $check['latest_version'] . '. Reloading…');
     }
 
     redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
@@ -7524,7 +7604,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             var label = channel === 'dev'
                 ? ('dev build ' + (latestCheckData.latest_build_ref || latestCheckData.latest_version))
                 : ('v' + (latestCheckData.latest_version || 'latest'));
-            if (!window.confirm('Replace ' + (latestCheckData.artifact || 'index.php') + ' with ' + label + ' from GitHub?')) {
+            if (!window.confirm('Replace index.php and index.min.php with ' + label + ' from GitHub?')) {
                 return;
             }
             var body = new FormData();
