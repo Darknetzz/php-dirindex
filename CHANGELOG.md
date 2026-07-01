@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Share links** — shared files and folders resolve using the listing base in effect when the link was created; existing links keep working when **List from document root** is toggled later (new shares store `base_dir` in SQLite; older shares fall back to known listing bases)
 
+### Security
+
+- **`.htaccess`** — block direct HTTP access to `.git` (prevents source and history recovery when the repo is deployed inside the web root)
+- **Sessions** — auth session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` when the request is HTTPS (including behind `X-Forwarded-Proto`)
+
 ## [1.2.5] - 2026-06-12
 
 ### Added

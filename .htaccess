@@ -1,3 +1,6 @@
+# Block direct HTTP access to Git metadata (source/history leak if web-served).
+RedirectMatch 403 (?i)(^|/)\.git(/|$)
+
 # Block direct HTTP access to dirindex settings storage.
 # PHP reads and writes these files on the filesystem; they must not be downloadable.
 <IfModule mod_authz_core.c>

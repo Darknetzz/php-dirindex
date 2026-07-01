@@ -1313,12 +1313,25 @@ function serveSharedFileInline($absolutePath, $displayName) {
     serveSharedFileBytes($absolutePath, $displayName, true);
 }
 
+function dirindexRequestIsHttps() {
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443)
+        || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+}
+
 function startDirindexSession($name = 'dirindex_upload') {
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
     if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
         session_name($name);
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'secure' => dirindexRequestIsHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
     }
     @session_start();
 }
@@ -1708,10 +1721,7 @@ function requestOrigin() {
     if ($host === '') {
         return '';
     }
-    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443)
-        || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
-    return ($https ? 'https' : 'http') . '://' . $host;
+    return (dirindexRequestIsHttps() ? 'https' : 'http') . '://' . $host;
 }
 
 function indexDirectoryWebPath($indexHref) {
