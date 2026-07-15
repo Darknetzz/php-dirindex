@@ -1718,6 +1718,58 @@ function dirindexGitHubRepoApiBase($repoUrl) {
     return 'https://api.github.com/repos/' . $m[1] . '/' . preg_replace('/\.git$/', '', $m[2]);
 }
 
+function dirindexGitHubRawFileUrl($repoUrl, $ref, $path) {
+    if (!preg_match('#github\.com/([^/]+)/([^/]+)#i', (string) $repoUrl, $m)) {
+        return null;
+    }
+    $owner = $m[1];
+    $repo = preg_replace('/\.git$/', '', $m[2]);
+    $ref = rawurlencode(ltrim((string) $ref, '/'));
+    $segments = array_map('rawurlencode', explode('/', str_replace('\\', '/', ltrim((string) $path, '/'))));
+    return 'https://raw.githubusercontent.com/' . $owner . '/' . $repo . '/' . $ref . '/' . implode('/', $segments);
+}
+
+/**
+ * Load CHANGELOG.md from beside the script, or from GitHub raw as a fallback.
+ * Returns ['ok' => true, 'html' => ..., 'source' => 'local'|'github'] or an error payload.
+ */
+function dirindexChangelogPayload($repoUrl) {
+    $maxBytes = 524288;
+    $raw = null;
+    $source = null;
+    $localPath = __DIR__ . '/CHANGELOG.md';
+    if (is_file($localPath) && is_readable($localPath)) {
+        $size = @filesize($localPath);
+        if ($size !== false && $size > 0 && $size <= $maxBytes) {
+            $local = @file_get_contents($localPath);
+            if ($local !== false && $local !== '') {
+                $raw = $local;
+                $source = 'local';
+            }
+        }
+    }
+    if ($raw === null) {
+        $rawUrl = dirindexGitHubRawFileUrl($repoUrl, 'dev', 'CHANGELOG.md');
+        if ($rawUrl === null) {
+            return ['ok' => false, 'error' => 'Could not determine the GitHub repository.'];
+        }
+        $fetched = dirindexHttpGet($rawUrl, 'text/plain');
+        if ($fetched === null || $fetched === '') {
+            return ['ok' => false, 'error' => 'Could not load the changelog. Check outbound network access and try again.'];
+        }
+        if (strlen($fetched) > $maxBytes) {
+            return ['ok' => false, 'error' => 'Changelog is too large to display.'];
+        }
+        $raw = $fetched;
+        $source = 'github';
+    }
+    return [
+        'ok' => true,
+        'html' => markdownToHtml($raw),
+        'source' => $source,
+    ];
+}
+
 function dirindexNormalizeUpdateChannel($channel) {
     return ($channel === 'dev') ? 'dev' : 'stable';
 }
@@ -2481,6 +2533,15 @@ if (isset($_GET['update_check']) && $relativePath === '' && !$inShareMode) {
     header('Content-Type: application/json; charset=UTF-8');
     echo json_encode(
         dirindexUpdateCheckPayload($dirindexVersion, $dirindexBuildRef, $dirindexRepoUrl, $authenticated, $hasUploadCredentials, $inShareMode, $updateChannel),
+        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
+    );
+    exit;
+}
+
+if (isset($_GET['changelog']) && $relativePath === '' && !$inShareMode) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(
+        dirindexChangelogPayload($dirindexRepoUrl),
         JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
     );
     exit;
@@ -5037,6 +5098,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .account-modal-panel,
         .share-modal-panel,
         .about-modal-panel { max-width: 440px; }
+        .changelog-modal-panel { max-width: 760px; }
+        .changelog-modal-panel .modal-body { padding-top: 1rem; }
+        .changelog-status {
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+        }
+        .changelog-status.is-error { color: var(--msg-error, #f87171); }
+        .changelog-md h1:first-child { margin-top: 0; }
         .shares-list-panel { max-width: 1100px; }
         .share-item-display {
             padding: 0.55rem 0.65rem;
@@ -6360,11 +6431,30 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                         <span>Releases</span>
                     </a>
-                    <a href="<?= h($dirindexRepoUrl . '/blob/dev/CHANGELOG.md') ?>" target="_blank" rel="noopener noreferrer">
+                    <a href="<?= h($dirindexRepoUrl . '/blob/dev/CHANGELOG.md') ?>" id="about-changelog" data-changelog-url="<?= h(currentListingUrl($indexHref, '', ['changelog' => '1'])) ?>">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
                         <span>Changelog</span>
                     </a>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="changelog-modal" class="settings-overlay" aria-hidden="true">
+        <div class="settings-modal changelog-modal-panel" role="dialog" aria-modal="true" aria-labelledby="changelog-title">
+            <div class="modal-header">
+                <span class="modal-title" id="changelog-title">Changelog</span>
+                <div class="modal-header-actions">
+                    <a class="modal-action-btn" id="changelog-github" href="<?= h($dirindexRepoUrl . '/blob/dev/CHANGELOG.md') ?>" target="_blank" rel="noopener noreferrer" title="View on GitHub" aria-label="View on GitHub">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        <span>GitHub</span>
+                    </a>
+                    <button type="button" class="modal-close" id="changelog-close" aria-label="Close">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="changelog-status is-muted" id="changelog-status" role="status">Loading changelog…</p>
+                <div class="modal-md changelog-md" id="changelog-content"></div>
             </div>
         </div>
     </div>
@@ -7646,6 +7736,83 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (aboutTrigger) aboutTrigger.focus();
         }
 
+        var changelogOverlay = document.getElementById('changelog-modal');
+        var changelogClose = document.getElementById('changelog-close');
+        var changelogLink = document.getElementById('about-changelog');
+        var changelogStatus = document.getElementById('changelog-status');
+        var changelogContent = document.getElementById('changelog-content');
+        var changelogCache = null;
+        var changelogLoading = false;
+
+        function changelogIsOpen() {
+            return changelogOverlay && changelogOverlay.classList.contains('is-open');
+        }
+
+        function setChangelogStatus(text, tone) {
+            if (!changelogStatus) return;
+            changelogStatus.hidden = !text;
+            changelogStatus.textContent = text || '';
+            changelogStatus.className = 'changelog-status' + (tone ? ' is-' + tone : ' is-muted');
+        }
+
+        function renderChangelog(data) {
+            if (!changelogContent) return;
+            if (!data || !data.ok || !data.html) {
+                changelogContent.classList.remove('is-visible');
+                changelogContent.innerHTML = '';
+                setChangelogStatus((data && data.error) ? data.error : 'Could not load the changelog.', 'error');
+                return;
+            }
+            changelogCache = data;
+            changelogContent.innerHTML = data.html;
+            changelogContent.classList.add('is-visible');
+            setChangelogStatus('', '');
+        }
+
+        function loadChangelog() {
+            if (changelogCache) {
+                renderChangelog(changelogCache);
+                return;
+            }
+            if (!changelogLink || changelogLoading) return;
+            var url = changelogLink.getAttribute('data-changelog-url');
+            if (!url) {
+                renderChangelog({ ok: false, error: 'Changelog URL is missing.' });
+                return;
+            }
+            changelogLoading = true;
+            if (changelogContent) {
+                changelogContent.classList.remove('is-visible');
+                changelogContent.innerHTML = '';
+            }
+            setChangelogStatus('Loading changelog…', 'muted');
+            fetch(url, { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(renderChangelog)
+                .catch(function() {
+                    renderChangelog({ ok: false, error: 'Could not load the changelog.' });
+                })
+                .finally(function() {
+                    changelogLoading = false;
+                });
+        }
+
+        function openChangelog(e) {
+            if (e) e.preventDefault();
+            if (!changelogOverlay || !changelogClose) return;
+            changelogOverlay.classList.add('is-open');
+            changelogOverlay.setAttribute('aria-hidden', 'false');
+            loadChangelog();
+            window.setTimeout(function() { changelogClose.focus(); }, 0);
+        }
+
+        function closeChangelog() {
+            if (!changelogOverlay) return;
+            changelogOverlay.classList.remove('is-open');
+            changelogOverlay.setAttribute('aria-hidden', 'true');
+            if (changelogLink) changelogLink.focus();
+        }
+
         if (aboutChannelSelect) {
             try {
                 var savedChannel = localStorage.getItem(updateChannelStorageKey);
@@ -7670,11 +7837,24 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         aboutClose.addEventListener('click', closeAbout);
         if (aboutCheckBtn) aboutCheckBtn.addEventListener('click', checkAboutUpdates);
         if (aboutApplyBtn) aboutApplyBtn.addEventListener('click', applyAboutUpdate);
+        if (changelogLink) changelogLink.addEventListener('click', openChangelog);
+        if (changelogClose) changelogClose.addEventListener('click', closeChangelog);
         aboutOverlay.addEventListener('click', function(e) {
             if (e.target === aboutOverlay) closeAbout();
         });
+        if (changelogOverlay) {
+            changelogOverlay.addEventListener('click', function(e) {
+                if (e.target === changelogOverlay) closeChangelog();
+            });
+        }
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && aboutOverlay.classList.contains('is-open')) {
+            if (e.key !== 'Escape') return;
+            if (changelogIsOpen()) {
+                closeChangelog();
+                e.stopPropagation();
+                return;
+            }
+            if (aboutOverlay.classList.contains('is-open')) {
                 closeAbout();
                 e.stopPropagation();
             }

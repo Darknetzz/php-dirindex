@@ -88,7 +88,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 PHP settings such as `upload_max_filesize`, `post_max_size`, and `max_file_uploads` still apply. Folder uploads are limited to 500 files per request; empty subfolders are not uploaded (only files).
 
-**Updates:** Open **About** (footer version link or toolbar info icon), choose **Stable** or **Dev** channel, and use **Check for updates**. **Stable** compares your semver with the [latest tagged release](https://github.com/Darknetzz/php-dirindex/releases). **Dev** tracks the rolling [dev prerelease](https://github.com/Darknetzz/php-dirindex/releases/tag/dev) built from the `dev` branch (compares embedded build refs). When an update is available, signed-in admins can **Update now** to replace both `index.php` and `index.min.php` in place (PHP must be able to write the script directory; outbound HTTPS to GitHub is required).
+**Updates:** Open **About** (footer version link or toolbar info icon), choose **Stable** or **Dev** channel, and use **Check for updates**. **Stable** compares your semver with the [latest tagged release](https://github.com/Darknetzz/php-dirindex/releases). **Dev** tracks the rolling [dev prerelease](https://github.com/Darknetzz/php-dirindex/releases/tag/dev) built from the `dev` branch (compares embedded build refs). When an update is available, signed-in admins can **Update now** to replace both `index.php` and `index.min.php` in place (PHP must be able to write the script directory; outbound HTTPS to GitHub is required). **Changelog** opens an in-app modal with the rendered release notes (from a local `CHANGELOG.md` when present, otherwise from GitHub).
 
 No dependencies—just drop the file and run.
 
