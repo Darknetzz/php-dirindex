@@ -9,7 +9,7 @@ dirindexMaybeRedirectToMinifiedEntry();
 header('X-Content-Type-Options: nosniff');
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
-$dirindexVersion = '1.2.6';
+$dirindexVersion = '1.3.0';
 /** Short git ref; embedded in rolling dev release artifacts by scripts/dev-release.sh. */
 $dirindexBuildRef = '20a3901';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
