@@ -26,6 +26,7 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | `$dirindexBuildRef` in `index.php` | Short git ref; empty in source, embedded in dev release artifacts by `scripts/dev-release.sh` |
 | `CHANGELOG.md` | Keep a Changelog format; user-facing history of releases |
 | `README.md` | User-facing setup and configuration guide |
+| `assets/` | Local copies of branding images; runtime UI loads the same files from `https://cdn.roste.org/custom/php-dirindex/images/` |
 | `.gitignore` | Ignores runtime files and generated `index.min.php` |
 
 Runtime files (not in git): `.dirindex.sqlite` (settings and share links when PDO SQLite is available), or `.dirindex.json` (settings fallback without SQLite). Legacy `config.php` is imported once if present, then ignored.

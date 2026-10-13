@@ -13,7 +13,27 @@ $dirindexVersion = '1.2.6';
 /** Short git ref; embedded in rolling dev release artifacts by scripts/dev-release.sh. */
 $dirindexBuildRef = '20a3901';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
+$dirindexCdnAssetBase = 'https://cdn.roste.org/custom/php-dirindex/images';
 $dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';
+
+/**
+ * Absolute URL for a first-party branding asset on the CDN (local copies live in assets/).
+ */
+function dirindexCdnAssetUrl($file) {
+    $base = $GLOBALS['dirindexCdnAssetBase'] ?? 'https://cdn.roste.org/custom/php-dirindex/images';
+    return rtrim($base, '/') . '/' . ltrim((string) $file, '/');
+}
+
+/**
+ * Favicon / apple-touch-icon link tags for document <head>.
+ */
+function dirindexFaviconLinkHtml() {
+    return '<link rel="icon" href="' . h(dirindexCdnAssetUrl('favicon.ico')) . '" sizes="any">'
+        . '<link rel="icon" type="image/png" href="' . h(dirindexCdnAssetUrl('favicon-32.png')) . '" sizes="32x32">'
+        . '<link rel="icon" type="image/png" href="' . h(dirindexCdnAssetUrl('favicon-64.png')) . '" sizes="64x64">'
+        . '<link rel="apple-touch-icon" href="' . h(dirindexCdnAssetUrl('favicon-180.png')) . '" sizes="180x180">'
+        . '<link rel="icon" type="image/png" href="' . h(dirindexCdnAssetUrl('favicon-512.png')) . '" sizes="512x512">';
+}
 
 /**
  * Check if an IP matches a single entry (exact address or CIDR, e.g. 192.168.1.0/24).
@@ -1371,7 +1391,7 @@ function dirindexSendSecurityHeaders(array $config = []) {
         . "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
         . "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
         . "font-src https://fonts.gstatic.com; "
-        . "img-src 'self' data: blob:; "
+        . "img-src 'self' data: blob: https://cdn.roste.org; "
         . "connect-src 'self' https://api.github.com https://github.com; "
         . "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     );
@@ -2924,7 +2944,7 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
         $headExtra = '<link rel="stylesheet" href="' . h($hljsCdn) . 'styles/atom-one-dark.min.css">';
     }
     $pageClass = ($isCodePreview || $previewKind === 'image' || $isMdPreview) ? 'page page--wide' : 'page';
-    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . $headExtra . '<style>' . $css . '</style></head><body><div class="' . $pageClass . '"><div class="card">';
+    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . dirindexFaviconLinkHtml() . $headExtra . '<style>' . $css . '</style></head><body><div class="' . $pageClass . '"><div class="card">';
     $html .= '<div class="file-header">';
     $html .= fileTypeIconHtml($ext, false);
     $html .= '<div class="file-header-text"><h1>' . h($name) . '</h1>';
@@ -4248,8 +4268,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $title ?></title>
+    <?= dirindexFaviconLinkHtml() ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.roste.org" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" id="hljs-theme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <style>
@@ -5109,6 +5131,19 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .footer-about-link:focus-visible {
             color: var(--accent);
             text-decoration-color: currentColor;
+        }
+        .about-brand {
+            display: flex;
+            justify-content: center;
+            margin: 0 0 1rem;
+        }
+        .about-logo {
+            width: 4rem;
+            height: 4rem;
+            border-radius: 14px;
+            object-fit: contain;
+            background: color-mix(in srgb, var(--accent) 10%, transparent);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
         }
         .about-intro {
             margin: 0 0 1rem;
@@ -6555,6 +6590,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <button type="button" class="modal-close" id="about-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
+                <div class="about-brand">
+                    <img class="about-logo" src="<?= h(dirindexCdnAssetUrl('php-dirindex-icon.png')) ?>" alt="php-dirindex" width="64" height="64" decoding="async">
+                </div>
                 <p class="about-intro">A single-file PHP directory index with navigation, in-browser previews, optional uploads, and share links. Drop <code>index.php</code> into any folder and open it in a browser.</p>
                 <dl class="about-meta">
                     <dt>Project</dt>

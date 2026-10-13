@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/php-dirindex-banner.png" alt="php-dirindex" width="720">
+  <img src="https://cdn.roste.org/custom/php-dirindex/images/php-dirindex-banner.png" alt="php-dirindex" width="720">
 </p>
 
 # PHP Directory Index
