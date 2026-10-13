@@ -2954,7 +2954,18 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     ' . dirindexHeroStyleCss() . '
     .page { max-width: 720px; margin: 0 auto; }
     .page--wide { max-width: min(1100px, calc(100vw - 2rem)); }
-    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
+    .card {
+        background: color-mix(in srgb, var(--bg-card) 52%, transparent);
+        border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+        border-radius: 16px;
+        padding: clamp(1.25rem, 3vw, 2rem);
+        -webkit-backdrop-filter: blur(16px) saturate(1.15);
+        backdrop-filter: blur(16px) saturate(1.15);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+    }
+    @supports not (background: color-mix(in srgb, black, white)) {
+        .card { background: rgba(20, 20, 23, 0.72); }
+    }
     .file-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
     .file-header-text { min-width: 0; }
     h1 { margin: 0 0 0.5rem; font-size: 1.5rem; word-break: break-word; }
@@ -4420,14 +4431,39 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .page {
             max-width: 900px;
-            margin: 0 auto;
-            padding: 2rem 1.5rem;
+            margin: 1.5rem auto;
+            padding: 1.5rem 1.35rem 1.75rem;
+            border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--bg-card) 52%, transparent);
+            -webkit-backdrop-filter: blur(16px) saturate(1.15);
+            backdrop-filter: blur(16px) saturate(1.15);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+        }
+        html.theme-light .page {
+            background: color-mix(in srgb, var(--bg-card) 68%, transparent);
+            box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+        }
+        @supports not (background: color-mix(in srgb, black, white)) {
+            .page {
+                background: rgba(20, 20, 23, 0.72);
+            }
+            html.theme-light .page {
+                background: rgba(255, 255, 255, 0.82);
+            }
+        }
+        @media (max-width: 640px) {
+            .page {
+                margin: 0.85rem;
+                padding: 1.1rem 0.95rem 1.25rem;
+                border-radius: 14px;
+            }
         }
 
         header {
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
@@ -4609,10 +4645,18 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .listing {
             position: relative;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
+            background: color-mix(in srgb, var(--bg-card) 35%, transparent);
+            border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
             border-radius: 10px;
             overflow: hidden;
+        }
+        @supports not (background: color-mix(in srgb, black, white)) {
+            .listing {
+                background: rgba(20, 20, 23, 0.35);
+            }
+            html.theme-light .listing {
+                background: rgba(255, 255, 255, 0.45);
+            }
         }
         .listing.is-dragover {
             border-color: var(--accent);
