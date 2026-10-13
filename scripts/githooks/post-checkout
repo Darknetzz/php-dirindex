@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# After branch checkout: rebuild index.min.php when sources changed.
+# Installed via scripts/install-hooks.sh (core.hooksPath → scripts/githooks).
+#
+# Args from git: <previous-HEAD> <new-HEAD> <branch-flag>
+# branch-flag is 1 for branch checkout, 0 for file checkout.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+prev="${1:-}"
+new="${2:-}"
+branch_flag="${3:-0}"
+
+# Only branch / clone checkouts (not git checkout -- path).
+if [[ "$branch_flag" != "1" ]]; then
+    exit 0
+fi
+
+exec "$ROOT/scripts/rebuild-min-if-needed.sh" "$prev" "$new"

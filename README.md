@@ -134,11 +134,16 @@ git remote add github git@github.com:Darknetzz/php-dirindex.git
 git push -u github dev
 ```
 
-**One-time hook** (publish rolling dev release after each push on `dev`; requires `gh`):
+**One-time hooks** (run after every fresh clone — git does not copy hooks):
 
 ```sh
 ./scripts/install-hooks.sh
 ```
+
+That installs:
+
+- a `git push` alias so a successful push on `dev` publishes the rolling GitHub prerelease (requires `gh`)
+- `core.hooksPath` → `scripts/githooks` so `git pull` / branch checkout rebuilds `index.min.php` when `index.php` or `scripts/build-min.php` changed (or when the min file is missing)
 
 **Day-to-day** (default branch is `dev`):
 
@@ -147,7 +152,7 @@ git push origin dev
 git push github dev
 ```
 
-With hooks installed, a successful `git push` on `dev` also runs `./scripts/dev-release.sh` (updates the GitHub `dev` prerelease). Skip once: `SKIP_DEV_RELEASE=1 git push …`. Use plain git push: `git -c alias.push= push …`.
+With hooks installed, a successful `git push` on `dev` also runs `./scripts/dev-release.sh` (updates the GitHub `dev` prerelease). Skip once: `SKIP_DEV_RELEASE=1 git push …`. Use plain git push: `git -c alias.push= push …`. Skip a min rebuild once: `SKIP_MIN_BUILD=1 git pull …`.
 
 **Local checks** (replaces GitHub Actions CI — no Actions minutes used):
 

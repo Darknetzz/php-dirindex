@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# After git pull / merge: rebuild index.min.php when sources changed.
+# Installed via scripts/install-hooks.sh (core.hooksPath → scripts/githooks).
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+exec "$ROOT/scripts/rebuild-min-if-needed.sh" ORIG_HEAD HEAD

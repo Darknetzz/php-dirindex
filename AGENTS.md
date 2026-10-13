@@ -19,7 +19,9 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, pushes to `origin` + `github`, publishes stable release via `gh` |
 | `scripts/dev-release.sh` | Publishes/updates the rolling `dev-rolling` GitHub prerelease locally via `gh` |
 | `scripts/git-push.sh` | `git push` wrapper: on success while on `dev`, runs `dev-release.sh` |
-| `scripts/install-hooks.sh` | Installs the local `git push` alias for automatic dev releases |
+| `scripts/install-hooks.sh` | Installs local hooks: `git push` alias (dev releases) + `core.hooksPath` → `scripts/githooks` (rebuild `index.min.php` on pull/checkout) |
+| `scripts/rebuild-min-if-needed.sh` | Shared helper used by githooks to rebuild `index.min.php` when sources change |
+| `scripts/githooks/` | Versioned `post-merge` / `post-checkout` hooks (enabled via `install-hooks.sh`) |
 | `scripts/gh-release-common.sh` | Shared `gh` CLI helpers for release scripts |
 | `scripts/changelog-section.sh` | Prints one version's section from `CHANGELOG.md` (used by release script) |
 | `scripts/dev-release-notes.sh` | Release notes for the rolling `dev-rolling` GitHub prerelease |
@@ -59,7 +61,7 @@ php scripts/build-min.php
 # Local CI (build, syntax, staleness)
 ./scripts/ci.sh
 
-# Install automatic dev release on git push (one-time)
+# Install local hooks (one-time per clone: push → dev release; pull/checkout → rebuild min)
 ./scripts/install-hooks.sh
 
 # Publish rolling dev release manually (optional if hooks installed)
@@ -86,7 +88,7 @@ Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `i
 
 **Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Default branch is **`dev`**. Releases are published **locally** with the `gh` CLI (`scripts/release.sh`, `scripts/dev-release.sh`) — there are no GitHub Actions workflows.
 
-**Dev channel:** Run `./scripts/install-hooks.sh` once so each successful `git push` on `dev` runs `./scripts/dev-release.sh` (embeds a short commit ref in `$dirindexBuildRef`, builds `index.min.php`, updates the rolling prerelease at tag `dev-rolling`). The About modal **Dev** channel fetches that release (`/releases/tags/dev-rolling`) and compares build refs for update availability.
+**Dev channel:** Run `./scripts/install-hooks.sh` once per clone (hooks are not transferred by `git clone`) so each successful `git push` on `dev` runs `./scripts/dev-release.sh` (embeds a short commit ref in `$dirindexBuildRef`, builds `index.min.php`, updates the rolling prerelease at tag `dev-rolling`). The same installer points `core.hooksPath` at `scripts/githooks`, so `git pull` / branch checkout rebuilds `index.min.php` when needed. The About modal **Dev** channel fetches that release (`/releases/tags/dev-rolling`) and compares build refs for update availability.
 
 When changing inline PHP in HTML templates, run `php scripts/build-min.php` locally and spot-check `index.min.php` in a browser before tagging.
 

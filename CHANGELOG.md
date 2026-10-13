@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto-rebuild on pull** — `./scripts/install-hooks.sh` enables versioned `post-merge` / `post-checkout` hooks that rebuild `index.min.php` when `index.php` or `scripts/build-min.php` changes (re-run the installer after each fresh clone)
+
 ### Changed
 
 ### Fixed
