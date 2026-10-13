@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Project branding** — favicons and About logo from `https://cdn.roste.org/custom/php-dirindex/images/` (local copies kept under `assets/`; README banner uses the CDN URL)
+- **Hero background** — subtle faded wash behind the page header (listing, setup, and share landing) using `php-dirindex-hero.jpg`
 - **Listing search** — filter the current directory by name or Type/extension from the listing toolbar
 - **Type column** — sortable extension column (folders show as Folder); toggle via Columns
 - **Upload/create highlight** — successfully uploaded or newly created entries are briefly highlighted in the listing

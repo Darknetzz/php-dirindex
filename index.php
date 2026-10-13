@@ -36,6 +36,70 @@ function dirindexFaviconLinkHtml() {
 }
 
 /**
+ * Hero background image URL. Uses local assets/ when present (repo / same-folder deploy), else CDN.
+ */
+function dirindexHeroBackgroundUrl() {
+    $file = 'php-dirindex-hero.jpg';
+    if (is_file(__DIR__ . '/assets/' . $file)) {
+        $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
+        $dir = rtrim(dirname($scriptName), '/');
+        if ($dir === '' || $dir === '/' || $dir === '.') {
+            return '/assets/' . $file;
+        }
+        return $dir . '/assets/' . $file;
+    }
+    return dirindexCdnAssetUrl($file);
+}
+
+/**
+ * Shared CSS for the subtle top hero wash (listing, setup, share landing).
+ */
+function dirindexHeroStyleCss() {
+    $url = h(dirindexHeroBackgroundUrl());
+    return '
+    body.has-hero {
+        --hero-image: url("' . $url . '");
+        position: relative;
+        background-color: var(--bg);
+    }
+    body.has-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: min(300px, 46vh);
+        pointer-events: none;
+        z-index: 0;
+        background-color: var(--bg);
+        background-image: var(--hero-image);
+        background-repeat: no-repeat;
+        background-position: top center;
+        background-size: cover;
+        -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+        opacity: 0.55;
+    }
+    html.theme-light body.has-hero::before {
+        opacity: 0.38;
+    }
+    body.has-hero .page,
+    body.has-hero .setup-page {
+        position: relative;
+        z-index: 1;
+    }
+    body.setup-mode.has-hero::before {
+        height: min(420px, 55vh);
+        opacity: 0.45;
+    }
+    body.setup-mode.has-hero {
+        background-image:
+            radial-gradient(circle at top left, rgba(124, 58, 237, 0.18), transparent 28rem),
+            radial-gradient(circle at bottom right, rgba(103, 232, 249, 0.1), transparent 26rem);
+        background-color: var(--bg);
+    }
+    ';
+}
+
+/**
  * Check if an IP matches a single entry (exact address or CIDR, e.g. 192.168.1.0/24).
  */
 function ipMatchesEntry($ip, $entry) {
@@ -2887,6 +2951,7 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     :root { --bg: #0d0d0f; --bg-card: #141417; --border: #25252a; --text: #e4e4e7; --text-muted: #71717a; --accent: #a78bfa; --accent-dim: #7c3aed; --md-pre-bg: #282c34; --md-code-bg: rgba(255,255,255,0.08); --md-quote: #a1a1aa; --md-th-bg: rgba(0,0,0,0.25); }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 15px; line-height: 1.6; padding: clamp(1rem, 3vw, 2rem); }
+    ' . dirindexHeroStyleCss() . '
     .page { max-width: 720px; margin: 0 auto; }
     .page--wide { max-width: min(1100px, calc(100vw - 2rem)); }
     .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: clamp(1.25rem, 3vw, 2rem); }
@@ -2944,7 +3009,7 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
         $headExtra = '<link rel="stylesheet" href="' . h($hljsCdn) . 'styles/atom-one-dark.min.css">';
     }
     $pageClass = ($isCodePreview || $previewKind === 'image' || $isMdPreview) ? 'page page--wide' : 'page';
-    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . dirindexFaviconLinkHtml() . $headExtra . '<style>' . $css . '</style></head><body><div class="' . $pageClass . '"><div class="card">';
+    $html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . h($name) . '</title>' . dirindexFaviconLinkHtml() . $headExtra . '<style>' . $css . '</style></head><body class="has-hero"><div class="' . $pageClass . '"><div class="card">';
     $html .= '<div class="file-header">';
     $html .= fileTypeIconHtml($ext, false);
     $html .= '<div class="file-header-text"><h1>' . h($name) . '</h1>';
@@ -4351,6 +4416,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-size: 1rem;
             line-height: 1.5;
         }
+        <?= dirindexHeroStyleCss() ?>
 
         .page {
             max-width: 900px;
@@ -5838,7 +5904,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 justify-content: flex-start;
             }
         }
-        body.setup-mode {
+        body.setup-mode:not(.has-hero) {
             background:
                 radial-gradient(circle at top left, rgba(124, 58, 237, 0.22), transparent 28rem),
                 radial-gradient(circle at bottom right, rgba(103, 232, 249, 0.12), transparent 26rem),
@@ -6004,7 +6070,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
     </script>
 </head>
-<body class="<?= $setupNeeded ? 'setup-mode' : '' ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?><?php if (!empty($openFileForModal['broken_link'])): ?> data-open-broken-link="1"<?php endif; ?><?php if (!empty($openFileForModal['link_target'])): ?> data-open-link-target="<?= h($openFileForModal['link_target']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
+<body class="<?= trim(($setupNeeded ? 'setup-mode ' : '') . 'has-hero') ?>"<?php if ($openFileForModal): ?><?php if (!empty($openFileForModal['binary'])): ?> data-open-binary="1" data-open-name="<?= h($openFileForModal['name']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?><?php if (!empty($openFileForModal['broken_link'])): ?> data-open-broken-link="1"<?php endif; ?><?php if (!empty($openFileForModal['link_target'])): ?> data-open-link-target="<?= h($openFileForModal['link_target']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size']) ?>" data-open-mtime="<?= h($openFileForModal['mtime']) ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-icon-html="<?= h($openFileForModal['icon_html']) ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php elseif (!empty($openFileForModal['image'])): ?> data-open-image="1" data-open-image-url="<?= h($openFileForModal['image_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-meta-url="<?= h($openFileForModal['meta_url'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php else: ?> data-open-content-url="<?= h($openFileForModal['content_url']) ?>" data-open-name="<?= h($openFileForModal['name']) ?>" data-open-url="<?= h($openFileForModal['open_url']) ?>"<?php if (!empty($openFileForModal['download_url'])): ?> data-open-download-url="<?= h($openFileForModal['download_url']) ?>"<?php endif; ?> data-open-size="<?= h($openFileForModal['size'] ?? '') ?>" data-open-mtime="<?= h($openFileForModal['mtime'] ?? '') ?>" data-open-perms="<?= h($openFileForModal['perms'] ?? '') ?>" data-open-type="<?= h($openFileForModal['type'] ?? '') ?>" data-open-share-path="<?= h($openFileForModal['share_path']) ?>"<?php endif; ?><?php endif; ?><?php if ($openLoginModal): ?> data-open-login="1"<?php endif; ?><?php if ($openAccountModal): ?> data-open-account="1"<?php endif; ?><?php if ($openSettingsModal): ?> data-open-settings="1"<?php if ($settingsPanelFocus !== null): ?> data-settings-panel="<?= h($settingsPanelFocus) ?>"<?php endif; ?><?php endif; ?>>
     <?php if ($setupNeeded): ?>
     <main class="setup-page">
         <section class="setup-hero" aria-labelledby="setup-title">
