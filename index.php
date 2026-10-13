@@ -2328,6 +2328,35 @@ function shareUrl($indexHref, $token, array $params = [], $absolute = false) {
     return $origin !== '' ? $origin . $url : $url;
 }
 
+/** Forced download URL for a file share (`?share=TOKEN&download=1`). */
+function shareDownloadUrl($indexHref, $token, $absolute = false) {
+    return shareUrl($indexHref, $token, ['download' => '1'], $absolute);
+}
+
+/**
+ * Newest active share per path, with absolute share + download URLs for the UI.
+ *
+ * @param array<int, array{token:string,path:string,type:string,created_at:int,expires_at:?int}> $activeShares
+ * @return array<string, array{type:string,shareUrl:string,downloadUrl:?string}>
+ */
+function shareLinksByPath(array $activeShares, $indexHref) {
+    $byPath = [];
+    foreach ($activeShares as $shareRow) {
+        $path = (string) ($shareRow['path'] ?? '');
+        if ($path === '' || isset($byPath[$path])) {
+            continue;
+        }
+        $token = (string) ($shareRow['token'] ?? '');
+        $type = (string) ($shareRow['type'] ?? 'file');
+        $byPath[$path] = [
+            'type' => $type,
+            'shareUrl' => shareUrl($indexHref, $token, [], true),
+            'downloadUrl' => $type === 'file' ? shareDownloadUrl($indexHref, $token, true) : null,
+        ];
+    }
+    return $byPath;
+}
+
 function directEntryUrl($relativePath, $trailingSlash = false) {
     global $effectiveWebRootUrl;
     $base = $effectiveWebRootUrl ?? '/';
@@ -2955,16 +2984,15 @@ function renderShareFileLandingPage($relativePath, $absolutePath, array $share, 
     .page { max-width: 720px; margin: 0 auto; }
     .page--wide { max-width: min(1100px, calc(100vw - 2rem)); }
     .card {
-        background: color-mix(in srgb, var(--bg-card) 52%, transparent);
-        border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-        border-radius: 16px;
+        background: rgba(20, 20, 23, 0.42);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
         padding: clamp(1.25rem, 3vw, 2rem);
-        -webkit-backdrop-filter: blur(16px) saturate(1.15);
-        backdrop-filter: blur(16px) saturate(1.15);
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
-    }
-    @supports not (background: color-mix(in srgb, black, white)) {
-        .card { background: rgba(20, 20, 23, 0.72); }
+        -webkit-backdrop-filter: blur(22px) saturate(1.35);
+        backdrop-filter: blur(22px) saturate(1.35);
+        box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.06) inset,
+            0 18px 50px rgba(0, 0, 0, 0.35);
     }
     .file-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
     .file-header-text { min-width: 0; }
@@ -3579,6 +3607,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $expiresAt = shareExpiryFromChoice($_POST['expires'] ?? 'never');
         $token = createShare($pdo, $sharePath, $shareType, $expiresAt, $realBase);
         $_SESSION['share_created_token'] = $token;
+        $_SESSION['share_created_type'] = $shareType;
         redirectToCurrentListing($indexHref, $relativePath, 'share_created');
     }
 
@@ -3669,10 +3698,19 @@ if ($authenticated && $sharesAvailable && !$inShareMode) {
     }
 }
 $shareCreatedUrl = null;
+$shareCreatedDownloadUrl = null;
 if (isset($_SESSION['share_created_token'])) {
-    $shareCreatedUrl = shareUrl($indexHref, (string) $_SESSION['share_created_token'], [], true);
-    unset($_SESSION['share_created_token']);
+    $createdToken = (string) $_SESSION['share_created_token'];
+    $createdType = (string) ($_SESSION['share_created_type'] ?? 'file');
+    $shareCreatedUrl = shareUrl($indexHref, $createdToken, [], true);
+    if ($createdType === 'file') {
+        $shareCreatedDownloadUrl = shareDownloadUrl($indexHref, $createdToken, true);
+    }
+    unset($_SESSION['share_created_token'], $_SESSION['share_created_type']);
 }
+$shareLinksByPath = ($authenticated && $sharesAvailable && !$inShareMode)
+    ? shareLinksByPath($activeShares, $indexHref)
+    : [];
 
 $items = [];
 clearstatcache(true);
@@ -3791,7 +3829,7 @@ $messageMap = [
     'delete_not_writable' => ['error', 'This directory is not writable by PHP.'],
     'delete_failed' => ['error', 'Could not delete the entry.'],
     'delete_ok' => ['success', 'Entry deleted.'],
-    'share_created' => ['success', 'Share link created. Copy the link below.'],
+    'share_created' => ['success', 'Share link created. Copy the share or download link below.'],
     'share_revoked' => ['success', 'Share link revoked.'],
     'share_failed' => ['error', 'Could not create or revoke the share link.'],
     'share_broken_link' => ['error', 'Cannot share a broken symbolic link.'],
@@ -4430,32 +4468,29 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         <?= dirindexHeroStyleCss() ?>
 
         .page {
-            max-width: 900px;
+            max-width: 960px;
             margin: 1.5rem auto;
-            padding: 1.5rem 1.35rem 1.75rem;
-            border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-            border-radius: 16px;
-            background: color-mix(in srgb, var(--bg-card) 52%, transparent);
-            -webkit-backdrop-filter: blur(16px) saturate(1.15);
-            backdrop-filter: blur(16px) saturate(1.15);
-            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+            padding: 1.35rem 1.35rem 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            background: rgba(20, 20, 23, 0.42);
+            -webkit-backdrop-filter: blur(22px) saturate(1.35);
+            backdrop-filter: blur(22px) saturate(1.35);
+            box-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.06) inset,
+                0 18px 50px rgba(0, 0, 0, 0.35);
         }
         html.theme-light .page {
-            background: color-mix(in srgb, var(--bg-card) 68%, transparent);
-            box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
-        }
-        @supports not (background: color-mix(in srgb, black, white)) {
-            .page {
-                background: rgba(20, 20, 23, 0.72);
-            }
-            html.theme-light .page {
-                background: rgba(255, 255, 255, 0.82);
-            }
+            border-color: rgba(15, 23, 42, 0.1);
+            background: rgba(255, 255, 255, 0.55);
+            box-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.7) inset,
+                0 14px 40px rgba(15, 23, 42, 0.1);
         }
         @media (max-width: 640px) {
             .page {
                 margin: 0.85rem;
-                padding: 1.1rem 0.95rem 1.25rem;
+                padding: 1.05rem 0.95rem 1.2rem;
                 border-radius: 14px;
             }
         }
@@ -4524,17 +4559,49 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .listing tr:hover .entry-share,
         .listing tr:hover .entry-delete,
+        .listing tr:hover .entry-copy-share,
+        .listing tr:hover .entry-copy-download,
         .entry-share:focus-visible,
-        .entry-delete:focus-visible { opacity: 1; }
-        .entry-share:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--bg); }
+        .entry-delete:focus-visible,
+        .entry-copy-share:focus-visible,
+        .entry-copy-download:focus-visible { opacity: 1; }
+        .entry-share:hover,
+        .entry-copy-share:hover,
+        .entry-copy-download:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--bg); }
         .entry-delete:hover { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, var(--border)); background: color-mix(in srgb, #f87171 10%, var(--bg)); }
         .entry-share svg,
-        .entry-delete svg { width: 0.95rem; height: 0.95rem; }
+        .entry-delete svg,
+        .entry-copy-share svg,
+        .entry-copy-download svg { width: 0.95rem; height: 0.95rem; }
+        .entry-copy-share,
+        .entry-copy-download {
+            width: 1.75rem;
+            height: 1.75rem;
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text-muted);
+            background: transparent;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+        }
         .name-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+        .share-created-links { display: flex; flex-direction: column; gap: 0.85rem; }
+        .share-created-row label {
+            display: block;
+            margin: 0 0 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
         .share-url-box {
             display: flex;
             gap: 0.5rem;
-            margin-top: 0.75rem;
+            margin-top: 0;
         }
         .share-url-box input {
             flex: 1;
@@ -4547,13 +4614,23 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             font-family: 'JetBrains Mono', ui-monospace, monospace;
             font-size: 0.8rem;
         }
+        .modal-share-links {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-top: 1px solid var(--border);
+            background: color-mix(in srgb, var(--bg) 55%, var(--bg-card));
+            flex-shrink: 0;
+        }
+        .modal-share-links[hidden] { display: none !important; }
         .shares-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.75rem; }
         .shares-table th, .shares-table td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
         .shares-table th { color: var(--text-muted); font-weight: 500; }
         .shares-table .shares-col-path { width: auto; }
         .shares-table .shares-col-type { width: 3.5rem; }
         .shares-table .shares-col-expires { width: 7.5rem; }
-        .shares-table .shares-col-actions { width: 15rem; }
+        .shares-table .shares-col-actions { width: 19rem; }
         .shares-table .shares-cell-clip {
             display: block;
             overflow: hidden;
@@ -4645,18 +4722,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         .listing {
             position: relative;
-            background: color-mix(in srgb, var(--bg-card) 35%, transparent);
-            border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
             overflow: hidden;
         }
-        @supports not (background: color-mix(in srgb, black, white)) {
-            .listing {
-                background: rgba(20, 20, 23, 0.35);
-            }
-            html.theme-light .listing {
-                background: rgba(255, 255, 255, 0.45);
-            }
+        html.theme-light .listing {
+            background: rgba(255, 255, 255, 0.35);
+            border-color: rgba(15, 23, 42, 0.08);
         }
         .listing.is-dragover {
             border-color: var(--accent);
@@ -5006,7 +5079,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            flex-shrink: 0;
+            flex-shrink: 1;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
         .modal-action-btn {
             display: inline-flex;
@@ -5466,9 +5541,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         .auth-panel {
             margin-bottom: 1rem;
             padding: 1rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+        }
+        html.theme-light .auth-panel {
+            background: rgba(255, 255, 255, 0.35);
+            border-color: rgba(15, 23, 42, 0.08);
         }
         .auth-panel h2 {
             margin: 0 0 0.75rem;
@@ -6273,7 +6352,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         </div>
         <?php endif; ?>
 
-        <?php if ($statusMessage && $settingsModalMessage === null): ?>
+        <?php if ($statusMessage && $settingsModalMessage === null && !$shareCreatedUrl): ?>
         <div class="blocked-msg message-<?= h($statusMessage[0]) ?>" role="status">
             <?= h($statusMessage[1]) ?>
         </div>
@@ -6287,11 +6366,26 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
 
         <?php if ($shareCreatedUrl): ?>
         <div class="blocked-msg message-success" role="status">
-            <p style="margin:0 0 0.5rem">Share link created:</p>
-            <div class="share-url-box">
-                <input type="text" id="share-created-url" readonly value="<?= h($shareCreatedUrl) ?>">
-                <a href="<?= h($shareCreatedUrl) ?>" class="btn-auth btn-auth-secondary" target="_blank" rel="noopener noreferrer">Open</a>
-                <button type="button" class="btn-auth" id="btn-copy-share-created">Copy</button>
+            <p style="margin:0 0 0.65rem">Share link created. Recipients need this tokenized URL<?= $shareCreatedDownloadUrl ? ' (landing page or forced download)' : '' ?>.</p>
+            <div class="share-created-links">
+                <div class="share-created-row">
+                    <label for="share-created-url">Share link</label>
+                    <div class="share-url-box">
+                        <input type="text" id="share-created-url" readonly value="<?= h($shareCreatedUrl) ?>">
+                        <a href="<?= h($shareCreatedUrl) ?>" class="btn-auth btn-auth-secondary" target="_blank" rel="noopener noreferrer">Open</a>
+                        <button type="button" class="btn-auth btn-copy-url" data-copy-target="share-created-url">Copy</button>
+                    </div>
+                </div>
+                <?php if ($shareCreatedDownloadUrl): ?>
+                <div class="share-created-row">
+                    <label for="share-created-download-url">Download link</label>
+                    <div class="share-url-box">
+                        <input type="text" id="share-created-download-url" readonly value="<?= h($shareCreatedDownloadUrl) ?>">
+                        <a href="<?= h($shareCreatedDownloadUrl) ?>" class="btn-auth btn-auth-secondary" target="_blank" rel="noopener noreferrer">Open</a>
+                        <button type="button" class="btn-auth btn-copy-url" data-copy-target="share-created-download-url">Copy</button>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         <?php endif; ?>
@@ -6582,9 +6676,22 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 </button>
                                 <?php endif; ?>
                                 <?php if ($authenticated && !$inShareMode && $sharesAvailable && empty($item['isBrokenLink'])): ?>
+                                <?php
+                                    $entryShareLinks = $shareLinksByPath[$item['path']] ?? null;
+                                    $entryShareUrl = $entryShareLinks['shareUrl'] ?? '';
+                                    $entryShareDownloadUrl = (!$item['isDir'] && !empty($entryShareLinks['downloadUrl'])) ? $entryShareLinks['downloadUrl'] : '';
+                                ?>
                                 <button type="button" class="entry-share" data-share-path="<?= h($item['path']) ?>" data-share-type="<?= h($item['isDir'] ? 'dir' : 'file') ?>" aria-label="Share <?= h($item['name']) ?>" title="Create share link">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                 </button>
+                                <button type="button" class="entry-copy-share" data-share-path="<?= h($item['path']) ?>" data-share-type="<?= h($item['isDir'] ? 'dir' : 'file') ?>"<?php if ($entryShareUrl !== ''): ?> data-share-url="<?= h($entryShareUrl) ?>"<?php endif; ?> aria-label="Copy share link for <?= h($item['name']) ?>" title="<?= $entryShareUrl !== '' ? 'Copy share link' : 'Create a share link first' ?>">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                                </button>
+                                <?php if (!$item['isDir']): ?>
+                                <button type="button" class="entry-copy-download" data-share-path="<?= h($item['path']) ?>" data-share-type="file"<?php if ($entryShareDownloadUrl !== ''): ?> data-download-url="<?= h($entryShareDownloadUrl) ?>"<?php endif; ?> aria-label="Copy download link for <?= h($item['name']) ?>" title="<?= $entryShareDownloadUrl !== '' ? 'Copy download link' : 'Create a share link first' ?>">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                </button>
+                                <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ((!$inShareMode || $item['isDir']) && empty($item['isBrokenLink'])): ?>
                                 <a class="entry-open-new" href="<?= h($newTabUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Open <?= h($item['name']) ?> in new tab" title="Open in new tab">
@@ -6640,6 +6747,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                         Share
                     </button>
+                    <button type="button" class="modal-action-btn" id="modal-copy-share-btn" hidden aria-label="Copy share link" title="Copy share link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        <span class="modal-action-btn-label">Share link</span>
+                    </button>
+                    <button type="button" class="modal-action-btn" id="modal-copy-download-btn" hidden aria-label="Copy download link" title="Copy download link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <span class="modal-action-btn-label">Download link</span>
+                    </button>
                     <?php endif; ?>
                 </div>
                 <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
@@ -6662,6 +6777,26 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <pre id="modal-pre"><code id="modal-code"></code></pre>
             </div>
             <div id="modal-file-meta" class="modal-file-meta" hidden></div>
+            <?php if ($authenticated && !$inShareMode && $sharesAvailable): ?>
+            <div id="modal-share-links" class="modal-share-links" hidden>
+                <div class="share-created-row">
+                    <label for="modal-share-url-input">Share link</label>
+                    <div class="share-url-box">
+                        <input type="text" id="modal-share-url-input" readonly value="">
+                        <a id="modal-share-url-open" href="#" class="btn-auth btn-auth-secondary" target="_blank" rel="noopener noreferrer">Open</a>
+                        <button type="button" class="btn-auth btn-copy-url" data-copy-target="modal-share-url-input">Copy</button>
+                    </div>
+                </div>
+                <div class="share-created-row" id="modal-share-download-row" hidden>
+                    <label for="modal-download-url-input">Download link</label>
+                    <div class="share-url-box">
+                        <input type="text" id="modal-download-url-input" readonly value="">
+                        <a id="modal-download-url-open" href="#" class="btn-auth btn-auth-secondary" target="_blank" rel="noopener noreferrer">Open</a>
+                        <button type="button" class="btn-auth btn-copy-url" data-copy-target="modal-download-url-input">Copy</button>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -7146,7 +7281,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 <button type="button" class="modal-close" id="shares-list-close" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="settings-help">Public share links bypass IP access restrictions. Revoke links you no longer need.</p>
+                <p class="settings-help">Public share links bypass IP access restrictions. File shares also have a separate forced download link (<code>download=1</code>). Revoke links you no longer need.</p>
                 <div id="shares-list-message" class="blocked-msg shares-list-message" hidden role="status"></div>
                 <table id="shares-table" class="shares-table"<?php if (!$activeShares): ?> hidden<?php endif; ?>>
                     <thead>
@@ -7160,7 +7295,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     <tbody id="shares-table-body">
                         <?php foreach ($activeShares as $shareRow): ?>
                         <?php
-                                $shareRowUrl = shareUrl($indexHref, $shareRow['token'], [], true);
+                            $shareRowUrl = shareUrl($indexHref, $shareRow['token'], [], true);
+                            $shareRowDownloadUrl = ($shareRow['type'] === 'file') ? shareDownloadUrl($indexHref, $shareRow['token'], true) : null;
                             $shareExpires = $shareRow['expires_at'] === null ? 'Never' : (@date('Y-m-d H:i', $shareRow['expires_at']) ?: '—');
                             $sharePathDisplay = '/' . $shareRow['path'];
                         ?>
@@ -7170,14 +7306,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <td class="shares-col-expires"><span class="shares-cell-clip"><?= h($shareExpires) ?></span></td>
                             <td class="shares-col-actions">
                                 <div class="share-actions">
-                                    <a href="<?= h($shareRowUrl) ?>" class="btn-share-sm" target="_blank" rel="noopener noreferrer">
+                                    <a href="<?= h($shareRowUrl) ?>" class="btn-share-sm" target="_blank" rel="noopener noreferrer" title="Open share link">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                         <span>Open</span>
                                     </a>
-                                    <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>">
+                                    <button type="button" class="btn-share-sm btn-copy-share" data-share-url="<?= h($shareRowUrl) ?>" title="Copy share link">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                        <span class="btn-share-sm-label">Copy</span>
+                                        <span class="btn-share-sm-label">Link</span>
                                     </button>
+                                    <?php if ($shareRowDownloadUrl !== null): ?>
+                                    <button type="button" class="btn-share-sm btn-copy-download" data-download-url="<?= h($shareRowDownloadUrl) ?>" title="Copy download link">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                        <span class="btn-share-sm-label">Download</span>
+                                    </button>
+                                    <?php endif; ?>
                                     <form method="post" action="<?= h(currentListingUrl($indexHref, $relativePath)) ?>" class="share-revoke-form">
                                         <input type="hidden" name="action" value="share_revoke">
                                         <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
@@ -7222,7 +7364,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                             <option value="30d">30 days</option>
                         </select>
                     </div>
-                    <p class="settings-help share-form-note">Public read-only access; bypasses IP whitelist and blacklist.</p>
+                    <p class="settings-help share-form-note">Public read-only access; bypasses IP whitelist and blacklist. File shares get a landing-page link and a separate forced download link (<code>?download=1</code>).</p>
                     <div class="share-form-footer">
                         <button type="button" class="btn-auth btn-auth-secondary" id="share-modal-cancel">Cancel</button>
                         <button type="submit" class="btn-auth">Create link</button>
@@ -8265,6 +8407,14 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var modalFileMeta = document.getElementById('modal-file-meta');
         var closeBtn = document.getElementById('modal-close');
         var shareBtn = document.getElementById('modal-share-btn');
+        var modalCopyShareBtn = document.getElementById('modal-copy-share-btn');
+        var modalCopyDownloadBtn = document.getElementById('modal-copy-download-btn');
+        var modalShareLinks = document.getElementById('modal-share-links');
+        var modalShareUrlInput = document.getElementById('modal-share-url-input');
+        var modalShareUrlOpen = document.getElementById('modal-share-url-open');
+        var modalDownloadUrlInput = document.getElementById('modal-download-url-input');
+        var modalDownloadUrlOpen = document.getElementById('modal-download-url-open');
+        var modalShareDownloadRow = document.getElementById('modal-share-download-row');
         var currentSharePath = '';
         var modalHashesOpen = false;
         var modalMetaUrl = '';
@@ -8295,6 +8445,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (!pathMatch) return fileName || '';
             return decodeURIComponent(pathMatch[1].replace(/\+/g, ' '));
         }
+        function shareLinksForPath(path) {
+            var map = window.dirindexShareLinksByPath || {};
+            return path && map[path] ? map[path] : null;
+        }
+        function hideModalShareLinkUi() {
+            if (modalCopyShareBtn) modalCopyShareBtn.hidden = true;
+            if (modalCopyDownloadBtn) modalCopyDownloadBtn.hidden = true;
+            if (modalShareLinks) modalShareLinks.hidden = true;
+            if (modalShareDownloadRow) modalShareDownloadRow.hidden = true;
+            if (modalShareUrlInput) modalShareUrlInput.value = '';
+            if (modalDownloadUrlInput) modalDownloadUrlInput.value = '';
+            if (modalShareUrlOpen) modalShareUrlOpen.removeAttribute('href');
+            if (modalDownloadUrlOpen) modalDownloadUrlOpen.removeAttribute('href');
+        }
         function resetModalActionLinks() {
             setModalDownloadLink('');
             setModalOpenLink('');
@@ -8303,13 +8467,65 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 modalBinaryDownload.removeAttribute('href');
             }
             if (shareBtn) shareBtn.hidden = true;
+            hideModalShareLinkUi();
         }
         function setModalSharePath(path) {
             currentSharePath = path || '';
-            if (!shareBtn) return;
-            shareBtn.hidden = modalBrokenLink || !currentSharePath;
-            if (currentSharePath) shareBtn.setAttribute('data-share-path', currentSharePath);
-            else shareBtn.removeAttribute('data-share-path');
+            if (shareBtn) {
+                shareBtn.hidden = modalBrokenLink || !currentSharePath;
+                if (currentSharePath) {
+                    shareBtn.setAttribute('data-share-path', currentSharePath);
+                    shareBtn.setAttribute('data-share-type', 'file');
+                } else {
+                    shareBtn.removeAttribute('data-share-path');
+                    shareBtn.removeAttribute('data-share-type');
+                }
+            }
+            if (modalBrokenLink || !currentSharePath) {
+                hideModalShareLinkUi();
+                return;
+            }
+            var links = shareLinksForPath(currentSharePath);
+            var shareUrl = links && links.shareUrl ? links.shareUrl : '';
+            var downloadUrl = links && links.downloadUrl ? links.downloadUrl : '';
+            if (modalCopyShareBtn) {
+                modalCopyShareBtn.hidden = false;
+                modalCopyShareBtn.setAttribute('data-share-path', currentSharePath);
+                modalCopyShareBtn.setAttribute('data-share-type', 'file');
+                if (shareUrl) modalCopyShareBtn.setAttribute('data-share-url', shareUrl);
+                else modalCopyShareBtn.removeAttribute('data-share-url');
+                modalCopyShareBtn.title = shareUrl ? 'Copy share link' : 'Create a share link first';
+            }
+            if (modalCopyDownloadBtn) {
+                modalCopyDownloadBtn.hidden = false;
+                modalCopyDownloadBtn.setAttribute('data-share-path', currentSharePath);
+                modalCopyDownloadBtn.setAttribute('data-share-type', 'file');
+                if (downloadUrl) modalCopyDownloadBtn.setAttribute('data-download-url', downloadUrl);
+                else modalCopyDownloadBtn.removeAttribute('data-download-url');
+                modalCopyDownloadBtn.title = downloadUrl ? 'Copy download link' : 'Create a share link first';
+            }
+            if (!modalShareLinks) return;
+            if (!shareUrl) {
+                modalShareLinks.hidden = true;
+                if (modalShareDownloadRow) modalShareDownloadRow.hidden = true;
+                if (modalShareUrlInput) modalShareUrlInput.value = '';
+                if (modalDownloadUrlInput) modalDownloadUrlInput.value = '';
+                if (modalShareUrlOpen) modalShareUrlOpen.removeAttribute('href');
+                if (modalDownloadUrlOpen) modalDownloadUrlOpen.removeAttribute('href');
+                return;
+            }
+            modalShareLinks.hidden = false;
+            if (modalShareUrlInput) modalShareUrlInput.value = shareUrl;
+            if (modalShareUrlOpen) modalShareUrlOpen.href = shareUrl;
+            if (downloadUrl) {
+                if (modalShareDownloadRow) modalShareDownloadRow.hidden = false;
+                if (modalDownloadUrlInput) modalDownloadUrlInput.value = downloadUrl;
+                if (modalDownloadUrlOpen) modalDownloadUrlOpen.href = downloadUrl;
+            } else {
+                if (modalShareDownloadRow) modalShareDownloadRow.hidden = true;
+                if (modalDownloadUrlInput) modalDownloadUrlInput.value = '';
+                if (modalDownloadUrlOpen) modalDownloadUrlOpen.removeAttribute('href');
+            }
         }
 
         function metaFromElement(el) {
@@ -8347,6 +8563,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                     modalBinaryDownload.removeAttribute('href');
                 }
                 if (shareBtn) shareBtn.hidden = true;
+                hideModalShareLinkUi();
             }
         }
         function metaHashesFromApi(data) {
@@ -9413,6 +9630,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
     })();
 
     (function() {
+        window.dirindexShareLinksByPath = <?= json_encode($shareLinksByPath, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES) ?>;
+
         function copyText(text) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 return navigator.clipboard.writeText(text);
@@ -9428,28 +9647,49 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             return Promise.resolve();
         }
 
-        var copyCreated = document.getElementById('btn-copy-share-created');
-        var createdInput = document.getElementById('share-created-url');
-        if (copyCreated && createdInput) {
-            copyCreated.addEventListener('click', function() {
-                copyText(createdInput.value).then(function() {
-                    copyCreated.textContent = 'Copied';
-                    setTimeout(function() { copyCreated.textContent = 'Copy'; }, 2000);
-                });
+        function flashCopyLabel(el, copiedText) {
+            if (!el) return;
+            var prev = el.textContent;
+            el.textContent = copiedText || 'Copied';
+            setTimeout(function() { el.textContent = prev; }, 2000);
+        }
+
+        function copyUrlFromButton(btn, url) {
+            if (!btn || !url) return;
+            copyText(url).then(function() {
+                var label = btn.querySelector('.btn-share-sm-label, .modal-action-btn-label');
+                if (label) {
+                    flashCopyLabel(label);
+                    return;
+                }
+                if (btn.classList.contains('btn-auth')) {
+                    flashCopyLabel(btn);
+                    return;
+                }
+                var prevTitle = btn.getAttribute('title') || '';
+                btn.setAttribute('title', 'Copied');
+                setTimeout(function() { btn.setAttribute('title', prevTitle); }, 2000);
             });
         }
 
+        document.querySelectorAll('.btn-copy-url').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var targetId = btn.getAttribute('data-copy-target');
+                var input = targetId ? document.getElementById(targetId) : null;
+                if (!input || !input.value) return;
+                copyUrlFromButton(btn, input.value);
+            });
+        });
+
         document.querySelectorAll('.btn-copy-share').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                var url = btn.getAttribute('data-share-url');
-                if (!url) return;
-                var label = btn.querySelector('.btn-share-sm-label');
-                copyText(url).then(function() {
-                    if (!label) return;
-                    var prev = label.textContent;
-                    label.textContent = 'Copied';
-                    setTimeout(function() { label.textContent = prev; }, 2000);
-                });
+                copyUrlFromButton(btn, btn.getAttribute('data-share-url') || '');
+            });
+        });
+
+        document.querySelectorAll('.btn-copy-download').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                copyUrlFromButton(btn, btn.getAttribute('data-download-url') || '');
             });
         });
 
@@ -9558,10 +9798,35 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
 
         document.addEventListener('click', function(e) {
-            var btn = e.target.closest('.entry-share, #modal-share-btn');
-            if (!btn) return;
-            e.preventDefault();
-            openShareModal(btn.getAttribute('data-share-path') || '', btn.getAttribute('data-share-type') || 'file');
+            var createBtn = e.target.closest('.entry-share, #modal-share-btn');
+            if (createBtn) {
+                e.preventDefault();
+                openShareModal(createBtn.getAttribute('data-share-path') || '', createBtn.getAttribute('data-share-type') || 'file');
+                return;
+            }
+
+            var copyShareBtn = e.target.closest('.entry-copy-share, #modal-copy-share-btn');
+            if (copyShareBtn) {
+                e.preventDefault();
+                var shareUrl = copyShareBtn.getAttribute('data-share-url') || '';
+                if (shareUrl) {
+                    copyUrlFromButton(copyShareBtn, shareUrl);
+                    return;
+                }
+                openShareModal(copyShareBtn.getAttribute('data-share-path') || '', copyShareBtn.getAttribute('data-share-type') || 'file');
+                return;
+            }
+
+            var copyDownloadBtn = e.target.closest('.entry-copy-download, #modal-copy-download-btn');
+            if (copyDownloadBtn) {
+                e.preventDefault();
+                var downloadUrl = copyDownloadBtn.getAttribute('data-download-url') || '';
+                if (downloadUrl) {
+                    copyUrlFromButton(copyDownloadBtn, downloadUrl);
+                    return;
+                }
+                openShareModal(copyDownloadBtn.getAttribute('data-share-path') || '', copyDownloadBtn.getAttribute('data-share-type') || 'file');
+            }
         });
 
         if (shareClose) shareClose.addEventListener('click', closeShareModal);

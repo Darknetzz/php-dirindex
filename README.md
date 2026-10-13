@@ -79,6 +79,8 @@ These keys can also be edited in `.dirindex.sqlite` or `.dirindex.json` if neede
 
 **Share links:** When signed in as admin (and PDO SQLite is available), use the share button on any file or folder to create a public link. Share links use a secret token in the URL (`?share=…`) and **bypass IP and path whitelist/blacklist** so recipients outside your network can view the shared item. Directory shares allow browsing inside that folder only; file shares open a landing page with a download button (text and image files may also show a preview when enabled). Optional expiry: never, 1 day, 7 days, or 30 days. Revoke links from the **Shared links** button (link icon) in the page header.
 
+For **file** shares you can copy two URLs separately (create banner, Shared links, listing hover actions, and file modal): the **share link** (landing page) and the **download link** (forced download via `download=1`, still requires the share token). If no share exists yet, the copy actions open the create-share dialog first.
+
 Example URLs:
 
 - File: `index.php?share=TOKEN` (landing page), `index.php?share=TOKEN&download=1` (download)

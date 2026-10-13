@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Share download links** — copy or show a separate forced-download URL (`?share=TOKEN&download=1`) alongside the share landing link (after create, Shared links list, listing row actions, and file modal)
 - **Project branding** — favicons and About logo from `https://cdn.roste.org/custom/php-dirindex/images/` (local copies kept under `assets/`; README banner uses the CDN URL)
 - **Hero background** — subtle faded wash behind the page header (listing, setup, and share landing) using `php-dirindex-hero.jpg`
 - **Glass content card** — listing (and share landing) content sits in a translucent frosted card over the hero
