@@ -947,6 +947,37 @@ function dirindexFlashTake() {
     return $message;
 }
 
+function dirindexFlashHighlightSet(array $names) {
+    $clean = [];
+    foreach ($names as $name) {
+        $name = (string) $name;
+        if ($name === '' || isset($clean[$name])) {
+            continue;
+        }
+        $clean[$name] = true;
+    }
+    if ($clean === []) {
+        unset($_SESSION['dirindex_highlight_names']);
+        return;
+    }
+    $_SESSION['dirindex_highlight_names'] = array_keys($clean);
+}
+
+function dirindexFlashHighlightTake() {
+    if (!isset($_SESSION['dirindex_highlight_names']) || !is_array($_SESSION['dirindex_highlight_names'])) {
+        return [];
+    }
+    $names = [];
+    foreach ($_SESSION['dirindex_highlight_names'] as $name) {
+        $name = (string) $name;
+        if ($name !== '') {
+            $names[] = $name;
+        }
+    }
+    unset($_SESSION['dirindex_highlight_names']);
+    return $names;
+}
+
 function dirindexStoredConfigKeys() {
     return [
         'show_symlinks',
@@ -1590,6 +1621,45 @@ function csrfToken() {
 
 function validCsrfToken($token) {
     return isset($_SESSION['csrf_token']) && is_string($token) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
+ * Convert a PHP ini size string (e.g. "8M", "512K") to bytes. 0 means unlimited/empty.
+ */
+function dirindexIniSizeToBytes($value) {
+    $value = trim((string) $value);
+    if ($value === '' || $value === '0') {
+        return 0;
+    }
+    if (!preg_match('/^(\d+)([KMG])?$/i', $value, $m)) {
+        return 0;
+    }
+    $bytes = (int) $m[1];
+    $unit = isset($m[2]) ? strtoupper($m[2]) : '';
+    if ($unit === 'K') {
+        $bytes *= 1024;
+    } elseif ($unit === 'M') {
+        $bytes *= 1024 * 1024;
+    } elseif ($unit === 'G') {
+        $bytes *= 1024 * 1024 * 1024;
+    }
+    return $bytes;
+}
+
+/**
+ * True when PHP discarded the POST body because Content-Length exceeded post_max_size
+ * (leaves $_POST/$_FILES empty, which otherwise looks like a CSRF failure).
+ */
+function dirindexPostBodyExceededLimit() {
+    if (!empty($_POST) || !empty($_FILES)) {
+        return false;
+    }
+    $contentLength = isset($_SERVER['CONTENT_LENGTH']) ? (int) $_SERVER['CONTENT_LENGTH'] : 0;
+    if ($contentLength <= 0) {
+        return false;
+    }
+    $postMax = dirindexIniSizeToBytes(ini_get('post_max_size'));
+    return $postMax > 0 && $contentLength > $postMax;
 }
 
 function isShareAjaxRequest() {
@@ -2318,6 +2388,7 @@ function processDirectoryUpload($currentPath, $relativePath, array $files, $maxB
         return 'upload_dir_exists';
     }
     $uploaded = 0;
+    $highlightNames = [];
     foreach ($planned as $entry) {
         $dest = $entry['dest'];
         $exists = file_exists($dest);
@@ -2342,11 +2413,16 @@ function processDirectoryUpload($currentPath, $relativePath, array $files, $maxB
             return 'upload_failed';
         }
         $uploaded++;
+        $top = explode('/', $entry['entryRel'], 2)[0];
+        if ($top !== '') {
+            $highlightNames[] = $top;
+        }
     }
     if ($uploaded === 0) {
         return 'upload_missing';
     }
     dirindexFlashSet($uploaded . ' file(s) uploaded.');
+    dirindexFlashHighlightSet($highlightNames);
     return ($conflicts > 0) ? 'upload_dir_overwritten' : 'upload_dir_ok';
 }
 
@@ -2682,6 +2758,14 @@ function listingEntryTypeClass(array $item) {
         return 'ft-type--dir';
     }
     return 'ft-type--' . fileExtensionCategory($item['ext'] ?? '');
+}
+
+function listingTypeLabel(array $item) {
+    if (!empty($item['isDir'])) {
+        return 'Folder';
+    }
+    $ext = strtolower((string) ($item['ext'] ?? ''));
+    return $ext !== '' ? '.' . $ext : "\u{2014}";
 }
 
 function fileTypeIconHtml($ext, $isDir = false, $compact = false) {
@@ -3020,6 +3104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
     $csrf = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
     if (!validCsrfToken($csrf)) {
+        // Oversized multipart bodies empty $_POST; surface a size error instead of CSRF.
+        if ($csrf === '' && $action === '' && dirindexPostBodyExceededLimit()) {
+            redirectToCurrentListing($indexHref, $relativePath, 'upload_post_too_large');
+        }
         if (isShareAjaxRequest() && $action === 'share_revoke') {
             shareAjaxResponse(false, 'Security check failed. Please try again.');
         }
@@ -3290,6 +3378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!@move_uploaded_file($tmpName, $destination)) {
             redirectToCurrentListing($indexHref, $relativePath, 'upload_failed');
         }
+        dirindexFlashHighlightSet([$name]);
         redirectToCurrentListing($indexHref, $relativePath, $exists ? 'upload_overwritten' : 'upload_ok');
     }
 
@@ -3321,6 +3410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!@mkdir($destination, 0755)) {
                 redirectToCurrentListing($indexHref, $relativePath, 'create_failed');
             }
+            dirindexFlashHighlightSet([$name]);
             redirectToCurrentListing($indexHref, $relativePath, 'create_folder_ok');
         }
         if ($entryType === 'file') {
@@ -3333,6 +3423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (@file_put_contents($destination, '') === false) {
                 redirectToCurrentListing($indexHref, $relativePath, 'create_failed');
             }
+            dirindexFlashHighlightSet([$name]);
             redirectToCurrentListing($indexHref, $relativePath, 'create_file_ok');
         }
         redirectToCurrentListing($indexHref, $relativePath, 'bad_action');
@@ -3583,7 +3674,8 @@ $messageMap = [
     'upload_overwritten' => ['success', 'Existing file overwritten.'],
     'upload_partial' => ['error', 'Upload was interrupted before it completed.'],
     'upload_target_blocked' => ['error', 'Cannot overwrite a directory or symlink.'],
-    'upload_too_large' => ['error', 'Uploaded file is too large.'],
+    'upload_too_large' => ['error', 'Uploaded file is too large for the current PHP or app limit.'],
+    'upload_post_too_large' => ['error', 'Upload is larger than PHP post_max_size (request was discarded). Raise post_max_size and upload_max_filesize, then try again.'],
     'upload_dir_ok' => ['success', 'Folder upload complete.'],
     'upload_dir_overwritten' => ['success', 'Folder upload complete; existing files were overwritten.'],
     'upload_dir_exists' => ['error', 'Some files in this upload already exist. Confirm overwrite and try again.'],
@@ -3618,6 +3710,7 @@ if (isset($_GET['msg'], $messageMap[$_GET['msg']])) {
         $statusMessage = [$statusMessage[0], $statusMessage[1] . ' ' . $flashDetail];
     }
 }
+$highlightNames = $sessionNeeded ? dirindexFlashHighlightTake() : [];
 $storageWritable = dirindexStorageWritable(__DIR__, $storageWritableDetail);
 $openLoginModal = $hasUploadCredentials && !$authenticated && !$inShareMode && (
     $browseAuthBlocked
@@ -4473,6 +4566,48 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             align-items: center;
             gap: 0.5rem;
             margin-right: auto;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+        .listing-search {
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+        .listing-search-input {
+            width: 11rem;
+            max-width: 40vw;
+            padding: 0.3rem 0.55rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 0.8rem;
+            font-family: inherit;
+        }
+        .listing-search-input::placeholder {
+            color: var(--text-muted);
+        }
+        .listing-search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .listing-search-empty td {
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 1.25rem 1rem;
+        }
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
         .listing-col-picker {
             position: relative;
@@ -4581,6 +4716,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             background: rgba(0,0,0,0.2);
             border-bottom: 1px solid var(--border);
         }
+        .listing th.type { text-align: right; }
         .listing th.size { text-align: right; }
         .listing th.modified { text-align: right; }
         .listing th.owner { text-align: right; }
@@ -4600,6 +4736,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             cursor: pointer;
             transition: color 0.15s, background 0.15s;
         }
+        .listing th.type .listing-sort-btn,
         .listing th.size .listing-sort-btn,
         .listing th.modified .listing-sort-btn,
         .listing th.perms .listing-sort-btn,
@@ -4617,6 +4754,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             opacity: 0.9;
             min-width: 0.65rem;
         }
+        .listing table.listing-hide-type th.type,
+        .listing table.listing-hide-type td.type,
         .listing table.listing-hide-size th.size,
         .listing table.listing-hide-size td.size,
         .listing table.listing-hide-modified th.modified,
@@ -4636,6 +4775,13 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         }
         .listing tr:last-child td { border-bottom: none; }
         .listing tr:hover td { background: var(--hover); }
+        .listing tr.listing-row-highlight td {
+            background: rgba(22, 163, 74, 0.18);
+            transition: background 0.4s ease;
+        }
+        .listing tr.listing-row-highlight:hover td {
+            background: rgba(22, 163, 74, 0.26);
+        }
 
         .listing .name a {
             color: var(--text);
@@ -4921,6 +5067,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             color: var(--text-muted);
             font-size: 0.85rem;
         }
+        .listing .type { text-align: right; color: var(--text-muted); }
+        .listing .col-type { min-width: 4.5rem; }
+        .listing td.type, .listing th.type { white-space: nowrap; }
         .listing .size { text-align: right; }
         .listing .col-size { min-width: 5.5rem; }
         .listing td.size, .listing th.size { white-space: nowrap; }
@@ -6065,12 +6214,20 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             <?php $currentDirNewTabUrl = $inShareMode ? currentListingUrl($indexHref, $relativePath) : directEntryUrl($relativePath, true); ?>
             <div class="listing-toolbar">
                 <div class="listing-toolbar-start">
+                    <div class="listing-search">
+                        <label class="visually-hidden" for="listing-search-input">Search current directory</label>
+                        <input type="search" id="listing-search-input" class="listing-search-input" placeholder="Search…" autocomplete="off" spellcheck="false">
+                    </div>
                     <div class="listing-col-picker">
                         <button type="button" class="listing-col-picker-btn" id="listing-col-picker-btn" aria-expanded="false" aria-haspopup="true" aria-controls="listing-col-picker-menu">
                             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
                             Columns
                         </button>
                         <div class="listing-col-picker-menu" id="listing-col-picker-menu" role="menu" hidden>
+                            <label class="listing-col-picker-option" role="menuitemcheckbox">
+                                <input type="checkbox" id="setting-col-type" checked>
+                                Type
+                            </label>
                             <label class="listing-col-picker-option" role="menuitemcheckbox">
                                 <input type="checkbox" id="setting-col-size" checked>
                                 Size
@@ -6109,9 +6266,10 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 </button>
                 <?php endif; ?>
             </div>
-            <table id="listing-table">
+            <table id="listing-table"<?php if ($highlightNames !== []): ?> data-highlight-names="<?= h(json_encode(array_values($highlightNames), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)) ?>"<?php endif; ?>>
                 <colgroup>
                     <col class="col-name">
+                    <col class="col-type">
                     <col class="col-size">
                     <col class="col-modified">
                     <col class="col-owner">
@@ -6122,6 +6280,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         <th scope="col" class="name" data-sort-col="name">
                             <button type="button" class="listing-sort-btn" data-sort-col="name">
                                 Name <span class="listing-sort-indicator" aria-hidden="true"></span>
+                            </button>
+                        </th>
+                        <th scope="col" class="type" data-sort-col="type">
+                            <button type="button" class="listing-sort-btn" data-sort-col="type">
+                                Type <span class="listing-sort-indicator" aria-hidden="true"></span>
                             </button>
                         </th>
                         <th scope="col" class="size" data-sort-col="size">
@@ -6166,6 +6329,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 </div>
                             </div>
                         </td>
+                        <td class="type">&#8212;</td>
                         <td class="size">&#8212;</td>
                         <td class="modified">&#8212;</td>
                         <td class="owner">&#8212;</td>
@@ -6253,8 +6417,9 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                         }
                         $nameClass = ($item['isDir'] ? 'dir ' : '') . ($item['isLink'] ? 'symlink ' : '') . (!empty($item['isBrokenLink']) ? 'broken-link ' : '') . ((!$item['isDir'] && !$item['previewKind']) ? 'binary' : '');
                         $entryTypeClass = listingEntryTypeClass($item);
+                        $listingType = listingTypeLabel($item);
                     ?>
-                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-owner="<?= h(strtolower($item['ownerLabel'] ?? '')) ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
+                    <tr data-is-dir="<?= $item['isDir'] ? '1' : '0' ?>" data-sort-name="<?= h($item['name']) ?>" data-sort-type="<?= h(strtolower($listingType)) ?>" data-sort-size="<?= $item['isDir'] ? '-1' : (int) $item['size'] ?>" data-sort-mtime="<?= isset($item['mtime']) && $item['mtime'] !== null ? (int) $item['mtime'] : '0' ?>" data-sort-owner="<?= h(strtolower($item['ownerLabel'] ?? '')) ?>" data-sort-perms="<?= isset($item['perms']) && $item['perms'] !== null ? (int) $item['perms'] : '0' ?>">
                         <td class="name <?= trim($nameClass) ?> <?= h($entryTypeClass) ?>">
                             <div class="name-content">
                                 <a href="<?= h($url) ?>"<?= $linkAttrs ?><?= $linkTitleAttr ?>>
@@ -6284,6 +6449,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                                 </div>
                             </div>
                         </td>
+                        <td class="type"><?= h($listingType) ?></td>
                         <td class="size"><?= $item['isDir'] ? '&#8212;' : h(formatSize($item['size'])) ?></td>
                         <td class="modified"><?php
                             $ts = isset($item['mtime']) ? $item['mtime'] : null;
@@ -8541,11 +8707,15 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var tbody = table.querySelector('tbody');
         if (!tbody) return;
         var sortResetBtn = document.getElementById('listing-sort-reset');
+        var searchInput = document.getElementById('listing-search-input');
         var STORAGE_SORT = 'dirindex_list_sort';
+        var STORAGE_COL_TYPE = 'dirindex_col_type';
         var STORAGE_COL_SIZE = 'dirindex_col_size';
         var STORAGE_COL_MODIFIED = 'dirindex_col_modified';
         var STORAGE_COL_OWNER = 'dirindex_col_owner';
         var STORAGE_COL_PERMS = 'dirindex_col_perms';
+        var emptyRow = null;
+        var colCount = table.querySelectorAll('thead th').length || 6;
 
         function getSetting(key, def) {
             try { return localStorage.getItem(key) || def; } catch (e) { return def; }
@@ -8562,7 +8732,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (!raw) return null;
                 var parsed = JSON.parse(raw);
                 if (!parsed || !parsed.col) return null;
-                if (['name', 'size', 'modified', 'owner', 'perms'].indexOf(parsed.col) === -1) return null;
+                if (['name', 'type', 'size', 'modified', 'owner', 'perms'].indexOf(parsed.col) === -1) return null;
                 return { col: parsed.col, dir: parsed.dir === 'desc' ? 'desc' : 'asc' };
             } catch (e) {
                 return null;
@@ -8576,7 +8746,7 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             setSetting(STORAGE_SORT, JSON.stringify(sort));
         }
         function getSortRows() {
-            return Array.prototype.slice.call(tbody.querySelectorAll('tr:not([data-sort-parent])'));
+            return Array.prototype.slice.call(tbody.querySelectorAll('tr:not([data-sort-parent]):not(.listing-search-empty)'));
         }
         function getParentRow() {
             return tbody.querySelector('tr[data-sort-parent]');
@@ -8591,6 +8761,16 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             if (col === 'name') {
                 va = (a.getAttribute('data-sort-name') || '').toLowerCase();
                 vb = (b.getAttribute('data-sort-name') || '').toLowerCase();
+            } else if (col === 'type') {
+                va = (a.getAttribute('data-sort-type') || '').toLowerCase();
+                vb = (b.getAttribute('data-sort-type') || '').toLowerCase();
+                if (va < vb) return -1 * mul;
+                if (va > vb) return 1 * mul;
+                var typeTieA = (a.getAttribute('data-sort-name') || '').toLowerCase();
+                var typeTieB = (b.getAttribute('data-sort-name') || '').toLowerCase();
+                if (typeTieA < typeTieB) return -1;
+                if (typeTieA > typeTieB) return 1;
+                return 0;
             } else if (col === 'size') {
                 va = parseInt(a.getAttribute('data-sort-size') || '-1', 10);
                 vb = parseInt(b.getAttribute('data-sort-size') || '-1', 10);
@@ -8638,21 +8818,60 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
             rows.sort(function(a, b) { return compareRows(a, b, col, dir); });
             rows.forEach(function(row) { tbody.appendChild(row); });
             if (parent) tbody.insertBefore(parent, tbody.firstChild);
+            if (emptyRow && emptyRow.parentNode === tbody) tbody.appendChild(emptyRow);
             updateSortUi(isDefaultSort(sort) ? null : sort);
         }
+        function ensureEmptyRow() {
+            if (emptyRow) return emptyRow;
+            emptyRow = document.createElement('tr');
+            emptyRow.className = 'listing-search-empty';
+            emptyRow.hidden = true;
+            var td = document.createElement('td');
+            td.colSpan = colCount;
+            td.textContent = 'No matches';
+            emptyRow.appendChild(td);
+            tbody.appendChild(emptyRow);
+            return emptyRow;
+        }
+        function applySearchFilter() {
+            var q = searchInput ? (searchInput.value || '').trim().toLowerCase() : '';
+            var rows = getSortRows();
+            var visible = 0;
+            rows.forEach(function(row) {
+                if (!q) {
+                    row.hidden = false;
+                    visible++;
+                    return;
+                }
+                var name = (row.getAttribute('data-sort-name') || '').toLowerCase();
+                var type = (row.getAttribute('data-sort-type') || '').toLowerCase();
+                var match = name.indexOf(q) !== -1 || type.indexOf(q) !== -1;
+                row.hidden = !match;
+                if (match) visible++;
+            });
+            var empty = ensureEmptyRow();
+            empty.hidden = !q || visible > 0;
+        }
         function applyColumns() {
+            var showType = getSetting(STORAGE_COL_TYPE, '1') !== '0';
             var showSize = getSetting(STORAGE_COL_SIZE, '1') !== '0';
             var showModified = getSetting(STORAGE_COL_MODIFIED, '1') !== '0';
             var showOwner = getSetting(STORAGE_COL_OWNER, '1') !== '0';
             var showPerms = getSetting(STORAGE_COL_PERMS, '1') !== '0';
+            table.classList.toggle('listing-hide-type', !showType);
             table.classList.toggle('listing-hide-size', !showSize);
             table.classList.toggle('listing-hide-modified', !showModified);
             table.classList.toggle('listing-hide-owner', !showOwner);
             table.classList.toggle('listing-hide-perms', !showPerms);
+            var typeCheck = document.getElementById('setting-col-type');
             var sizeCheck = document.getElementById('setting-col-size');
             var modCheck = document.getElementById('setting-col-modified');
             var ownerCheck = document.getElementById('setting-col-owner');
             var permsCheck = document.getElementById('setting-col-perms');
+            if (typeCheck) {
+                typeCheck.checked = showType;
+                typeCheck.setAttribute('aria-checked', showType ? 'true' : 'false');
+            }
             if (sizeCheck) {
                 sizeCheck.checked = showSize;
                 sizeCheck.setAttribute('aria-checked', showSize ? 'true' : 'false');
@@ -8702,6 +8921,41 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 if (e.key === 'Escape') closePicker();
             });
         }
+        function highlightUploadedRows() {
+            var raw = table.getAttribute('data-highlight-names');
+            if (!raw) return;
+            var names;
+            try { names = JSON.parse(raw); } catch (e) { return; }
+            if (!Array.isArray(names) || names.length === 0) return;
+            table.removeAttribute('data-highlight-names');
+            var first = null;
+            names.forEach(function(name) {
+                if (!name) return;
+                var row = null;
+                if (window.CSS && typeof CSS.escape === 'function') {
+                    row = tbody.querySelector('tr[data-sort-name="' + CSS.escape(String(name)) + '"]');
+                } else {
+                    getSortRows().some(function(candidate) {
+                        if (candidate.getAttribute('data-sort-name') === String(name)) {
+                            row = candidate;
+                            return true;
+                        }
+                        return false;
+                    });
+                }
+                if (!row) return;
+                row.classList.add('listing-row-highlight');
+                if (!first) first = row;
+            });
+            if (first && typeof first.scrollIntoView === 'function') {
+                first.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+            setTimeout(function() {
+                tbody.querySelectorAll('tr.listing-row-highlight').forEach(function(row) {
+                    row.classList.remove('listing-row-highlight');
+                });
+            }, 3000);
+        }
 
         table.querySelectorAll('.listing-sort-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
@@ -8722,6 +8976,11 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
                 applySort(null);
             });
         }
+        if (searchInput) {
+            searchInput.addEventListener('input', applySearchFilter);
+            searchInput.addEventListener('search', applySearchFilter);
+        }
+        wireColumnCheckbox(document.getElementById('setting-col-type'), STORAGE_COL_TYPE);
         wireColumnCheckbox(document.getElementById('setting-col-size'), STORAGE_COL_SIZE);
         wireColumnCheckbox(document.getElementById('setting-col-modified'), STORAGE_COL_MODIFIED);
         wireColumnCheckbox(document.getElementById('setting-col-owner'), STORAGE_COL_OWNER);
@@ -8732,6 +8991,8 @@ $title = $setupNeeded ? 'Set up PHP Directory Index' : ($inShareMode ? 'Shared: 
         var initialSort = parseSort();
         if (initialSort) applySort(initialSort);
         else updateSortUi(null);
+        applySearchFilter();
+        highlightUploadedRows();
     })();
 
     (function() {

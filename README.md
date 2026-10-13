@@ -3,7 +3,7 @@
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
 - **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
-- **Lists** the current directory with name, size, modified date, owner, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the **Columns** menu above the listing to show or hide optional columns (saved in the browser).
+- **Lists** the current directory with name, type/extension, size, modified date, owner, and Unix permissions. Directories appear first, then files (alphabetically). Click a column header to sort; use **Reset sort** to restore the default order. Use the search box above the listing to filter the current directory by name or type. Use the **Columns** menu to show or hide optional columns (saved in the browser). After a successful upload or create, matching rows are briefly highlighted.
 - **Display** (gear icon → Settings → Display): theme (follow system, light, or dark), text size (extra small through extra large), and a custom breadcrumb separator — all saved in the browser.
 - **Navigate** subfolders via `?path=subfolder`; breadcrumbs and a ".." row let you go back. Path traversal is restricted to the base directory.
 - **Upload** files after setting up the built-in upload login. Upload a single file or an entire folder (preserving subfolders). Existing filenames require confirmation before overwrite. Upload and create names must be safe (letters, numbers, spaces, `. _ - ( ) [ ]`; not `* ? " < > | : \\ /`). Invalid upload names can be renamed via a confirmation prompt.
@@ -86,7 +86,7 @@ To create a password hash manually:
 php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-PHP settings such as `upload_max_filesize`, `post_max_size`, and `max_file_uploads` still apply. Folder uploads are limited to 500 files per request; empty subfolders are not uploaded (only files).
+PHP settings such as `upload_max_filesize`, `post_max_size`, and `max_file_uploads` still apply. If a request exceeds `post_max_size`, PHP discards the body and the app reports that the upload is too large for `post_max_size` (raise both `post_max_size` and `upload_max_filesize` for large files). Folder uploads are limited to 500 files per request; empty subfolders are not uploaded (only files).
 
 **Updates:** Open **About** (footer version link or toolbar info icon), choose **Stable** or **Dev** channel, and use **Check for updates**. **Stable** compares your semver with the [latest tagged release](https://github.com/Darknetzz/php-dirindex/releases). **Dev** tracks the rolling [dev prerelease](https://github.com/Darknetzz/php-dirindex/releases/tag/dev) built from the `dev` branch (compares embedded build refs). When an update is available, signed-in admins can **Update now** to replace both `index.php` and `index.min.php` in place (PHP must be able to write the script directory; outbound HTTPS to GitHub is required). **Changelog** opens an in-app modal with the rendered release notes (from a local `CHANGELOG.md` when present, otherwise from GitHub).
 

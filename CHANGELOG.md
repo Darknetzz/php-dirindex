@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Listing search** — filter the current directory by name or Type/extension from the listing toolbar
+- **Type column** — sortable extension column (folders show as Folder); toggle via Columns
+- **Upload/create highlight** — successfully uploaded or newly created entries are briefly highlighted in the listing
 - **About → Changelog** — opens a modal with rendered `CHANGELOG.md` (local file when present, otherwise fetched from GitHub)
 - **In-place updates** — **Update now** replaces both `index.php` and `index.min.php` from the release assets
 - **Minified entry** — when `index.min.php` exists beside `index.php`, GET requests to `index.php` redirect to `index.min.php` (query string preserved; POST unchanged)
@@ -19,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Uploads** — requests larger than PHP `post_max_size` now show a clear size error instead of “Security check failed” (PHP empties `$_POST` in that case, which looked like a CSRF failure)
 
 ## [1.2.6] - 2026-07-01
 
