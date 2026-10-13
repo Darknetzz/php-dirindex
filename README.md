@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/php-dirindex-banner.png" alt="php-dirindex" width="720">
+</p>
+
 # PHP Directory Index
 
 A single-file directory index that lists files and folders in a dark-themed, readable layout.

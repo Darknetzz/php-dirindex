@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project branding** — logo, favicon, and banner assets under `assets/` (shown in README)
 - **Listing search** — filter the current directory by name or Type/extension from the listing toolbar
 - **Type column** — sortable extension column (folders show as Folder); toggle via Columns
 - **Upload/create highlight** — successfully uploaded or newly created entries are briefly highlighted in the listing
