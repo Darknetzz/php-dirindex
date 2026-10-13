@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Hook installer** — push alias is path-independent (survives repo moves); stale absolute-path aliases are refreshed automatically; `--force` overwrites unrelated custom config
+
 ### Fixed
+
 
 
 ## [1.3.0] - 2026-10-13

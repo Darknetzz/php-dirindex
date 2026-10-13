@@ -7,6 +7,7 @@
 #   ./scripts/install-hooks.sh
 #   ./scripts/install-hooks.sh --status
 #   ./scripts/install-hooks.sh --uninstall
+#   ./scripts/install-hooks.sh --force   # overwrite a non-ours alias.push / core.hooksPath
 #
 # Hooks are not cloned with the repo — run this once after each fresh clone.
 
@@ -15,9 +16,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-PUSH_ALIAS='!bash "'"$ROOT"'/scripts/git-push.sh"'
+# Path-independent: survives repo moves / different mount paths.
+PUSH_ALIAS='!f() { "$(git rev-parse --show-toplevel)/scripts/git-push.sh" "$@"; }; f'
 HOOKS_PATH="scripts/githooks"
 ACTION="install"
+FORCE=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -27,8 +30,11 @@ for arg in "$@"; do
         --uninstall)
             ACTION="uninstall"
             ;;
+        --force)
+            FORCE=1
+            ;;
         -h|--help)
-            echo "Usage: ./scripts/install-hooks.sh [--status|--uninstall]"
+            echo "Usage: ./scripts/install-hooks.sh [--status|--uninstall|--force]"
             exit 0
             ;;
         *)
@@ -44,6 +50,16 @@ current_alias() {
 
 current_hooks_path() {
     git config --local --get core.hooksPath 2>/dev/null || true
+}
+
+# True for the current alias or older absolute-path installs of the same wrapper.
+is_ours_push_alias() {
+    local value="$1"
+    [[ -z "$value" ]] && return 1
+    [[ "$value" == "$PUSH_ALIAS" ]] && return 0
+    # Legacy: !bash "/abs/path/.../scripts/git-push.sh"
+    [[ "$value" == *'/scripts/git-push.sh'* || "$value" == *'/scripts/git-push.sh"' ]] && return 0
+    return 1
 }
 
 push_ok() {
@@ -68,7 +84,10 @@ case "$ACTION" in
             echo "Dev release push hook: installed"
         else
             alias_value="$(current_alias)"
-            if [[ -n "$alias_value" ]]; then
+            if is_ours_push_alias "$alias_value"; then
+                echo "Dev release push hook: stale (re-run ./scripts/install-hooks.sh to refresh)"
+                echo "  alias.push = $alias_value"
+            elif [[ -n "$alias_value" ]]; then
                 echo "Dev release push hook: not installed (alias.push is customized)"
                 echo "  alias.push = $alias_value"
             else
@@ -92,7 +111,7 @@ case "$ACTION" in
         ;;
     uninstall)
         alias_value="$(current_alias)"
-        if [[ "$alias_value" == "$PUSH_ALIAS" ]]; then
+        if is_ours_push_alias "$alias_value"; then
             git config --local --unset alias.push
             echo "Removed git push alias for rolling dev releases."
         else
@@ -111,18 +130,28 @@ case "$ACTION" in
 
         existing="$(current_alias)"
         if [[ -n "$existing" && "$existing" != "$PUSH_ALIAS" ]]; then
-            echo "alias.push is already set to something else:" >&2
-            echo "  $existing" >&2
-            echo "Unset it first or merge manually." >&2
-            exit 1
+            if is_ours_push_alias "$existing"; then
+                echo "Refreshing stale push alias (old path or format)."
+            elif [[ "$FORCE" -eq 1 ]]; then
+                echo "Overwriting customized alias.push (--force)."
+            else
+                echo "alias.push is already set to something else:" >&2
+                echo "  $existing" >&2
+                echo "Unset it first, or re-run with --force." >&2
+                exit 1
+            fi
         fi
 
         existing_hooks="$(current_hooks_path)"
         if [[ -n "$existing_hooks" && "$existing_hooks" != "$HOOKS_PATH" ]]; then
-            echo "core.hooksPath is already set to something else:" >&2
-            echo "  $existing_hooks" >&2
-            echo "Unset it first or merge manually." >&2
-            exit 1
+            if [[ "$FORCE" -eq 1 ]]; then
+                echo "Overwriting customized core.hooksPath (--force)."
+            else
+                echo "core.hooksPath is already set to something else:" >&2
+                echo "  $existing_hooks" >&2
+                echo "Unset it first, or re-run with --force." >&2
+                exit 1
+            fi
         fi
 
         git config --local alias.push "$PUSH_ALIAS"
