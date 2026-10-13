@@ -1872,7 +1872,7 @@ function dirindexFetchRelease($repoUrl, $channel = 'stable') {
         return ['error' => 'Could not determine the GitHub repository.'];
     }
     $endpoint = ($channel === 'dev')
-        ? $apiBase . '/releases/tags/dev'
+        ? $apiBase . '/releases/tags/dev-rolling'
         : $apiBase . '/releases/latest';
     $response = dirindexHttpRequest($endpoint, 'application/vnd.github+json');
     $status = (int) ($response['status'] ?? 0);

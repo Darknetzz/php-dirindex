@@ -14,7 +14,7 @@ cd "$ROOT"
 
 DRY_RUN=0
 DEFAULT_BRANCH="dev"
-DEV_TAG="dev"
+DEV_TAG="dev-rolling"
 
 for arg in "$@"; do
     case "$arg" in
