@@ -1,5 +1,7 @@
 # PHP Directory Index
 
+<p align="center"><img src="docs/images/banner-gradient.png" alt="php-dirindex" width="720"></p>
+
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
 - **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
