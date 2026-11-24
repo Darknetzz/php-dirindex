@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 # Shared helpers for publishing GitHub releases locally via the gh CLI.
 
+# GitHub is a read-only push mirror of the GitLab origin; there is no github remote.
+GITHUB_REPO="${GITHUB_REPO:-Darknetzz/php-dirindex}"
+
 gh_repo_slug() {
-    if ! git remote get-url github &>/dev/null; then
-        echo "Remote 'github' is not configured." >&2
-        return 1
-    fi
-    git remote get-url github | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##'
+    printf '%s\n' "$GITHUB_REPO"
+}
+
+# Wait until the GitLab push mirror has copied a tag to GitHub (gh release needs it there).
+wait_for_github_tag() {
+    local tag="$1" deadline=$((SECONDS + ${2:-600}))
+    echo "==> Waiting for the GitLab push mirror to copy $tag to GitHub"
+    until gh api "repos/${GITHUB_REPO}/git/ref/tags/${tag}" >/dev/null 2>&1; do
+        if [[ $SECONDS -ge $deadline ]]; then
+            echo "$tag is not on GitHub yet: check the push mirror (GitLab > Settings > Repository > Mirroring repositories), then rerun." >&2
+            return 1
+        fi
+        sleep 10
+    done
 }
 
 require_gh() {

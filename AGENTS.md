@@ -16,7 +16,7 @@ An optional **release build** produces `index.min.php` — a smaller, functional
 | `$dirindexVersion` in `index.php` | Semver shown in the About modal; bumped by `scripts/release.sh` when tagging |
 | `scripts/build-min.php` | Builds `index.min.php` from `index.php` (PHP-only, no npm) |
 | `scripts/ci.sh` | Local CI: build min, syntax check, staleness check (replaces GitHub Actions) |
-| `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, pushes to `origin` + `github`, publishes stable release via `gh` |
+| `scripts/release.sh` | Finalizes `CHANGELOG.md`, tags, pushes to `origin`, waits for the mirror to copy the tag to GitHub, publishes stable release via `gh` |
 | `scripts/dev-release.sh` | Publishes/updates the rolling `dev-rolling` GitHub prerelease locally via `gh` |
 | `scripts/git-push.sh` | `git push` wrapper: on success while on `dev`, runs `dev-release.sh` |
 | `scripts/install-hooks.sh` | Installs local hooks: `git push` alias (dev releases) + `core.hooksPath` → `scripts/githooks` (rebuild `index.min.php` on pull/checkout) |
@@ -86,7 +86,7 @@ php -r "echo password_hash('change-me', PASSWORD_DEFAULT), PHP_EOL;"
 
 Typical size reduction: ~25% raw, ~10–15% gzipped. Behavior is identical to `index.php`; settings (`.dirindex.sqlite` / `.dirindex.json`) are stored next to whichever file is deployed.
 
-**Remotes:** `origin` → GitLab (`gitlab.kriss.li`), `github` → GitHub (`Darknetzz/php-dirindex`). Default branch is **`dev`**. Releases are published **locally** with the `gh` CLI (`scripts/release.sh`, `scripts/dev-release.sh`) — there are no GitHub Actions workflows.
+**Remotes:** `origin` → GitLab (`gitlab.kriss.li/kriss/php-dirindex`) is the only remote; push only there. GitHub `Darknetzz/php-dirindex` is a read-only copy kept in sync by a GitLab push mirror (mirror id 7, SSH deploy key, all branches and tags, keep divergent refs on). Never push to GitHub or add it as a remote. The scripts take the GitHub slug from `GITHUB_REPO` in `scripts/gh-release-common.sh`, and `release.sh` waits (up to 10 min) for the mirror to copy the new tag before running `gh release`. Default branch is **`dev`**. Releases are published **locally** with the `gh` CLI (`scripts/release.sh`, `scripts/dev-release.sh`) — there are no GitHub Actions workflows.
 
 **Dev channel:** Run `./scripts/install-hooks.sh` once per clone (hooks are not transferred by `git clone`) so each successful `git push` on `dev` runs `./scripts/dev-release.sh` (embeds a short commit ref in `$dirindexBuildRef`, builds `index.min.php`, updates the rolling prerelease at tag `dev-rolling`). The same installer points `core.hooksPath` at `scripts/githooks`, so `git pull` / branch checkout rebuilds `index.min.php` when needed. The About modal **Dev** channel fetches that release (`/releases/tags/dev-rolling`) and compares build refs for update availability.
 

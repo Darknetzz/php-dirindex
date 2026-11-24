@@ -202,11 +202,8 @@ if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-if ! git remote get-url github &>/dev/null; then
-    echo "Remote 'github' is not configured. Add it first:" >&2
-    echo "  git remote add github git@github.com:YOU/php-dirindex.git" >&2
-    exit 1
-fi
+# shellcheck source=gh-release-common.sh
+source "$ROOT/scripts/gh-release-common.sh"
 
 BRANCH="$(git branch --show-current)"
 if [[ "$BRANCH" != "$DEFAULT_BRANCH" ]]; then
@@ -231,8 +228,8 @@ if git ls-remote --exit-code --tags origin "refs/tags/$TAG" &>/dev/null; then
     exit 1
 fi
 
-if git ls-remote --exit-code --tags github "refs/tags/$TAG" &>/dev/null; then
-    echo "Tag already exists on github: $TAG" >&2
+if git ls-remote --exit-code --tags "git@github.com:${GITHUB_REPO}.git" "refs/tags/$TAG" &>/dev/null; then
+    echo "Tag already exists on GitHub: $TAG" >&2
     exit 1
 fi
 
@@ -279,20 +276,17 @@ run php -l index.php
 run php -l index.min.php
 
 AHEAD_ORIGIN="$(git rev-list --count "origin/${DEFAULT_BRANCH}"..HEAD 2>/dev/null || echo 0)"
-AHEAD_GITHUB="$(git rev-list --count "github/${DEFAULT_BRANCH}"..HEAD 2>/dev/null || echo 0)"
 
-if [[ "$AHEAD_ORIGIN" != "0" || "$AHEAD_GITHUB" != "0" ]]; then
-    echo "==> Pushing $DEFAULT_BRANCH (ahead of origin: $AHEAD_ORIGIN, github: $AHEAD_GITHUB)"
+if [[ "$AHEAD_ORIGIN" != "0" ]]; then
+    echo "==> Pushing $DEFAULT_BRANCH (ahead of origin: $AHEAD_ORIGIN)"
     run git push origin "$DEFAULT_BRANCH"
-    run git push github "$DEFAULT_BRANCH"
 fi
 
 echo "==> Creating annotated tag $TAG"
 run git tag -a "$TAG" -m "$MESSAGE"
 
-echo "==> Pushing tag to origin and github"
+echo "==> Pushing tag to origin (the GitLab push mirror copies it to GitHub)"
 run git push origin "$TAG"
-run git push github "$TAG"
 
 echo "==> Packaging release assets"
 DIST="$ROOT/dist"
@@ -303,9 +297,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "dry-run: scripts/changelog-section.sh ${TAG} > release-notes.md"
     echo "dry-run: gh release create ${TAG} with assets"
 else
-    # shellcheck source=gh-release-common.sh
-    source "$ROOT/scripts/gh-release-common.sh"
     require_gh
+    wait_for_github_tag "$TAG"
 
     rm -rf "$DIST"
     mkdir -p "$DIST"
@@ -335,7 +328,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     exit 0
 fi
 
-REPO="$(git remote get-url github | sed -E 's#.*github.com[:/](.+)(\.git)?$#\1#')"
+REPO="$(gh_repo_slug)"
 cat <<EOF
 
 Release $TAG published:
