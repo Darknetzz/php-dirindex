@@ -10,8 +10,8 @@ header('X-Content-Type-Options: nosniff');
 
 /** Semver; updated by scripts/release.sh when tagging a release. */
 $dirindexVersion = '1.3.0';
-/** Short git ref; embedded in rolling dev release artifacts by scripts/dev-release.sh. */
-$dirindexBuildRef = '20a3901';
+/** Short git ref; embedded in rolling dev release artifacts by scripts/dev-release.sh. Keep empty in git. */
+$dirindexBuildRef = '';
 $dirindexRepoUrl = 'https://github.com/Darknetzz/php-dirindex';
 $dirindexCdnAssetBase = 'https://cdn.roste.org/custom/php-dirindex/images';
 $dirindexBuildLabel = (basename(__FILE__) === 'index.min.php') ? 'Minified' : 'Standard';

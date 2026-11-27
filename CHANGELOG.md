@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dev builds always reported build 20a3901** — that ref had been committed into `index.php`, so `scripts/dev-release.sh` never embedded the real one and the Dev channel stopped offering updates; the committed value is empty again and the script now replaces any value (and fails if it cannot)
 - **PHP 8.5 deprecations** — update checks read HTTP response headers with `http_get_last_response_headers()` (PHP 8.4+, falls back on older PHP) instead of `$http_response_header`, and no longer call `curl_close()`
 
 

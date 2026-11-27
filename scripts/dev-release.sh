@@ -67,7 +67,11 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "dry-run: would set \$dirindexBuildRef = '${SHORT_SHA}'"
 else
     cp index.php index.php.bak.dev-release
-    sed -i "s/^\$dirindexBuildRef = '';/\$dirindexBuildRef = '${SHORT_SHA}';/" index.php
+    sed -i "s/^\$dirindexBuildRef = '[^']*';/\$dirindexBuildRef = '${SHORT_SHA}';/" index.php
+    if ! grep -q "^\$dirindexBuildRef = '${SHORT_SHA}';" index.php; then
+        echo "Could not embed the build ref: \$dirindexBuildRef line not found in index.php." >&2
+        exit 1
+    fi
 fi
 
 echo "==> Building minified artifact"
