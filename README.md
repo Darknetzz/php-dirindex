@@ -172,6 +172,6 @@ Embeds the current commit ref in release artifacts, builds `index.min.php`, and 
 ./scripts/release.sh --dry-run          # preview only
 ```
 
-The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `dev` if needed, pushes the tag to GitLab and GitHub, then publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page via `gh`. Run it from the `dev` branch.
+The script finalizes `CHANGELOG.md` (moves `[Unreleased]` notes under the new version), commits that update, runs `scripts/build-min.php`, creates an annotated tag (message defaults to that version's CHANGELOG section), pushes `dev` if needed, pushes the tag to GitLab (`origin`), waits for the push mirror to copy it to GitHub, then publishes `index.php`, `index.min.php`, and a zip to the GitHub Release page via `gh`. Run it from the `dev` branch.
 
 Release notes live in [CHANGELOG.md](CHANGELOG.md). Add bullets under `## [Unreleased]` as you make changes.

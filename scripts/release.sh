@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create a version tag, push to GitLab + GitHub, and publish release assets via gh CLI.
+# Create a version tag, push it to origin (GitLab mirrors it to GitHub), and publish release assets via gh CLI.
 #
 # Usage (from repo root):
 #   ./scripts/release.sh                  # prompt; default bumps last version segment
