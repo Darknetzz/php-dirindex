@@ -93,6 +93,21 @@ else
     GITHUB_SHA="$SHA" "$ROOT/scripts/dev-release-notes.sh" > "$NOTES_FILE"
 fi
 
+echo "==> Moving ${DEV_TAG} to ${SHORT_SHA} (GitHub first, then origin)"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "dry-run: check ${SHORT_SHA} is on origin, wait for it on GitHub, move ${DEV_TAG} there and on origin"
+else
+    git fetch -q origin
+    if [[ -z "$(git branch -r --contains "$SHA")" ]]; then
+        echo "${SHORT_SHA} is not on origin yet: push it first." >&2
+        exit 1
+    fi
+    wait_for_github_commit "$SHA"
+    move_github_tag "$DEV_TAG" "$SHA"
+    git tag -f "$DEV_TAG" "$SHA" >/dev/null
+    git push -q --force origin "refs/tags/${DEV_TAG}"
+fi
+
 echo "==> Publishing GitHub prerelease ${DEV_TAG}"
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "dry-run: gh release create/upload ${DEV_TAG} with dist-dev/index.php and index.min.php"

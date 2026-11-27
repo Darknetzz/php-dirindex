@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rolling dev release** — `scripts/dev-release.sh` now moves the `dev-rolling` tag to the released commit (GitHub first, then `origin`); before, the tag stayed on the commit where the release was first created
 - **Hook installer** — push alias is path-independent (survives repo moves); stale absolute-path aliases are refreshed automatically; `--force` overwrites unrelated custom config
 
 ### Fixed

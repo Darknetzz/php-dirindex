@@ -161,7 +161,7 @@ Requires PHP only. Run before pushing when you want the same build + syntax chec
 ./scripts/dev-release.sh
 ```
 
-Embeds the current commit ref in release artifacts, builds `index.min.php`, and publishes/updates the `dev` prerelease on GitHub via `gh`.
+Embeds the current commit ref in release artifacts, builds `index.min.php`, moves the `dev-rolling` tag to the pushed commit (on GitHub first, then on `origin`, so the push mirror has nothing to sync), and publishes/updates the `dev-rolling` prerelease on GitHub via `gh`. The commit must already be on `origin`.
 
 **Stable release** (tags + GitHub Release assets; requires `gh`):
 
