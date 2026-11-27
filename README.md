@@ -4,6 +4,8 @@
 
 # PHP Directory Index
 
+> **Source:** [gitlab.kriss.li/kriss/php-dirindex](https://gitlab.kriss.li/kriss/php-dirindex) on GitLab (issues, merge requests, CI). [github.com/Darknetzz/php-dirindex](https://github.com/Darknetzz/php-dirindex) is a read-only push mirror.
+
 A single-file directory index that lists files and folders in a dark-themed, readable layout.
 
 - **Place** `index.php` (or the smaller `index.min.php` from [releases](https://github.com/Darknetzz/php-dirindex/releases)) in any folder (or document root) and open it in a browser.
@@ -124,15 +126,7 @@ Requires PHP only (no npm). After editing `index.php`, rebuild before shipping `
 
 ## Development and releases
 
-Two remotes: **GitLab** (`origin`) for day-to-day work, **GitHub** (`github`) for public visibility and releases.
-
-**One-time setup:**
-
-```sh
-git remote add github git@github.com:Darknetzz/php-dirindex.git
-# first push only (GitHub repo must exist and be empty):
-git push -u github dev
-```
+One remote: **GitLab** (`origin`) is the source of truth. GitHub (`Darknetzz/php-dirindex`) is a read-only push mirror configured on the GitLab project, used for public visibility and releases. Push to `origin` only; the mirror updates GitHub within a few minutes.
 
 **One-time hooks** (run after every fresh clone — git does not copy hooks):
 
@@ -149,7 +143,6 @@ That installs:
 
 ```sh
 git push origin dev
-git push github dev
 ```
 
 With hooks installed, a successful `git push` on `dev` also runs `./scripts/dev-release.sh` (updates the GitHub `dev` prerelease). Skip once: `SKIP_DEV_RELEASE=1 git push …`. Use plain git push: `git -c alias.push= push …`. Skip a min rebuild once: `SKIP_MIN_BUILD=1 git pull …`.
