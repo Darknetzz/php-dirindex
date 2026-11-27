@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PHP 8.5 deprecations** — update checks read HTTP response headers with `http_get_last_response_headers()` (PHP 8.4+, falls back on older PHP) instead of `$http_response_header`, and no longer call `curl_close()`
 
 
 ## [1.3.0] - 2026-10-13

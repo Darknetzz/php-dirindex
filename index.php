@@ -1791,7 +1791,6 @@ function dirindexHttpRequest($url, $accept = '*/*', $timeoutSec = 15) {
         ]);
         $body = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         return [
             'status' => $code,
             'body' => ($body === false) ? null : $body,
@@ -1809,7 +1808,13 @@ function dirindexHttpRequest($url, $accept = '*/*', $timeoutSec = 15) {
     ]);
     $body = @file_get_contents($url, false, $ctx);
     $status = 0;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', (string) $http_response_header[0], $m)) {
+    if (function_exists('http_get_last_response_headers')) {
+        $headers = http_get_last_response_headers(); // PHP 8.4+
+    } else {
+        $headersVar = 'http_response_header'; // older PHP; read by name so 8.5+ does not flag it
+        $headers = $$headersVar ?? null;
+    }
+    if (isset($headers[0]) && preg_match('/\s(\d{3})\s/', (string) $headers[0], $m)) {
         $status = (int) $m[1];
     }
     return [
